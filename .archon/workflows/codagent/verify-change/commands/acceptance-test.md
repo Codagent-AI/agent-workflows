@@ -13,6 +13,8 @@ When a skill names another skill as `codagent:<name>`, it means the skill instal
 
 All temporary files, clones, build outputs, and servers' working directories must go under `scratch_dir`. Never use `/tmp`, `/private/tmp`, or `$TMPDIR` for them.
 
+Before your final message, stop every server and other long-running command you started, and confirm none is still running. This step does not end while a command you started is still running, and one left running fails it.
+
 Acceptance is exploratory. You decide what to exercise; nobody hands you a list of cases to run. Read the implementation and diff to decide where to look, never to decide what correct means.
 
 Round index 0 is the change's first acceptance pass. Apply the skill's coverage floor: exercise every user-visible requirement or scenario that the approved specs add or modify at least once, then explore beyond that floor where risk is highest. Seam sizing and the step ceiling bound only the exploration beyond the floor, never the floor itself. Record the floor items and your exploration budget and rationale before testing, list any floor item you could not exercise as a limitation with its reason, and name what else you deliberately did not exercise.
