@@ -16,6 +16,7 @@ The first workflow is a port of Agent Runner's `core:implement-change` (v2.0, ag
   .shared/bin/                       small helpers the nodes share
 roles/baseline.yaml                  role bindings matching the eval baseline
 scripts/install-skills.sh            copy pinned Codagent skills into a checkout
+scripts/codex-launcher.sh            start Codex threads at one reasoning effort
 tests/scenarios.py                   dry-run scenarios for the repair paths
 ```
 
@@ -44,6 +45,18 @@ archon workflow run codagent-implement-change \
 
 The role aliases `@lead`, `@crosscheck`, `@implementor` and `@tester` must be bound, by `--config` or the target's `.archon/config.yaml`. Each node names its role alias; the binding picks the provider, model and effort.
 
+Start Codex threads at the Codex roles' effort. Archon starts each Codex thread at the effort in `~/.codex/config.toml` and sets the role's effort on the turn. When the two differ, Codex records a mid-session effort change, and the acceptance tester ends its turn right after planning. Write a launcher and point Archon at it:
+
+```sh
+/path/to/agent-workflows/scripts/codex-launcher.sh "$(command -v codex)" medium /path/to/codex-launcher
+# Archon config (ARCHON_HOME/config.yaml):
+#   assistants:
+#     codex:
+#       codexBinaryPath: /path/to/codex-launcher
+```
+
+Archon takes one Codex binary per run, so pick the effort most Codex roles share. With `roles/baseline.yaml` that is `medium` (implementor and tester), and only the crosscheck (`high`) still changes effort on its first turn.
+
 The skills install into the target's `.agents/skills/` (Codex) and `.claude/skills/` (Claude) and are listed in `.git/info/exclude`. Codex nodes invoke skills by name (`$codagent-implement-change`), because Archon turns off Codex's automatic skill catalog. The Claude (lead) nodes in this port name no skills, and run with `settingSources: [project]` so the host's user-level Claude settings stay out.
 
 The agent-evals and-scene suite runs this workflow with `run.sh --engine archon`.
@@ -67,5 +80,6 @@ These are deliberate, and each can move an eval score or cost.
 5. **No `audit.log`.** Runner writes one and the tester's prompt names it. Archon has no equivalent, so the reference is removed rather than faked.
 6. **Only the session report is saved as a response file.** Runner saves every agent's response under `session_dir/output/`. Here only `save-session-report` does, writing `output/session-report.out` for the acceptance tester. The files agents write themselves keep Runner's names, so the eval's evidence discovery and the ported prompts find them.
 7. **Host instead of sandbox.** Archon runs agents on the host. Runner's eval runs in Docker.
+8. **One starting effort for Codex threads.** Runner starts each Codex session at its role's effort. Archon starts them at one effort per run, set by `scripts/codex-launcher.sh`, and a role with a different effort switches on its first turn.
 
 Kept from Runner: the autonomy preamble ("You are running autonomously with no human in the loop..."). Runner puts it before every agent prompt that starts a session in an autonomous run, and the port does the same on every `context: fresh` node, through the `autonomy_preamble` input. Without it, the first paid trial's acceptance tester stopped after reading the spec and reported NOT_READY in every round.

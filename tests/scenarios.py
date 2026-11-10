@@ -10,6 +10,8 @@ Runner scripts are exercised, not only the routing.
 Dry runs read the pack from the target checkout, so the script builds a
 scratch git repository with `.archon` linked to this repository's pack.
 
+It also checks scripts/codex-launcher.sh (scenario name `codex-launcher`).
+
 Usage: python3 tests/scenarios.py [scenario-name ...]
 Needs archon (0.14), git, jq and python3 on PATH. Makes no model calls.
 """
@@ -341,6 +343,15 @@ def main(selected):
                     print(f"     {problem}")
             else:
                 print(f"ok   {scenario['name']}")
+        if not selected or "codex-launcher" in selected:
+            problems = check_codex_launcher(scratch)
+            if problems:
+                failures += 1
+                print("FAIL codex-launcher")
+                for problem in problems:
+                    print(f"     {problem}")
+            else:
+                print("ok   codex-launcher")
         unprompted = sorted(FRESH_AGENT_NODES - prompted)
         if not selected and unprompted:
             failures += 1
@@ -349,6 +360,30 @@ def main(selected):
             sys.exit(f"{failures} scenario(s) failed")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_codex_launcher(scratch):
+    """scripts/codex-launcher.sh: app-server threads start at the launcher's
+    effort; every other command passes through unchanged."""
+    fake = os.path.join(scratch, "fake codex")
+    with open(fake, "w") as handle:
+        handle.write('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    os.chmod(fake, 0o755)
+    script = os.path.join(import_root, "scripts", "codex-launcher.sh")
+    launcher = os.path.join(scratch, "codex-launcher")
+    written = run([script, fake, "medium", launcher], scratch)
+    if written.returncode != 0:
+        return [f"writing the launcher failed: {written.stderr.strip()}"]
+    problems = []
+    served = run([launcher, "app-server", "--listen", "stdio://"], scratch).stdout.splitlines()
+    if served != ["app-server", "--listen", "stdio://", "-c", 'model_reasoning_effort="medium"']:
+        problems.append(f"app-server ran with {served}")
+    other = run([launcher, "login", "status"], scratch).stdout.splitlines()
+    if other != ["login", "status"]:
+        problems.append(f"login status ran with {other}")
+    if run([script, fake, "loud", launcher + "-bad"], scratch).returncode == 0:
+        problems.append("accepted an unknown effort")
+    return problems
 
 
 def parse_scaffold_keys(path):
