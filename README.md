@@ -65,5 +65,7 @@ These are deliberate, and each can move an eval score or cost.
 3. **A repair forks its role's session.** In Runner a fix continues the role's named session, and later steps see it. Here a fix resumes a fork, and the role's main line continues from before the fix.
 4. **No Agent Validator paths.** The workflow requires `skip_validator=true`.
 5. **No `audit.log`.** Runner writes one and the tester's prompt names it. Archon has no equivalent, so the reference is removed rather than faked.
-6. **Session files are written by the workflow.** Runner saves each agent's response under `session_dir/output/`. Here a `bash:` node after each agent node writes `output/<node-id>.out`, keeping Runner's names so the eval's evidence discovery and the ported prompts find them.
+6. **Only the session report is saved as a response file.** Runner saves every agent's response under `session_dir/output/`. Here only `save-session-report` does, writing `output/session-report.out` for the acceptance tester. The files agents write themselves keep Runner's names, so the eval's evidence discovery and the ported prompts find them.
 7. **Host instead of sandbox.** Archon runs agents on the host. Runner's eval runs in Docker.
+
+Kept from Runner: the autonomy preamble ("You are running autonomously with no human in the loop..."). Runner puts it before every agent prompt that starts a session in an autonomous run, and the port does the same on every `context: fresh` node, through the `autonomy_preamble` input. Without it, the first paid trial's acceptance tester stopped after reading the spec and reported NOT_READY in every round.

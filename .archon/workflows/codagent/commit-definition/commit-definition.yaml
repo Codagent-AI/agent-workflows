@@ -11,6 +11,8 @@ inputs:
   change_kind: {}
   skip_validator: {}
   session_dir: {}
+  # Agent Runner's autonomy preamble, from codagent-implement-change.
+  autonomy_preamble: {}
 
 nodes:
   # Runner skips this step for spec-driven changes (skip_if). The port keeps
@@ -41,6 +43,8 @@ nodes:
     settingSources: [project]
     context: fresh
     prompt: |
+      $INPUTS.autonomy_preamble
+
       commit only $INPUTS.change_dir following repository conventions. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
 
       $commit-definition.output.evidence

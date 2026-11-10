@@ -32,6 +32,9 @@ inputs:
   acceptance_fix_scope:
     default: "Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems."
   session_dir: {}
+  # Agent Runner's autonomy preamble, from codagent-implement-change. Fresh
+  # sessions get it; resumed ones do not, as in Runner.
+  autonomy_preamble: {}
 
 nodes:
   - id: validate-change-name
@@ -95,6 +98,8 @@ nodes:
     settingSources: [project]
     context: fresh
     prompt: |
+      $INPUTS.autonomy_preamble
+
       `$INPUTS.session_dir/output/acceptance-assumptions.md` is missing or empty. Write it now: list every unresolved finding or context gap concisely, with its source task or session report, why it is undecided, the decision needed from the user, and the likely impact of each option. If none remain, write an explicit `No unresolved assumptions or context gaps.` statement. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
 
       $verify-assumptions-handoff.output.evidence
@@ -126,6 +131,8 @@ nodes:
     settingSources: [project]
     context: fresh
     prompt: |
+      $INPUTS.autonomy_preamble
+
       There are uncommitted changes leftover after implementing and validating $INPUTS.change_label "$INPUTS.change_name". Run git status and git diff to review them. Only stage and commit files that are related to this change and appropriate to check into git — ignore unrelated changes, generated artifacts, or files that should be gitignored. Follow the project's commit message conventions. Summarize which files you committed and which you left out, and why. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
 
       $verify-clean-for-pr.output.evidence
@@ -149,6 +156,8 @@ nodes:
     settingSources: [project]
     context: fresh
     command: open-draft-pr
+    with:
+      session_preamble: $INPUTS.autonomy_preamble
 
   # A brief GitHub lag retries inside the check instead of rerunning
   # open-draft-pr. Runner: rerun open-draft-pr, max 1.
@@ -171,6 +180,8 @@ nodes:
     settingSources: [project]
     context: { resume: open-draft-pr }
     command: open-draft-pr
+    with:
+      session_preamble: ""
 
   - id: open-draft-pr-2-blocked
     depends_on: [open-draft-pr-2]
@@ -198,6 +209,7 @@ nodes:
     context: fresh
     command: acceptance-test
     with:
+      session_preamble: $INPUTS.autonomy_preamble
       acceptance_round: "0"
 
   # Runner: continue_on_failure with break_if success. READY ends the rounds.
@@ -320,6 +332,7 @@ nodes:
     context: { resume: acceptance-test-0 }
     command: acceptance-test
     with:
+      session_preamble: ""
       acceptance_round: "1"
 
   - id: acceptance-gate-1
@@ -412,6 +425,7 @@ nodes:
     context: { resume: acceptance-test-1 }
     command: acceptance-test
     with:
+      session_preamble: ""
       acceptance_round: "2"
 
   - id: acceptance-gate-2

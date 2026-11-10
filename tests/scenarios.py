@@ -33,6 +33,21 @@ INPUTS = {
 V = "verify-change__"
 CD = "check-definition__"
 
+# Agent Runner (internal/exec/agent.go) puts this before the prompt of every
+# agent invocation that starts a session, and not before a resumed one.
+AUTONOMY_PREAMBLE = (
+    "You are running autonomously with no human in the loop. "
+    "Do not stop to ask for confirmation or clarification. "
+    "Do not say things like \"let me know\", \"ready when you are\", or \"shall I proceed\". "
+    "Make decisions and complete the entire task.\n\n"
+)
+# The agent nodes with `context: fresh`. Every other agent node resumes a session.
+FRESH_AGENT_NODES = {
+    "implementor-checklist", "audit", CD + "repair-definition-1", "commit-definition__commit-definition-repair",
+    V + "verify-assumptions-handoff-repair", V + "verify-clean-for-pr-repair", V + "open-draft-pr",
+    V + "acceptance-test-0",
+}
+
 
 def check(status, **extra):
     value = {"status": status, "stdout": "", "output": f"check {status}", "evidence": f"<repair-evidence>{status}</repair-evidence>"}
@@ -66,6 +81,17 @@ SCENARIOS = [
         "stubs": {"verify-checklist": check("FAIL"), V + "acceptance-gate-0": {"ready": True}},
         "ran": ["verify-checklist-repair", "verify-checklist-repair-blocked", "verify-checklist-2",
                 "record-implementation-start", "implement"],
+        "outcome": "completed",
+    },
+    {
+        # The fresh-session repairs no other scenario reaches.
+        "name": "fresh-session-repairs-recover",
+        "stubs": {"commit-definition__commit-definition": check("FAIL"),
+                  V + "verify-assumptions-handoff": check("FAIL"), V + "verify-clean-for-pr": check("FAIL"),
+                  V + "acceptance-gate-0": {"ready": True}},
+        "ran": ["commit-definition__commit-definition-repair", "commit-definition__commit-definition-2",
+                V + "verify-assumptions-handoff-repair", V + "verify-assumptions-handoff-2",
+                V + "verify-clean-for-pr-repair", V + "verify-clean-for-pr-2", V + "open-draft-pr"],
         "outcome": "completed",
     },
     {
@@ -265,6 +291,7 @@ def main(selected):
         scaffold = parse_scaffold_keys(scaffold_path)
 
         failures = 0
+        prompted = set()
         for scenario in SCENARIOS:
             if selected and scenario["name"] not in selected:
                 continue
@@ -306,6 +333,7 @@ def main(selected):
                 failures += 1
                 continue
             problems = assess(scenario, trace)
+            prompted.update(entry["nodeId"] for entry in trace["trace"] if entry.get("resolvedText") is not None)
             if problems:
                 failures += 1
                 print(f"FAIL {scenario['name']}")
@@ -313,6 +341,10 @@ def main(selected):
                     print(f"     {problem}")
             else:
                 print(f"ok   {scenario['name']}")
+        unprompted = sorted(FRESH_AGENT_NODES - prompted)
+        if not selected and unprompted:
+            failures += 1
+            print(f"FAIL autonomy preamble: no scenario resolved the prompt of {unprompted}")
         if failures:
             sys.exit(f"{failures} scenario(s) failed")
     finally:
@@ -361,6 +393,16 @@ def assess(scenario, trace):
         for needle in needles:
             if needle.replace(" ", "") not in compact:
                 problems.append(f"{node} output lacks {needle!r}: {output[:300]}")
+    for node, entry in states.items():
+        text = entry.get("resolvedText")
+        if entry.get("nodeType") != "prompt" or text is None:
+            continue
+        if node in FRESH_AGENT_NODES and not text.startswith(AUTONOMY_PREAMBLE):
+            problems.append(f"{node} starts a session but its prompt lacks the autonomy preamble: {text[:120]!r}")
+        if node not in FRESH_AGENT_NODES and AUTONOMY_PREAMBLE.strip() in text:
+            problems.append(f"{node} resumes a session but its prompt repeats the autonomy preamble")
+        if "$INPUTS." in text:
+            problems.append(f"{node} prompt has an unbound input: {text[text.index('$INPUTS.'):][:60]!r}")
     if "order" in scenario:
         position = {entry["nodeId"]: index for index, entry in enumerate(trace["trace"]) if entry["state"] in ("stubbed", "completed")}
         missing = [node for node in scenario["order"] if node not in position]

@@ -32,6 +32,14 @@ inputs:
     description: >-
       Absolute directory for the run's session files, laid out like Agent
       Runner's session directory (output/, output/evidence/, scratch/).
+  autonomy_preamble:
+    description: >-
+      Agent Runner's autonomy preamble (internal/exec/agent.go). Runner puts it
+      before the prompt of every agent invocation that starts a session in an
+      autonomous run, and not before a resumed one; the port does the same on
+      every node with `context: fresh`. Do not override it.
+    default: >-
+      You are running autonomously with no human in the loop. Do not stop to ask for confirmation or clarification. Do not say things like "let me know", "ready when you are", or "shall I proceed". Make decisions and complete the entire task.
 
 nodes:
   - id: prepare-session
@@ -66,6 +74,7 @@ nodes:
       change_label: $INPUTS.change_label
       change_kind: $INPUTS.change_kind
       session_dir: $INPUTS.session_dir
+      autonomy_preamble: $INPUTS.autonomy_preamble
 
   # Without a planning step, commit the approved definition here so the
   # checklist and implementation commits start from a committed definition.
@@ -78,6 +87,7 @@ nodes:
       change_kind: $INPUTS.change_kind
       skip_validator: $INPUTS.skip_validator
       session_dir: $INPUTS.session_dir
+      autonomy_preamble: $INPUTS.autonomy_preamble
 
   # Snapshots the worktree so check-implementor-checklist can tell what the
   # checklist step changed.
@@ -92,6 +102,8 @@ nodes:
     model: '@implementor'
     context: fresh
     prompt: |
+      $INPUTS.autonomy_preamble
+
       Before implementing $INPUTS.change_label "$INPUTS.change_name", read only its approved definition under `$INPUTS.change_dir/` (proposal, specs, design, and test plan). Use the $codagent-verify-behavior skill to write its checklist, with IDs `I-1`, `I-2`, and so on, in the file `$INPUTS.change_dir/checklist.md`.
 
       This step only writes the checklist: change no other file and do not commit. You implement the change later, against this checklist.
@@ -247,6 +259,8 @@ nodes:
     model: '@crosscheck'
     context: fresh
     prompt: |
+      $INPUTS.autonomy_preamble
+
       The implementor has finished $INPUTS.change_label "$INPUTS.change_name". Audit it against the approved definition under `$INPUTS.change_dir/` (proposal, specs, design, and test plan) and the implementor's checklist, `$INPUTS.change_dir/checklist.md`.
 
       This audit is inspection only. Never run tests, builds, the product, or any other command that executes the change; read the code, the checklist, and the evidence. The implementor has run the checks, and acceptance testing follows.
@@ -436,3 +450,4 @@ nodes:
       skip_implementation_review: "true"
       stop_unchanged_acceptance: "true"
       session_dir: $INPUTS.session_dir
+      autonomy_preamble: $INPUTS.autonomy_preamble

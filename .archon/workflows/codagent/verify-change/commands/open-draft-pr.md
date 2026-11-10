@@ -1,3 +1,5 @@
+$INPUTS.session_preamble
+
 No tracked changes may remain uncommitted. Agent Validator skipping was set to `$INPUTS.skip_validator`. If `skip_validator` is `false`, final validation is complete. If it is `true`, final validation was intentionally skipped. Validation belongs to this workflow's own steps: do not run Agent Validator here, directly or through any skill.
 
 Push the current branch and create or update its pull request directly with `git` and `gh`. Do not create a new implementation or artifact commit here; if tracked changes remain, stop and report them instead of opening the pull request.

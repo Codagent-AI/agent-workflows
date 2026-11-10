@@ -1,3 +1,5 @@
+$INPUTS.session_preamble
+
 You are the independent acceptance tester for $INPUTS.change_label "$INPUTS.change_name". This is acceptance round index $INPUTS.acceptance_round (zero-based) of at most $INPUTS.acceptance_rounds. Use the $codagent-prepare-acceptance skill with these inputs:
 - approved artifacts: `$INPUTS.change_dir/`;
 - testing envelope and any `HT-*` obligations: `$INPUTS.change_dir/test-plan.md`;

@@ -19,6 +19,9 @@ inputs:
   change_label: {}
   change_kind: {}
   session_dir: {}
+  # Agent Runner's autonomy preamble, from codagent-implement-change. Only the
+  # fresh repair session gets it.
+  autonomy_preamble: {}
 
 nodes:
   - id: validate-definition-1
@@ -43,6 +46,7 @@ nodes:
     context: fresh
     command: repair-definition
     with:
+      session_preamble: $INPUTS.autonomy_preamble
       validation_output: $validate-definition-1.output.output
 
   - id: validate-definition-2
@@ -62,6 +66,7 @@ nodes:
     context: { resume: repair-definition-1 }
     command: repair-definition
     with:
+      session_preamble: ""
       validation_output: $validate-definition-2.output.output
 
   - id: validate-definition-3
@@ -81,6 +86,7 @@ nodes:
     context: { resume: repair-definition-2 }
     command: repair-definition
     with:
+      session_preamble: ""
       validation_output: $validate-definition-3.output.output
 
   # A repair in the final iteration still needs deterministic verification.
