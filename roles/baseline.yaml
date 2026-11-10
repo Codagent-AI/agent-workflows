@@ -1,0 +1,8 @@
+# Role bindings matching the and-scene experiment baseline
+# (agent-evals evals/agent-runner/and-scene/experiments/baseline.json).
+# Pass with: archon workflow run codagent-implement-change --config roles/baseline.yaml
+aliases:
+  '@lead': { provider: claude, model: claude-sonnet-5-5, effort: high }
+  '@crosscheck': { provider: codex, model: gpt-6.1-sol, effort: high }
+  '@implementor': { provider: codex, model: gpt-6.1-sol, effort: medium }
+  '@tester': { provider: codex, model: gpt-6-luna, effort: medium }

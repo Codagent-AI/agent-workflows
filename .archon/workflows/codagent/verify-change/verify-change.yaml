@@ -1,0 +1,455 @@
+name: codagent-verify-change
+description: >-
+  Building block of codagent-implement-change; not for standalone runs. Port of
+  Agent Runner core verify-change-v1.0 without its assumption review,
+  simplification and Validator paths: check the assumptions handoff, open a
+  draft pull request, and run up to three acceptance-test rounds.
+
+# Runner runs the acceptance rounds as a loop of at most acceptance_rounds
+# iterations with break_if exits. The port unrolls exactly three rounds into
+# explicit nodes (round 0, 1 and 2), so it requires acceptance_rounds=3. Round
+# r ends the rounds when its gate reports READY, when it is the last round, or
+# when the lead's fix moved nothing (stop_unchanged_acceptance).
+
+inputs:
+  change_name: {}
+  change_dir: {}
+  change_label: {}
+  artifact_validation_instruction: {}
+  skip_validator:
+    default: "false"
+  acceptance_rounds:
+    default: "3"
+  # Must be true: review-assumptions and simplify were not ported. The
+  # assumptions handoff check still runs.
+  skip_implementation_review:
+    default: "false"
+  # Ends the acceptance rounds when the lead's fix leaves the tested revision
+  # unchanged and writes no acceptance-retest-reason.txt.
+  stop_unchanged_acceptance:
+    default: "false"
+  # Sets which findings the lead resolves in each acceptance fix.
+  acceptance_fix_scope:
+    default: "Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems."
+  session_dir: {}
+
+nodes:
+  - id: validate-change-name
+    bash: |
+      jq -n --arg change_name "$INPUTS_CHANGE_NAME" '{change_name: $change_name}' \
+        | sh "$PACK_DIR/.shared/core/validate-change-name.sh"
+
+  - id: validate-skip-validator
+    depends_on: [validate-change-name]
+    bash: |
+      sh "$PACK_DIR/.shared/bin/validate-param.sh" boolean skip_validator "$INPUTS_SKIP_VALIDATOR" || exit 1
+      if [ "$INPUTS_SKIP_VALIDATOR" != true ]; then
+        echo "this port runs only with skip_validator=true; the Agent Validator paths were not ported" >&2
+        exit 1
+      fi
+
+  - id: validate-stop-unchanged-acceptance
+    depends_on: [validate-skip-validator]
+    bash: sh "$PACK_DIR/.shared/bin/validate-param.sh" boolean stop_unchanged_acceptance "$INPUTS_STOP_UNCHANGED_ACCEPTANCE"
+
+  - id: validate-acceptance-fix-scope
+    depends_on: [validate-stop-unchanged-acceptance]
+    bash: sh "$PACK_DIR/.shared/bin/validate-param.sh" nonempty acceptance_fix_scope "$INPUTS_ACCEPTANCE_FIX_SCOPE"
+
+  - id: validate-skip-implementation-review
+    depends_on: [validate-acceptance-fix-scope]
+    bash: |
+      sh "$PACK_DIR/.shared/bin/validate-param.sh" boolean skip_implementation_review "$INPUTS_SKIP_IMPLEMENTATION_REVIEW" || exit 1
+      if [ "$INPUTS_SKIP_IMPLEMENTATION_REVIEW" != true ]; then
+        echo "this port runs only with skip_implementation_review=true; review-assumptions and simplify were not ported" >&2
+        exit 1
+      fi
+
+  - id: validate-acceptance-rounds
+    depends_on: [validate-skip-implementation-review]
+    bash: |
+      if [ "$INPUTS_ACCEPTANCE_ROUNDS" != 3 ]; then
+        echo "this port unrolls exactly three acceptance rounds; acceptance_rounds must be 3, got: $INPUTS_ACCEPTANCE_ROUNDS" >&2
+        exit 1
+      fi
+
+  # Runner: repair with the lead session, which has not run yet in this
+  # workflow, so the repair starts fresh. Max 1.
+  - id: verify-assumptions-handoff
+    depends_on: [validate-acceptance-rounds]
+    bash: |
+      sh "$PACK_DIR/.shared/bin/check.sh" status sh -c 'test -s "$INPUTS_SESSION_DIR/output/acceptance-assumptions.md"'
+    output_format: &check-result
+      type: object
+      properties:
+        status: { type: string, enum: [PASS, FAIL] }
+        stdout: { type: string }
+        output: { type: string }
+        evidence: { type: string }
+      required: [status, stdout, output, evidence]
+
+  - id: verify-assumptions-handoff-repair
+    depends_on: [verify-assumptions-handoff]
+    when: "$verify-assumptions-handoff.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: fresh
+    prompt: |
+      `$INPUTS.session_dir/output/acceptance-assumptions.md` is missing or empty. Write it now: list every unresolved finding or context gap concisely, with its source task or session report, why it is undecided, the decision needed from the user, and the likely impact of each option. If none remain, write an explicit `No unresolved assumptions or context gaps.` statement. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
+
+      $verify-assumptions-handoff.output.evidence
+
+  - id: verify-assumptions-handoff-repair-blocked
+    depends_on: [verify-assumptions-handoff-repair]
+    bash: AGENT_RESPONSE=$verify-assumptions-handoff-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: verify-assumptions-handoff-2
+    depends_on: [verify-assumptions-handoff-repair-blocked]
+    bash: test -s "$INPUTS_SESSION_DIR/output/acceptance-assumptions.md"
+
+  # Runner: repair with the lead session, max 1.
+  - id: verify-clean-for-pr
+    depends_on: [verify-assumptions-handoff, verify-assumptions-handoff-2]
+    trigger_rule: none_failed_min_one_success
+    bash: &verify-clean-for-pr |
+      sh "$PACK_DIR/.shared/bin/check.sh" status sh -c '
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "working tree changes remain after validation; commit or remove them before opening the draft pull request" >&2
+          exit 1
+        fi'
+    output_format: *check-result
+
+  - id: verify-clean-for-pr-repair
+    depends_on: [verify-clean-for-pr]
+    when: "$verify-clean-for-pr.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: fresh
+    prompt: |
+      There are uncommitted changes leftover after implementing and validating $INPUTS.change_label "$INPUTS.change_name". Run git status and git diff to review them. Only stage and commit files that are related to this change and appropriate to check into git — ignore unrelated changes, generated artifacts, or files that should be gitignored. Follow the project's commit message conventions. Summarize which files you committed and which you left out, and why. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
+
+      $verify-clean-for-pr.output.evidence
+
+  - id: verify-clean-for-pr-repair-blocked
+    depends_on: [verify-clean-for-pr-repair]
+    bash: AGENT_RESPONSE=$verify-clean-for-pr-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: verify-clean-for-pr-2
+    depends_on: [verify-clean-for-pr-repair-blocked]
+    bash: |
+      if [ -n "$(git status --porcelain)" ]; then
+        echo "working tree changes remain after validation; commit or remove them before opening the draft pull request" >&2
+        exit 1
+      fi
+
+  - id: open-draft-pr
+    depends_on: [verify-clean-for-pr, verify-clean-for-pr-2]
+    trigger_rule: none_failed_min_one_success
+    model: '@lead'
+    settingSources: [project]
+    context: fresh
+    command: open-draft-pr
+
+  # A brief GitHub lag retries inside the check instead of rerunning
+  # open-draft-pr. Runner: rerun open-draft-pr, max 1.
+  - id: verify-draft-pr
+    depends_on: [open-draft-pr]
+    bash: |
+      CHECK_INPUT='{"attempts":"3","interval_seconds":"3"}' \
+        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+    output_format: *check-result
+
+  # In Runner the guarded agent's own REPAIR_BLOCKED also stops the repair.
+  - id: open-draft-pr-blocked
+    depends_on: [verify-draft-pr]
+    when: "$verify-draft-pr.output.status == 'FAIL'"
+    bash: AGENT_RESPONSE=$open-draft-pr.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: open-draft-pr-2
+    depends_on: [open-draft-pr-blocked]
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: open-draft-pr }
+    command: open-draft-pr
+
+  - id: open-draft-pr-2-blocked
+    depends_on: [open-draft-pr-2]
+    bash: AGENT_RESPONSE=$open-draft-pr-2.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: verify-draft-pr-2
+    depends_on: [open-draft-pr-2-blocked]
+    bash: echo '{"attempts":"3","interval_seconds":"3"}' | sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+
+  # ---- Acceptance round 0 ----
+  # The gate must judge only evidence written in this round, so clear the
+  # previous round's status and handoff; exploration-log.md,
+  # acceptance-tested-revision.txt, and acceptance-findings.md remain as the
+  # tester's history and diff base.
+  - id: reset-round-evidence-0
+    depends_on: [verify-draft-pr, verify-draft-pr-2]
+    trigger_rule: none_failed_min_one_success
+    bash: &reset-round-evidence |
+      rm -f "$INPUTS_SESSION_DIR/output/acceptance-round-status.txt" "$INPUTS_SESSION_DIR/output/acceptance-handoff.md" \
+        && mkdir -p "$INPUTS_SESSION_DIR/scratch/acceptance-test"
+
+  - id: acceptance-test-0
+    depends_on: [reset-round-evidence-0]
+    model: '@tester'
+    context: fresh
+    command: acceptance-test
+    with:
+      acceptance_round: "0"
+
+  # Runner: continue_on_failure with break_if success. READY ends the rounds.
+  - id: acceptance-gate-0
+    depends_on: [acceptance-test-0]
+    bash: &acceptance-gate |
+      if jq -n --arg evidence_dir "$INPUTS_SESSION_DIR/output" '{evidence_dir: $evidence_dir, action: "check"}' \
+          | sh "$PACK_DIR/.shared/core/acceptance-gate.sh" >&2; then
+        echo '{"ready": true}'
+      else
+        echo '{"ready": false}'
+      fi
+    output_format: &gate-result
+      type: object
+      properties:
+        ready: { type: boolean }
+      required: [ready]
+
+  # The tester has read any retest reason; a stale one must not keep the
+  # rounds going after the next fix.
+  - id: clear-retest-reason-0
+    depends_on: [acceptance-gate-0]
+    when: "$acceptance-gate-0.output.ready == false"
+    bash: &clear-retest-reason rm -f "$INPUTS_SESSION_DIR/output/acceptance-retest-reason.txt"
+
+  - id: acceptance-fix-0
+    depends_on: [clear-retest-reason-0]
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: open-draft-pr }
+    command: acceptance-fix
+    with:
+      acceptance_round: "0"
+
+  # Ends the rounds when stop_unchanged_acceptance is set and the fix left the
+  # tested revision unchanged with no retest reason. Runner: continue_on_failure
+  # with break_if failure.
+  - id: check-acceptance-progress-0
+    depends_on: [acceptance-fix-0]
+    bash: &check-acceptance-progress |
+      progressed() { echo '{"progressed": true}'; exit 0; }
+      [ "$INPUTS_STOP_UNCHANGED_ACCEPTANCE" = true ] || progressed
+      evidence="$INPUTS_SESSION_DIR/output"
+      tested=$(sed '/^[[:space:]]*$/d' "$evidence/acceptance-tested-revision.txt" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+      if [ "$(git rev-parse HEAD)" != "$tested" ] || [ -n "$(git status --porcelain --untracked-files=no)" ] || [ -s "$evidence/acceptance-retest-reason.txt" ]; then
+        progressed
+      fi
+      echo "the acceptance fix left the tested revision unchanged and gave no retest reason; ending the acceptance rounds" >&2
+      echo '{"progressed": false}'
+    output_format: &progress-result
+      type: object
+      properties:
+        progressed: { type: boolean }
+      required: [progressed]
+
+  # acceptance-validator is not ported (skip_validator=true).
+  # Runner: repair with the lead session, max 1.
+  - id: acceptance-push-0
+    depends_on: [check-acceptance-progress-0]
+    when: "$check-acceptance-progress-0.output.progressed == true"
+    bash: |
+      ACTION_RESPONSE=$acceptance-fix-0.output \
+        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/acceptance-push.sh"
+    output_format: *check-result
+
+  - id: acceptance-push-0-repair
+    depends_on: [acceptance-push-0]
+    when: "$acceptance-push-0.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: acceptance-fix-0 }
+    command: acceptance-push-repair
+    with:
+      evidence: $acceptance-push-0.output.evidence
+
+  - id: acceptance-push-0-repair-blocked
+    depends_on: [acceptance-push-0-repair]
+    bash: AGENT_RESPONSE=$acceptance-push-0-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: acceptance-push-0-2
+    depends_on: [acceptance-push-0-repair-blocked]
+    bash: sh "$PACK_DIR/.shared/core/acceptance-push.sh"
+
+  # Runner: repair with the lead session, max 1.
+  - id: verify-acceptance-pr-0
+    depends_on: [acceptance-push-0, acceptance-push-0-2]
+    trigger_rule: none_failed_min_one_success
+    bash: |
+      CHECK_INPUT='{"attempts":"10","interval_seconds":"3"}' ACTION_RESPONSE=$acceptance-fix-0.output \
+        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+    output_format: *check-result
+
+  - id: verify-acceptance-pr-0-repair
+    depends_on: [verify-acceptance-pr-0]
+    when: "$verify-acceptance-pr-0.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: acceptance-fix-0 }
+    command: verify-acceptance-pr-repair
+    with:
+      evidence: $verify-acceptance-pr-0.output.evidence
+
+  - id: verify-acceptance-pr-0-repair-blocked
+    depends_on: [verify-acceptance-pr-0-repair]
+    bash: AGENT_RESPONSE=$verify-acceptance-pr-0-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: verify-acceptance-pr-0-2
+    depends_on: [verify-acceptance-pr-0-repair-blocked]
+    bash: echo '{"attempts":"10","interval_seconds":"3"}' | sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+
+  # ---- Acceptance round 1 ----
+  - id: reset-round-evidence-1
+    depends_on: [verify-acceptance-pr-0, verify-acceptance-pr-0-2]
+    trigger_rule: none_failed_min_one_success
+    bash: *reset-round-evidence
+
+  - id: acceptance-test-1
+    depends_on: [reset-round-evidence-1]
+    model: '@tester'
+    context: { resume: acceptance-test-0 }
+    command: acceptance-test
+    with:
+      acceptance_round: "1"
+
+  - id: acceptance-gate-1
+    depends_on: [acceptance-test-1]
+    bash: *acceptance-gate
+    output_format: *gate-result
+
+  - id: clear-retest-reason-1
+    depends_on: [acceptance-gate-1]
+    when: "$acceptance-gate-1.output.ready == false"
+    bash: *clear-retest-reason
+
+  - id: acceptance-fix-1
+    depends_on: [clear-retest-reason-1]
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: acceptance-fix-0 }
+    command: acceptance-fix
+    with:
+      acceptance_round: "1"
+
+  - id: check-acceptance-progress-1
+    depends_on: [acceptance-fix-1]
+    bash: *check-acceptance-progress
+    output_format: *progress-result
+
+  - id: acceptance-push-1
+    depends_on: [check-acceptance-progress-1]
+    when: "$check-acceptance-progress-1.output.progressed == true"
+    bash: |
+      ACTION_RESPONSE=$acceptance-fix-1.output \
+        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/acceptance-push.sh"
+    output_format: *check-result
+
+  - id: acceptance-push-1-repair
+    depends_on: [acceptance-push-1]
+    when: "$acceptance-push-1.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: acceptance-fix-1 }
+    command: acceptance-push-repair
+    with:
+      evidence: $acceptance-push-1.output.evidence
+
+  - id: acceptance-push-1-repair-blocked
+    depends_on: [acceptance-push-1-repair]
+    bash: AGENT_RESPONSE=$acceptance-push-1-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: acceptance-push-1-2
+    depends_on: [acceptance-push-1-repair-blocked]
+    bash: sh "$PACK_DIR/.shared/core/acceptance-push.sh"
+
+  - id: verify-acceptance-pr-1
+    depends_on: [acceptance-push-1, acceptance-push-1-2]
+    trigger_rule: none_failed_min_one_success
+    bash: |
+      CHECK_INPUT='{"attempts":"10","interval_seconds":"3"}' ACTION_RESPONSE=$acceptance-fix-1.output \
+        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+    output_format: *check-result
+
+  - id: verify-acceptance-pr-1-repair
+    depends_on: [verify-acceptance-pr-1]
+    when: "$verify-acceptance-pr-1.output.status == 'FAIL'"
+    model: '@lead'
+    settingSources: [project]
+    context: { resume: acceptance-fix-1 }
+    command: verify-acceptance-pr-repair
+    with:
+      evidence: $verify-acceptance-pr-1.output.evidence
+
+  - id: verify-acceptance-pr-1-repair-blocked
+    depends_on: [verify-acceptance-pr-1-repair]
+    bash: AGENT_RESPONSE=$verify-acceptance-pr-1-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
+
+  - id: verify-acceptance-pr-1-2
+    depends_on: [verify-acceptance-pr-1-repair-blocked]
+    bash: echo '{"attempts":"10","interval_seconds":"3"}' | sh "$PACK_DIR/.shared/core/check-draft-pr.sh"
+
+  # ---- Acceptance round 2, the last ----
+  # Runner's end-final-round ends the loop here before any fix, so no fix is
+  # ever left untested.
+  - id: reset-round-evidence-2
+    depends_on: [verify-acceptance-pr-1, verify-acceptance-pr-1-2]
+    trigger_rule: none_failed_min_one_success
+    bash: *reset-round-evidence
+
+  - id: acceptance-test-2
+    depends_on: [reset-round-evidence-2]
+    model: '@tester'
+    context: { resume: acceptance-test-1 }
+    command: acceptance-test
+    with:
+      acceptance_round: "2"
+
+  - id: acceptance-gate-2
+    depends_on: [acceptance-test-2]
+    bash: *acceptance-gate
+    output_format: *gate-result
+
+  # ---- After the rounds ----
+  # Runs once the last executed round has ended, whichever round that was. A
+  # failure anywhere in the rounds skips it, so the run fails.
+  - id: write-acceptance-status
+    depends_on: [acceptance-gate-0, check-acceptance-progress-0, acceptance-gate-1, check-acceptance-progress-1, acceptance-gate-2]
+    trigger_rule: none_failed_min_one_success
+    bash: &write-acceptance-status |
+      jq -n --arg evidence_dir "$INPUTS_SESSION_DIR/output" --arg rounds "$INPUTS_ACCEPTANCE_ROUNDS" \
+        '{evidence_dir: $evidence_dir, action: "finalize", rounds: $rounds}' \
+        | sh "$PACK_DIR/.shared/core/acceptance-gate.sh"
+
+  # write-acceptance-status deterministically writes both files just before
+  # this check, so a failed check reruns that finalize step rather than letting
+  # an agent write or declare the outcome. Runner: rerun write-acceptance-status,
+  # max 1.
+  - id: verify-acceptance-handoff
+    depends_on: [write-acceptance-status]
+    bash: |
+      sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/verify-change/scripts/verify-acceptance-handoff.sh"
+    output_format: *check-result
+
+  - id: write-acceptance-status-2
+    depends_on: [verify-acceptance-handoff]
+    when: "$verify-acceptance-handoff.output.status == 'FAIL'"
+    bash: *write-acceptance-status
+
+  - id: verify-acceptance-handoff-2
+    depends_on: [write-acceptance-status-2]
+    bash: sh "$PACK_DIR/verify-change/scripts/verify-acceptance-handoff.sh"
+
+  - id: acceptance-handoff-verified
+    depends_on: [verify-acceptance-handoff, verify-acceptance-handoff-2]
+    trigger_rule: none_failed_min_one_success
+    bash: cat "$INPUTS_SESSION_DIR/output/acceptance-preparation-status.txt"
