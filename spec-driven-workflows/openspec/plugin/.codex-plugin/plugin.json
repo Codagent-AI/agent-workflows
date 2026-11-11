@@ -8,7 +8,13 @@
   },
   "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/spec-driven-workflows/openspec",
   "repository": "https://github.com/Codagent-AI/agent-workflows",
-  "keywords": ["openspec", "spec-driven", "workflow", "planning"],
+  "license": "MIT",
+  "keywords": [
+    "openspec",
+    "spec-driven",
+    "workflow",
+    "planning"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
@@ -17,7 +23,10 @@
     "longDescription": "Runs the proposal, specs, design, test-plan, and approach-review steps for an OpenSpec change in your own session, with a cross-vendor crosscheck review, then validates and commits the change documents.",
     "developerName": "Codagent-AI",
     "category": "Productivity",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://github.com/Codagent-AI/agent-workflows"
   }
 }

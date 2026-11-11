@@ -8,5 +8,11 @@
   },
   "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/spec-driven-workflows/openspec",
   "repository": "https://github.com/Codagent-AI/agent-workflows",
-  "keywords": ["openspec", "spec-driven", "workflow", "planning"]
+  "license": "MIT",
+  "keywords": [
+    "openspec",
+    "spec-driven",
+    "workflow",
+    "planning"
+  ]
 }
