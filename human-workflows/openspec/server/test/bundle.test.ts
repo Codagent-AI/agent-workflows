@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { CHANGE, fakeCall, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
+import { CHANGE, defined, fakeCall, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
 
 type TextResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
 
@@ -115,4 +115,27 @@ test("in the crosscheck child the server registers no tools, and the Codex manif
   }
   const codex = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".codex-mcp.json"), "utf8")) as { mcpServers: { define: { env_vars: string[] } } };
   assert.ok(codex.mcpServers.define.env_vars.includes("DEFINE_OPENSPEC_CHANGE_CHILD"));
+});
+
+test("the tools carry annotations, call_agent only takes crosscheck, and an internal error shows no stack", async () => {
+  const fixture = makeFixture();
+  const client = await connect(fixture, "claude-code");
+  try {
+    const tools = new Map((await client.listTools()).tools.map((tool) => [tool.name, tool]));
+    assert.deepEqual(tools.get("next_step")?.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+    assert.equal(tools.get("get_agent_call")?.annotations?.readOnlyHint, true);
+    assert.equal(tools.get("cancel_agent_call")?.annotations?.destructiveHint, false);
+    const callAgent = defined(tools.get("call_agent"), "the call_agent tool");
+    assert.equal((callAgent.inputSchema.properties as Record<string, { const?: string }>).agent?.const, "crosscheck");
+    assert.match(tools.get("call_agent")?.description ?? "", /the proposal and approach-review steps/);
+    assert.match(tools.get("call_agent")?.description ?? "", /about 5 seconds/);
+  } finally {
+    await client.close();
+  }
+  const { guarded } = await import("../src/server.js");
+  const failed = await guarded(async () => {
+    throw new Error("boom");
+  });
+  assert.equal(failed.isError, true);
+  assert.equal(failed.content[0]?.text, "define-openspec-change internal error: boom");
 });

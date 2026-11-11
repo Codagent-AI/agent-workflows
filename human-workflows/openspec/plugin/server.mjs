@@ -45525,7 +45525,10 @@ async function guarded(work) {
   try {
     return toResult(await work());
   } catch (error62) {
-    return toResult({ text: `define-openspec-change internal error: ${error62.stack ?? String(error62)}`, isError: true });
+    const failure2 = error62;
+    process.stderr.write(`define-openspec-change internal error: ${failure2.stack ?? String(error62)}
+`);
+    return toResult({ text: `define-openspec-change internal error: ${failure2.message ?? String(error62)}`, isError: true });
   }
 }
 function waitText(context) {
@@ -45540,7 +45543,9 @@ function registerNextStep({ server: server2, context, calls: calls2, cwdFor }) {
       inputSchema: {
         change_name: external_exports.string().optional().describe("The OpenSpec change name (lowercase letters, digits, hyphens). May be left out when exactly one define is in progress."),
         start: external_exports.boolean().optional().describe("true to start a new define or resume one in progress. Leave it out to complete the current step.")
-      }
+      },
+      // The last call commits, pushes the branch and opens a pull request.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
     },
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls2, args))
   );
@@ -45552,10 +45557,12 @@ function registerCallAgent({ server: server2, context, calls: calls2, cwdFor }) 
       title: "Start a crosscheck",
       description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to ` + waitText(context) + `: returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
       inputSchema: {
-        agent: external_exports.string().describe('Must be "crosscheck".'),
+        agent: external_exports.literal("crosscheck").describe('Must be "crosscheck".'),
         prompt: external_exports.string().describe("The complete, standalone task for the child."),
         change_name: external_exports.string().optional().describe("The change the review is for. Needed only when more than one define is in progress.")
-      }
+      },
+      // Starts another agent that reads the repository and the web, and never writes.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     },
     async ({ agent, prompt, change_name }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra), change_name))
   );
@@ -45567,7 +45574,7 @@ function registerGetAgentCall({ server: server2, context, calls: calls2 }) {
       title: "Wait for a crosscheck",
       description: "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
       inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") },
-      annotations: { readOnlyHint: true }
+      annotations: { readOnlyHint: true, openWorldHint: false }
     },
     async ({ call_id }) => guarded(() => calls2.get(call_id))
   );
@@ -45578,7 +45585,8 @@ function registerCancelAgentCall({ server: server2, calls: calls2 }) {
     {
       title: "Cancel a crosscheck",
       description: "Stops a running call_agent child. It can return while the child is still stopping, so poll get_agent_call until the status is terminal before starting another call.",
-      inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") }
+      inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     },
     async ({ call_id }) => guarded(() => calls2.cancel(call_id))
   );

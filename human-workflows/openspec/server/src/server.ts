@@ -20,11 +20,14 @@ function toResult(result: ToolText) {
   };
 }
 
-async function guarded(work: () => Promise<ToolText>) {
+/** Runs a tool. An unexpected error goes to the model as its message only; the stack goes to stderr. */
+export async function guarded(work: () => Promise<ToolText>) {
   try {
     return toResult(await work());
   } catch (error) {
-    return toResult({ text: `define-openspec-change internal error: ${(error as Error).stack ?? String(error)}`, isError: true });
+    const failure = error as Error;
+    process.stderr.write(`define-openspec-change internal error: ${failure.stack ?? String(error)}\n`);
+    return toResult({ text: `define-openspec-change internal error: ${failure.message ?? String(error)}`, isError: true });
   }
 }
 
@@ -62,6 +65,8 @@ function registerNextStep({ server, context, calls, cwdFor }: ToolDeps): void {
           .optional()
           .describe("true to start a new define or resume one in progress. Leave it out to complete the current step."),
       },
+      // The last call commits, pushes the branch and opens a pull request.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls, args)),
   );
@@ -79,13 +84,15 @@ function registerCallAgent({ server, context, calls, cwdFor }: ToolDeps): void {
         "returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status " +
         `is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
       inputSchema: {
-        agent: z.string().describe('Must be "crosscheck".'),
+        agent: z.literal("crosscheck").describe('Must be "crosscheck".'),
         prompt: z.string().describe("The complete, standalone task for the child."),
         change_name: z
           .string()
           .optional()
           .describe("The change the review is for. Needed only when more than one define is in progress."),
       },
+      // Starts another agent that reads the repository and the web, and never writes.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ agent, prompt, change_name }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra), change_name)),
   );
@@ -101,7 +108,7 @@ function registerGetAgentCall({ server, context, calls }: ToolDeps): void {
         "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. " +
         "Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
       inputSchema: { call_id: z.string().describe("The call_id that call_agent returned.") },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ call_id }) => guarded(() => calls.get(call_id)),
   );
@@ -116,6 +123,7 @@ function registerCancelAgentCall({ server, calls }: ToolDeps): void {
       description:
         "Stops a running call_agent child. It can return while the child is still stopping, so poll get_agent_call until the status is terminal before starting another call.",
       inputSchema: { call_id: z.string().describe("The call_id that call_agent returned.") },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ call_id }) => guarded(() => calls.cancel(call_id)),
   );
