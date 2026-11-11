@@ -151,6 +151,15 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
     expect(box.head()).toBe(definitionHead);
   });
 
+  test('a file whose path contains the checklist path counts as another change', () => {
+    box.write(`${dir}/checklist.md`, 'x\n');
+    box.write(`${dir}/checklist.md.bak`, 'stray\n');
+    const result = run();
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain('change/checklist.md.bak');
+    expect(box.head()).toBe(definitionHead);
+  });
+
   test('ignores changes that were already there before the step', () => {
     box.write('earlier.txt', 'earlier\n');
     preListStatus = box.git('status', '--porcelain', '--untracked-files=all');

@@ -157,6 +157,8 @@ describe('startRound (reset-round-evidence)', () => {
     ['1', 3, 2, true],
     ['', 1, 0, true],
     ['0', 2, 1, true],
+    ['$LOOP_PREV.reset-round-evidence.output.round', 3, 0, false],
+    ['null', 1, 0, true],
   ])('previous round %p of %d rounds -> round %d, last %p', (previous, rounds, round, last) => {
     expect(startRound(evidence, previous, rounds)).toEqual({ round, last });
   });
@@ -205,6 +207,13 @@ describe('checkProgress (check-acceptance-progress)', () => {
 
   test('a missing tested revision counts as progress', () => {
     expect(settle(true, true).progressed).toBe(true);
+  });
+
+  test('a git failure is an error, not progress', () => {
+    put(FILES.testedRevision, `${box.head()}\n`);
+    const broken: typeof box.exec = (command, args, options) =>
+      command === 'git' && args[0] === 'status' ? { status: 128, stdout: '', stderr: 'fatal\n' } : box.exec(command, args, options);
+    expect(() => checkProgress(broken, evidence, true, true)).toThrow('could not inspect the worktree');
   });
 });
 

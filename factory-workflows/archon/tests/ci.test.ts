@@ -389,6 +389,16 @@ describe('waitForCi', () => {
     expect(graphql?.args).toContain('prNumber=86');
   });
 
+  test.each(['reviewThreads', 'comments'])('more than one page of %s is an error, not passed', field => {
+    const page = { reviewThreads: { nodes: [] }, comments: { nodes: [] } } as Record<string, object>;
+    page[field] = { pageInfo: { hasNextPage: true }, nodes: [] };
+    const graph = JSON.stringify({ data: { repository: { pullRequest: { author: user('pr-author'), ...page } } } });
+    installGh({ mergeable: 'MERGEABLE', graph });
+    const { result } = wait();
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('more than 100 review threads or top-level comments');
+  });
+
   test('a failed comment fetch is an error', () => {
     installGh({ mergeable: 'MERGEABLE', graph: { status: 1, stderr: 'graphql down\n' } });
     const { result } = wait();

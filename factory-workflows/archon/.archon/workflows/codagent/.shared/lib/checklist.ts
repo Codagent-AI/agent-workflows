@@ -47,9 +47,11 @@ export function checkImplementorChecklist(exec: Exec, input: ImplementorChecklis
   const now = status(exec, ['--untracked-files=all']);
   if (now === undefined) return fail('could not inspect the worktree');
   const before = new Set(input.preListStatus.split('\n'));
+  // A porcelain line is `XY <path>`; only the checklist's own line is allowed. Quoted paths
+  // and renames never equal the checklist path, so they count as other changes.
   const other = now
     .split('\n')
-    .filter(line => line !== '' && !line.includes(list) && !before.has(line));
+    .filter(line => line !== '' && line.slice(3) !== list && !before.has(line));
   if (other.length > 0) {
     return fail([`implementor-checklist changed files other than ${list}:`, ...other]);
   }

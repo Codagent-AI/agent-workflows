@@ -110,8 +110,11 @@ interface GraphComment {
 
 interface GraphPullRequest {
   author?: GraphAuthor | null;
-  reviewThreads?: { nodes?: { isResolved: boolean; comments?: { nodes?: GraphComment[] } }[] };
-  comments?: { nodes?: GraphComment[] };
+  reviewThreads?: {
+    pageInfo?: { hasNextPage?: boolean };
+    nodes?: { isResolved: boolean; comments?: { nodes?: GraphComment[] } }[];
+  };
+  comments?: { pageInfo?: { hasNextPage?: boolean }; nodes?: GraphComment[] };
 }
 
 const isBot = (author: GraphAuthor | null | undefined): boolean => author?.__typename === 'Bot';
@@ -178,12 +181,16 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
     pullRequest(number: $prNumber) {
       author { __typename login }
       reviewThreads(first: 100) {
+        pageInfo { hasNextPage }
         nodes {
           isResolved
           comments(first: 10) { nodes { author { __typename login } body path line originalLine } }
         }
       }
-      comments(first: 100) { nodes { author { __typename login } body } }
+      comments(first: 100) {
+        pageInfo { hasNextPage }
+        nodes { author { __typename login } body }
+      }
     }
   }
 }`;
@@ -203,7 +210,12 @@ function fetchComments(exec: Exec, owner: string, repo: string, number: number):
   ]);
   if (result.status !== 0) return `failed to fetch PR comments: ${result.stderr.trim()}`;
   const parsed = JSON.parse(result.stdout) as { data?: { repository?: { pullRequest?: GraphPullRequest } } };
-  return classifyComments(parsed.data?.repository?.pullRequest ?? {});
+  const pr = parsed.data?.repository?.pullRequest ?? {};
+  // Feedback past the first page would be unseen, so the round cannot report it as passed.
+  if (pr.reviewThreads?.pageInfo?.hasNextPage || pr.comments?.pageInfo?.hasNextPage) {
+    return 'the PR has more than 100 review threads or top-level comments; read them on GitHub';
+  }
+  return classifyComments(pr);
 }
 
 /** The final status, by the wait-ci skill's precedence. */

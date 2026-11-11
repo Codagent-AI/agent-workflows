@@ -73,7 +73,9 @@ export interface Round {
 export function startRound(evidenceDir: string, previousRound: string, rounds: number): Round {
   rmSync(join(evidenceDir, FILES.roundStatus), { force: true });
   rmSync(join(evidenceDir, FILES.handoff), { force: true });
-  const round = previousRound.trim() === '' ? 0 : Number(previousRound) + 1;
+  // The first iteration has no previous output; anything that is not a round number means none.
+  const previous = previousRound.trim();
+  const round = /^[0-9]+$/.test(previous) ? Number(previous) + 1 : 0;
   return { round, last: round + 1 >= rounds };
 }
 
@@ -105,10 +107,14 @@ export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean, sto
   if (!fix) return { progressed: true, push: false };
   if (!stopUnchanged) return { progressed: true, push: true };
   const tested = lastLine(join(evidenceDir, FILES.testedRevision)).replace(/\s/g, '');
+  const current = head(exec);
+  const changes = status(exec, ['--untracked-files=no']);
+  // A git failure must not read as progress, or the stop option would push and retest.
+  if (current === undefined || changes === undefined) {
+    throw new Error('could not inspect the worktree to decide whether the acceptance fix made progress');
+  }
   const progressed =
-    head(exec) !== tested ||
-    status(exec, ['--untracked-files=no']) !== '' ||
-    nonEmptyFile(join(evidenceDir, FILES.retestReason));
+    current !== tested || changes !== '' || nonEmptyFile(join(evidenceDir, FILES.retestReason));
   return { progressed, push: progressed };
 }
 
