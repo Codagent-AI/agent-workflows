@@ -48,7 +48,7 @@ entry_points:
       # Biome lint (complexity, function and file size) and jscpd duplication
       # over the TypeScript and workflow YAML.
       - archon-lint:
-          command: bun install --frozen-lockfile --silent && bun run lint
+          command: bun run lint:ci
           working_directory: factory-workflows/archon
       # The TypeScript check modules, against temporary git repositories and
       # fake gh and openspec commands.

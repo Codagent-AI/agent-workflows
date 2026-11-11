@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "lint": "biome lint --error-on-warnings . && jscpd && tsc --noEmit",
+    "lint:ci": "bun install --frozen-lockfile --silent && bun run lint",
     "test": "bun test tests/",
     "test:fixtures": "bun tests/run-fixtures.ts"
   },
