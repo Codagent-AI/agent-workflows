@@ -1,8 +1,0 @@
-# Repository default: the baseline role bindings, so `archon validate workflows`
-# resolves the role aliases here. Runs against another checkout read that
-# checkout's config instead, so pass roles/<file>.yaml with --config.
-aliases:
-  '@lead': { provider: claude, model: claude-sonnet-5-5, effort: high }
-  '@crosscheck': { provider: codex, model: gpt-6.1-sol, effort: high }
-  '@implementor': { provider: codex, model: gpt-6.1-sol, effort: medium }
-  '@tester': { provider: codex, model: gpt-6-luna, effort: medium }
