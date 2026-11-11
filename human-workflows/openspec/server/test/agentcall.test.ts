@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
 import { readConfig } from "../src/config.js";
-import { CHANGE, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
+import { CHANGE, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
 
 const SESSION_VARS = {
   CLAUDECODE: "1",
@@ -40,7 +40,7 @@ test("a Claude lead gets a read-only Codex child with this plugin turned off", a
   assert.equal(body.response, "codex review: no consequential findings.");
   assert.equal(body.working_tree, "unchanged");
 
-  const child = fakeLog(fixture).find((entry) => entry.bin === "codex")!;
+  const child = fakeCall(fixture, "codex");
   const lastMessage = child.args[child.args.indexOf("-o") + 1];
   assert.deepEqual(child.args, [
     "exec",
@@ -70,7 +70,7 @@ test("a Codex lead gets a Claude child with no settings, no MCP servers, and rea
   assert.equal(body.cli, "claude");
   assert.equal(body.cost_usd, 0.25);
 
-  const child = fakeLog(fixture).find((entry) => entry.bin === "claude")!;
+  const child = fakeCall(fixture, "claude");
   assert.deepEqual(child.args, [
     "-p",
     "--output-format",
@@ -103,7 +103,7 @@ test("the other CLI's config entry sets the child's model and effort", async () 
   assert.equal(body.cli, "codex");
   assert.equal(body.model, "gpt-6-astra");
   assert.equal(body.effort, "xhigh");
-  const args = fakeLog(fixture).find((entry) => entry.bin === "codex")!.args;
+  const args = fakeCall(fixture, "codex").args;
   assert.deepEqual(args.slice(args.indexOf("-c"), args.indexOf("-c") + 4), ["-c", 'model_reasoning_effort="xhigh"', "-m", "gpt-6-astra"]);
 });
 
@@ -114,7 +114,7 @@ test("with only the lead's CLI in the config, the crosscheck runs on the lead's 
   assert.equal(body.cli, "claude");
   assert.equal(body.model, "sonnet");
   assert.equal(body.effort, "medium");
-  const args = fakeLog(fixture).find((entry) => entry.bin === "claude")!.args;
+  const args = fakeCall(fixture, "claude").args;
   assert.deepEqual(args.slice(args.indexOf("--effort"), args.indexOf("--effort") + 4), ["--effort", "medium", "--model", "sonnet"]);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
 });
@@ -192,7 +192,7 @@ test("the Codex child turns off the marketplace this plugin was installed from",
   const cached = session({ ...context, pluginRoot: `${context.pluginRoot}/../../../plugins/cache/my-market/define-openspec-change/0.1.0` });
   // The step prompt files are not under the fake cache path, but the child command is built before they matter.
   await cached.calls.start("crosscheck", "Review.");
-  const args = fakeLog(fixture).find((entry) => entry.bin === "codex")!.args;
+  const args = fakeCall(fixture, "codex").args;
   assert.ok(args.includes('plugins.define-openspec-change@agent-workflows.enabled=false'));
   assert.ok(args.includes('plugins.define-openspec-change@my-market.enabled=false'));
 });

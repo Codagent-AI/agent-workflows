@@ -25,17 +25,16 @@ async function guarded(work: () => Promise<ToolText>) {
   }
 }
 
-/** Builds the MCP server. `context.clientName` should read the connected client's name. */
-export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CallManager } {
-  const server = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } },
-  );
-  const context = makeContext(server);
-  const calls = new CallManager(context);
-  /** The session directory for this call: from Codex's `_meta`, or where the server started. */
-  const cwdFor = (extra: { _meta?: unknown }) => sessionCwdFromMeta(extra._meta) ?? context.cwd;
+interface ToolDeps {
+  server: McpServer;
+  context: Context;
+  calls: CallManager;
+  /** The session directory for a call: from Codex's `_meta`, or where the server started. */
+  cwdFor: (extra: { _meta?: unknown }) => string;
+}
 
+/** Registers next_step. */
+function registerNextStep({ server, context, calls, cwdFor }: ToolDeps): void {
   server.registerTool(
     "next_step",
     {
@@ -58,7 +57,10 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
     },
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls, args)),
   );
+}
 
+/** Registers call_agent. */
+function registerCallAgent({ server, calls, cwdFor }: ToolDeps): void {
   server.registerTool(
     "call_agent",
     {
@@ -75,7 +77,10 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
     },
     async ({ agent, prompt }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra))),
   );
+}
 
+/** Registers get_agent_call. */
+function registerGetAgentCall({ server, calls }: ToolDeps): void {
   server.registerTool(
     "get_agent_call",
     {
@@ -88,7 +93,10 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
     },
     async ({ call_id }) => guarded(() => calls.get(call_id)),
   );
+}
 
+/** Registers cancel_agent_call. */
+function registerCancelAgentCall({ server, calls }: ToolDeps): void {
   server.registerTool(
     "cancel_agent_call",
     {
@@ -99,6 +107,20 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
     },
     async ({ call_id }) => guarded(() => calls.cancel(call_id)),
   );
+}
 
+/** Builds the MCP server. `context.clientName` should read the connected client's name. */
+export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CallManager } {
+  const server = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } },
+  );
+  const context = makeContext(server);
+  const calls = new CallManager(context);
+  const deps: ToolDeps = { server, context, calls, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
+  registerNextStep(deps);
+  registerCallAgent(deps);
+  registerGetAgentCall(deps);
+  registerCancelAgentCall(deps);
   return { server, calls };
 }

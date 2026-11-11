@@ -14591,7 +14591,7 @@ var require_dist2 = __commonJS({
 
 // src/main.ts
 import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync3 } from "node:fs";
-import { dirname, join as join8 } from "node:path";
+import { dirname, join as join10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
@@ -20741,6 +20741,14 @@ import { join } from "node:path";
 
 // src/proc.ts
 import { spawn } from "node:child_process";
+function spawnPiped(command, args, options) {
+  return spawn(command, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: options.timeoutMs ?? 12e4
+  });
+}
 function run(command, args, options) {
   return new Promise((resolve) => {
     let stdout = "";
@@ -20754,12 +20762,7 @@ function run(command, args, options) {
     };
     let child;
     try {
-      child = spawn(command, args, {
-        cwd: options.cwd,
-        env: options.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: options.timeoutMs ?? 12e4
-      });
+      child = spawnPiped(command, args, options);
     } catch (error2) {
       finish({ code: null, stdout, stderr, launchError: String(error2) });
       return;
@@ -20778,7 +20781,7 @@ function output(result) {
 }
 function tail(text, max = 2e3) {
   const trimmed = text.trim();
-  return trimmed.length <= max ? trimmed : "..." + trimmed.slice(trimmed.length - max);
+  return trimmed.length <= max ? trimmed : `...${trimmed.slice(trimmed.length - max)}`;
 }
 
 // src/context.ts
@@ -20809,7 +20812,8 @@ function logEvent(context, root, event, fields = {}) {
     const dir = repoLogDir(context, root);
     mkdirSync(dir, { recursive: true });
     const line = JSON.stringify({ at: context.now().toISOString(), event, pid: process.pid, root, ...fields });
-    appendFileSync(join(dir, "events.jsonl"), line + "\n");
+    appendFileSync(join(dir, "events.jsonl"), `${line}
+`);
   } catch {
   }
 }
@@ -28985,10 +28989,140 @@ var EMPTY_COMPLETION_RESULT = {
 };
 
 // src/agentcall.ts
+import { existsSync as existsSync3 } from "node:fs";
+
+// src/call.ts
+function errorText(code, message, extra = {}) {
+  return { text: JSON.stringify({ error: { code, message }, ...extra }, null, 2), isError: true };
+}
+function formatElapsed(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1e3));
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+}
+function snapshotOf(call, now) {
+  const end = call.endedAt ?? now;
+  const base = {
+    status: call.status,
+    call_id: call.id,
+    cli: call.cli,
+    model: call.model ?? "default",
+    effort: call.effort,
+    elapsed: formatElapsed(end.getTime() - call.startedAt.getTime())
+  };
+  if (call.status === "running") {
+    base.next = "Call get_agent_call with this call_id to keep waiting. This is not the child's answer.";
+    return { text: JSON.stringify(base, null, 2) };
+  }
+  base.working_tree = call.workingTree ?? "unknown";
+  if (call.costUsd !== void 0) {
+    base.cost_usd = call.costUsd;
+  }
+  if (call.error) {
+    base.error = call.error;
+  }
+  if (call.response !== void 0) {
+    base.response = call.response;
+  }
+  return { text: JSON.stringify(base, null, 2), isError: call.status === "failed" };
+}
+
+// src/calloutcome.ts
+import { readFileSync } from "node:fs";
+import { join as join2 } from "node:path";
+var MAX_RESPONSE_CHARS = 2e5;
+function describeExit(exit) {
+  return exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code}`;
+}
+function readText(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return "";
+  }
+}
+function lastCodexErrors(jsonl) {
+  const messages = [];
+  for (const line of jsonl.split("\n")) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === "error" && event.message) {
+        messages.push(event.message);
+      } else if (event.type === "turn.failed" && event.error?.message) {
+        messages.push(event.error.message);
+      }
+    } catch {
+    }
+  }
+  return messages.slice(-3).join("\n");
+}
+function capResponse(text) {
+  return text.length <= MAX_RESPONSE_CHARS ? text : `${text.slice(0, MAX_RESPONSE_CHARS)}
+
+[response truncated at ${MAX_RESPONSE_CHARS} characters]`;
+}
+function succeed(call, response) {
+  call.status = "succeeded";
+  call.response = capResponse(response);
+}
+function fail(call, code, message) {
+  call.status = "failed";
+  call.error = { code, message };
+}
+function codexOutcome(call, exit) {
+  const last = readText(join2(call.dir, "last-message.txt")).trim();
+  if (exit.code === 0 && last !== "") {
+    succeed(call, last);
+    return;
+  }
+  const detail = [lastCodexErrors(readText(join2(call.dir, "stdout"))), tail(readText(join2(call.dir, "stderr")), 1500)].filter(Boolean).join("\n");
+  fail(call, "execution_failed", `codex ended with ${describeExit(exit)} and no final message. ${detail}`.trim());
+}
+function parseClaudeResult(stdout) {
+  try {
+    return JSON.parse(stdout.trim());
+  } catch {
+    return void 0;
+  }
+}
+function claudeAnswer(parsed, code) {
+  if (code === 0 && parsed && parsed.is_error !== true && typeof parsed.result === "string" && parsed.result.trim() !== "") {
+    return parsed.result.trim();
+  }
+  return void 0;
+}
+function claudeOutcome(call, exit) {
+  const parsed = parseClaudeResult(readText(join2(call.dir, "stdout")));
+  if (typeof parsed?.total_cost_usd === "number") {
+    call.costUsd = parsed.total_cost_usd;
+  }
+  const answer = claudeAnswer(parsed, exit.code);
+  if (answer !== void 0) {
+    succeed(call, answer);
+    return;
+  }
+  const reported = typeof parsed?.result === "string" ? parsed.result : parsed?.subtype ?? "";
+  const stderr = tail(readText(join2(call.dir, "stderr")), 1500);
+  fail(call, "execution_failed", `claude ended with ${describeExit(exit)}. ${[reported, stderr].filter(Boolean).join("\n")}`.trim());
+}
+function applyOutcome(call, exit) {
+  if (call.cancelRequested) {
+    call.status = "canceled";
+    call.error = { code: "call_canceled", message: `The call was canceled (${describeExit(exit)}).` };
+  } else if (exit.launchError) {
+    fail(call, "launch_failed", exit.launchError);
+  } else if (call.cli === "codex") {
+    codexOutcome(call, exit);
+  } else {
+    claudeOutcome(call, exit);
+  }
+}
+
+// src/callchild.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash2, randomBytes } from "node:crypto";
-import { closeSync, existsSync as existsSync3, mkdirSync as mkdirSync2, openSync, readFileSync as readFileSync4, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join5 } from "node:path";
+import { randomBytes } from "node:crypto";
+import { closeSync, mkdirSync as mkdirSync2, openSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
 
 // src/child.ts
 var PLUGIN_NAME = "define-openspec-change";
@@ -29075,11 +29209,43 @@ function childEnv(env) {
   return clean;
 }
 
+// src/callchild.ts
+function prepareChild(context, root, prompt, choice) {
+  const id = `call-${randomBytes(4).toString("hex")}`;
+  const dir = join3(repoLogDir(context, root), id);
+  mkdirSync2(dir, { recursive: true });
+  const lastMessageFile = join3(dir, "last-message.txt");
+  const command = childCommand({ ...choice, prompt, pluginRoot: context.pluginRoot, lastMessageFile });
+  writeFileSync(join3(dir, "prompt.txt"), prompt);
+  writeFileSync(join3(dir, "command.json"), JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2));
+  return { id, dir, command };
+}
+function spawnLogged(command, dir, root, env) {
+  const stdoutFd = openSync(join3(dir, "stdout"), "w");
+  const stderrFd = openSync(join3(dir, "stderr"), "w");
+  const closeLogs = () => {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+  };
+  try {
+    const child = spawn2(command.command, command.args, {
+      cwd: root,
+      env: childEnv(env),
+      stdio: ["ignore", stdoutFd, stderrFd],
+      detached: true
+    });
+    return { child, closeLogs };
+  } catch (error2) {
+    closeLogs();
+    throw error2;
+  }
+}
+
 // src/config.ts
 var import_yaml = __toESM(require_dist2(), 1);
-import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync as readFileSync2, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join as join2 } from "node:path";
+import { delimiter, join as join4 } from "node:path";
 var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 var DEFAULT_EFFORT = "high";
 var CLIS = ["claude", "codex"];
@@ -29087,7 +29253,7 @@ var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
 var ENTRY_KEYS = /* @__PURE__ */ new Set(["cli", "model", "effort"]);
 var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
 function configPath(env) {
-  return join2(env.HOME || homedir(), ".agent-workflows", "config.yaml");
+  return join4(env.HOME || homedir(), ".agent-workflows", "config.yaml");
 }
 function invalid(path, problem) {
   return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
@@ -29099,6 +29265,54 @@ function optionalString(entry, key) {
   }
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
+function isMapping(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function crosscheckList(root) {
+  const section = root["human-workflows"];
+  const list = isMapping(section) ? section.crosscheck : void 0;
+  if (Array.isArray(list) && list.length > 0) {
+    return list;
+  }
+  if (root.crosscheck !== void 0) {
+    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.";
+  }
+  return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
+}
+function parseEntry(raw, index, earlier) {
+  const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
+  if (!isMapping(raw)) {
+    return `${where} must be a mapping with cli, model, and effort.`;
+  }
+  const unknown2 = Object.keys(raw).filter((key) => !ENTRY_KEYS.has(key));
+  if (unknown2.length > 0) {
+    return `${where} has unknown keys: ${unknown2.join(", ")}. Allowed: cli, model, effort.`;
+  }
+  const cli = raw.cli;
+  if (cli !== "claude" && cli !== "codex") {
+    return `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`;
+  }
+  if (earlier.some((existing) => existing.cli === cli)) {
+    return `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`;
+  }
+  const model = optionalString(raw, "model");
+  const effort = optionalString(raw, "effort");
+  if (model === null || effort === null) {
+    return `${where}: model and effort must be non-empty text when given.`;
+  }
+  return model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT };
+}
+function parseEntries(list) {
+  const entries = [];
+  for (const [index, raw] of list.entries()) {
+    const entry = parseEntry(raw, index, entries);
+    if (typeof entry === "string") {
+      return entry;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
 function readConfig(env) {
   const path = configPath(env);
   if (!existsSync(path)) {
@@ -29106,52 +29320,20 @@ function readConfig(env) {
   }
   let doc;
   try {
-    doc = (0, import_yaml.parse)(readFileSync(path, "utf8"));
+    doc = (0, import_yaml.parse)(readFileSync2(path, "utf8"));
   } catch (error2) {
     return invalid(path, error2.message);
   }
-  const root = doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {};
-  const section = root["human-workflows"];
-  const list = section && typeof section === "object" && !Array.isArray(section) ? section.crosscheck : void 0;
-  if (!Array.isArray(list) || list.length === 0) {
-    if (root.crosscheck !== void 0) {
-      return invalid(path, "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.");
-    }
-    return invalid(path, `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`);
-  }
-  const entries = [];
-  for (const [index, raw] of list.entries()) {
-    const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return invalid(path, `${where} must be a mapping with cli, model, and effort.`);
-    }
-    const entry = raw;
-    const unknown2 = Object.keys(entry).filter((key) => !ENTRY_KEYS.has(key));
-    if (unknown2.length > 0) {
-      return invalid(path, `${where} has unknown keys: ${unknown2.join(", ")}. Allowed: cli, model, effort.`);
-    }
-    const cli = entry.cli;
-    if (cli !== "claude" && cli !== "codex") {
-      return invalid(path, `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`);
-    }
-    if (entries.some((existing) => existing.cli === cli)) {
-      return invalid(path, `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`);
-    }
-    const model = optionalString(entry, "model");
-    const effort = optionalString(entry, "effort");
-    if (model === null || effort === null) {
-      return invalid(path, `${where}: model and effort must be non-empty text when given.`);
-    }
-    entries.push(model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT });
-  }
-  return { ok: true, path, crosscheck: entries };
+  const list = crosscheckList(isMapping(doc) ? doc : {});
+  const entries = typeof list === "string" ? list : parseEntries(list);
+  return typeof entries === "string" ? invalid(path, entries) : { ok: true, path, crosscheck: entries };
 }
 function onPath(command, env) {
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "") {
       continue;
     }
-    const candidate = join2(dir, command);
+    const candidate = join4(dir, command);
     try {
       if (statSync(candidate).isFile()) {
         accessSync(candidate, constants.X_OK);
@@ -29186,12 +29368,12 @@ function resolveCrosscheck(lead, env) {
 }
 
 // src/state.ts
-import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync4, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // src/steps.ts
-import { readFileSync as readFileSync2 } from "node:fs";
-import { join as join3 } from "node:path";
+import { readFileSync as readFileSync3 } from "node:fs";
+import { join as join5 } from "node:path";
 var WORKFLOW_NAME = "define-openspec-change";
 var WORKFLOW_DESCRIPTION = "Interactively define a structured change through proposal, specification, design, and testing strategy.";
 var STEP_IDS = ["proposal", "specs", "design", "test-plan", "approach-review"];
@@ -29209,8 +29391,8 @@ function changeDirFor(changeName) {
   return `openspec/changes/${changeName}`;
 }
 function stepBody(pluginRoot2, step, changeName) {
-  const template = readFileSync2(join3(pluginRoot2, "steps", `${step}.md`), "utf8");
-  const filled = template.replaceAll("{{change_name}}", changeName).replaceAll("{{skills_dir}}", join3(pluginRoot2, "skills"));
+  const template = readFileSync3(join5(pluginRoot2, "steps", `${step}.md`), "utf8");
+  const filled = template.replaceAll("{{change_name}}", changeName).replaceAll("{{skills_dir}}", join5(pluginRoot2, "skills"));
   const leftover = filled.match(/\{\{[^}]*\}\}/);
   if (leftover) {
     throw new Error(`step prompt ${step}.md has an unknown placeholder ${leftover[0]}`);
@@ -29256,7 +29438,7 @@ var STATE_FILE = ".define-openspec-change.json";
 var StateError = class extends Error {
 };
 function statePath(root, changeName) {
-  return join4(root, changeDirFor(changeName), STATE_FILE);
+  return join6(root, changeDirFor(changeName), STATE_FILE);
 }
 function newState(changeName, at, lead) {
   return {
@@ -29281,7 +29463,7 @@ function readState(root, changeName) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync3(path, "utf8"));
+    parsed = JSON.parse(readFileSync4(path, "utf8"));
   } catch (error2) {
     throw new StateError(`${path} is not valid JSON: ${error2.message}`);
   }
@@ -29297,20 +29479,21 @@ function readState(root, changeName) {
 }
 function readStateText(root, changeName) {
   const path = statePath(root, changeName);
-  return existsSync2(path) ? readFileSync3(path, "utf8") : void 0;
+  return existsSync2(path) ? readFileSync4(path, "utf8") : void 0;
 }
 function writeStateText(root, changeName, text) {
   const path = statePath(root, changeName);
   const temporary = `${path}.tmp-${process.pid}`;
-  writeFileSync(temporary, text);
+  writeFileSync2(temporary, text);
   renameSync(temporary, path);
 }
 function writeState(root, state, at) {
   state.updated_at = at;
-  writeStateText(root, state.change_name, JSON.stringify(state, null, 2) + "\n");
+  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}
+`);
 }
 function inProgressChanges(root) {
-  const changes = join4(root, "openspec", "changes");
+  const changes = join6(root, "openspec", "changes");
   if (!existsSync2(changes)) {
     return [];
   }
@@ -29333,17 +29516,20 @@ function completedSteps(state) {
   return STEP_IDS.filter((step) => state.steps[step]?.completed_at !== void 0);
 }
 
-// src/agentcall.ts
-var CROSSCHECK_AGENT = "crosscheck";
-var MAX_RESPONSE_CHARS = 2e5;
-var KILL_GRACE_MS = 1e4;
-function errorText(code, message, extra = {}) {
-  return { text: JSON.stringify({ error: { code, message }, ...extra }, null, 2), isError: true };
-}
-function formatElapsed(ms) {
-  const seconds = Math.max(0, Math.round(ms / 1e3));
-  const minutes = Math.floor(seconds / 60);
-  return minutes > 0 ? `${minutes}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
+// src/worktree.ts
+import { createHash as createHash2 } from "node:crypto";
+import { readFileSync as readFileSync5, statSync as statSync2 } from "node:fs";
+import { join as join7 } from "node:path";
+function hashUntracked(hash, root, file) {
+  hash.update(file).update("\0");
+  try {
+    const path = join7(root, file);
+    if (statSync2(path).isFile()) {
+      hash.update(readFileSync5(path));
+    }
+  } catch {
+    hash.update("<unreadable>");
+  }
 }
 async function workingTreeFingerprint(root, env) {
   const git = (...args) => run("git", args, { cwd: root, env });
@@ -29355,44 +29541,28 @@ async function workingTreeFingerprint(root, env) {
   const untracked = await git("ls-files", "-o", "--exclude-standard", "-z");
   const hash = createHash2("sha256").update(status.stdout).update("\0").update(diff.stdout).update("\0");
   for (const file of untracked.stdout.split("\0").filter(Boolean).sort()) {
-    hash.update(file).update("\0");
-    try {
-      const path = join5(root, file);
-      if (statSync2(path).isFile()) {
-        hash.update(readFileSync4(path));
-      }
-    } catch {
-      hash.update("<unreadable>");
-    }
+    hashUntracked(hash, root, file);
   }
   return hash.digest("hex");
 }
-function readText(path) {
-  try {
-    return readFileSync4(path, "utf8");
-  } catch {
-    return "";
+function compareFingerprints(before, after) {
+  if (before === void 0 || after === void 0) {
+    return "unknown";
   }
+  return before === after ? "unchanged" : "changed";
 }
-function lastCodexErrors(jsonl) {
-  const messages = [];
-  for (const line of jsonl.split("\n")) {
-    try {
-      const event = JSON.parse(line);
-      if (event.type === "error" && event.message) {
-        messages.push(event.message);
-      } else if (event.type === "turn.failed" && event.error?.message) {
-        messages.push(event.error.message);
-      }
-    } catch {
+
+// src/agentcall.ts
+var CROSSCHECK_AGENT = "crosscheck";
+var KILL_GRACE_MS = 1e4;
+function findCallOwner(root) {
+  const states = inProgressChanges(root).map((name) => ({ name, state: readState(root, name) }));
+  for (const { name, state } of states) {
+    if (state?.current_step && CALL_STEPS.includes(state.current_step)) {
+      return { changeName: name, step: state.current_step };
     }
   }
-  return messages.slice(-3).join("\n");
-}
-function capResponse(text) {
-  return text.length <= MAX_RESPONSE_CHARS ? text : text.slice(0, MAX_RESPONSE_CHARS) + `
-
-[response truncated at ${MAX_RESPONSE_CHARS} characters]`;
+  return void 0;
 }
 var CallManager = class {
   constructor(context) {
@@ -29404,119 +29574,26 @@ var CallManager = class {
     return this.active?.status === "running" ? this.active : void 0;
   }
   async start(agent, prompt, cwd = this.context.cwd) {
-    if (agent !== CROSSCHECK_AGENT) {
-      return errorText("invalid_target", `agent must be "${CROSSCHECK_AGENT}", the only target this plugin supports.`);
+    const refusal = this.startRefusal(agent, prompt);
+    if (refusal) {
+      return refusal;
     }
-    if (prompt.trim() === "") {
-      return errorText("invalid_request", "prompt is required.");
+    const plan = await this.planStart(cwd);
+    if ("text" in plan) {
+      return plan;
     }
-    const busy = this.running();
-    if (busy) {
-      return errorText(
-        "call_in_progress",
-        `Call ${busy.id} is still running. Poll it with get_agent_call or stop it with cancel_agent_call before starting another.`,
-        { call_id: busy.id }
-      );
-    }
-    let root;
-    try {
-      root = await repoRoot({ ...this.context, cwd });
-    } catch (error2) {
-      return errorText("call_agent_unavailable", error2.message);
-    }
-    const owner = inProgressChanges(root).map((name) => readState(root, name)).find((state) => state?.current_step !== null && state !== void 0 && CALL_STEPS.includes(state.current_step));
-    if (!owner || owner.current_step === null) {
-      return errorText(
-        "call_agent_unavailable",
-        "call_agent is only available during the proposal and approach-review steps of a define that is in progress."
-      );
-    }
-    const lead = detectLead(this.context.clientName(), this.context.env);
-    const choice = resolveCrosscheck(lead, this.context.env);
-    if (typeof choice === "string") {
-      return errorText("crosscheck_not_configured", choice);
-    }
-    const id = `call-${randomBytes(4).toString("hex")}`;
-    const dir = join5(repoLogDir(this.context, root), id);
-    mkdirSync2(dir, { recursive: true });
-    const lastMessageFile = join5(dir, "last-message.txt");
-    const command = childCommand({ ...choice, prompt, pluginRoot: this.context.pluginRoot, lastMessageFile });
-    writeFileSync2(join5(dir, "prompt.txt"), prompt);
-    writeFileSync2(join5(dir, "command.json"), JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2));
-    let resolveDone = () => {
-    };
-    const call = {
-      id,
-      cli: choice.cli,
-      effort: choice.effort,
-      root,
-      changeName: owner.change_name,
-      step: owner.current_step,
-      dir,
-      startedAt: this.context.now(),
-      status: "running",
-      done: new Promise((resolve) => resolveDone = resolve),
-      cancelRequested: false,
-      ...choice.model === void 0 ? {} : { model: choice.model }
-    };
-    call.fingerprintBefore = await workingTreeFingerprint(root, this.context.env);
-    this.calls.set(id, call);
-    this.active = call;
-    const stdoutFd = openSync(join5(dir, "stdout"), "w");
-    const stderrFd = openSync(join5(dir, "stderr"), "w");
-    let child;
-    try {
-      child = spawn2(command.command, command.args, {
-        cwd: root,
-        env: childEnv(this.context.env),
-        stdio: ["ignore", stdoutFd, stderrFd],
-        detached: true
-      });
-    } catch (error2) {
-      closeSync(stdoutFd);
-      closeSync(stderrFd);
-      await this.settle(call, null, null, `could not start ${command.command}: ${error2.message}`);
-      resolveDone();
-      return this.snapshot(call);
-    }
-    call.child = child;
-    logEvent(this.context, root, "call_start", {
-      call_id: id,
-      cli: call.cli,
-      model: call.model,
-      effort: call.effort,
-      step: call.step,
-      child_pid: child.pid
-    });
-    let finished = false;
-    const finish = (code, signal, launchError) => {
-      if (finished) {
-        return;
-      }
-      finished = true;
-      closeSync(stdoutFd);
-      closeSync(stderrFd);
-      void this.settle(call, code, signal, launchError).finally(resolveDone);
-    };
-    child.on("error", (error2) => {
-      if (child.pid === void 0) {
-        finish(null, null, `could not start ${command.command}: ${error2.message}`);
-      }
-    });
-    child.on("close", (code, signal) => finish(code, signal));
-    return this.wait(call);
+    const { id, dir, command } = prepareChild(this.context, plan.root, prompt, plan.choice);
+    const call = await this.register(plan, id, dir);
+    return this.launch(call, command);
   }
   async get(callId) {
     const call = this.calls.get(callId.trim());
-    if (!call) {
-      return errorText("unknown_call", `No call with call_id ${JSON.stringify(callId)} was started by this server.`);
-    }
-    return this.wait(call);
+    return call ? this.wait(call) : unknownCall(callId);
   }
   async cancel(callId) {
     const call = this.calls.get(callId.trim());
     if (!call) {
-      return errorText("unknown_call", `No call with call_id ${JSON.stringify(callId)} was started by this server.`);
+      return unknownCall(callId);
     }
     if (call.status !== "running") {
       return this.snapshot(call);
@@ -29536,6 +29613,113 @@ var CallManager = class {
         this.signal(call, "SIGTERM");
       }
     }
+  }
+  /** The refusal for a bad request or a call already running, if any. */
+  startRefusal(agent, prompt) {
+    if (agent !== CROSSCHECK_AGENT) {
+      return errorText("invalid_target", `agent must be "${CROSSCHECK_AGENT}", the only target this plugin supports.`);
+    }
+    if (prompt.trim() === "") {
+      return errorText("invalid_request", "prompt is required.");
+    }
+    const busy = this.running();
+    if (busy) {
+      return errorText(
+        "call_in_progress",
+        `Call ${busy.id} is still running. Poll it with get_agent_call or stop it with cancel_agent_call before starting another.`,
+        { call_id: busy.id }
+      );
+    }
+    return void 0;
+  }
+  /** Finds the repository, the define the call belongs to, and the crosscheck to run, or says why it cannot. */
+  async planStart(cwd) {
+    let root;
+    try {
+      root = await repoRoot({ ...this.context, cwd });
+    } catch (error2) {
+      return errorText("call_agent_unavailable", error2.message);
+    }
+    const owner = findCallOwner(root);
+    if (!owner) {
+      return errorText(
+        "call_agent_unavailable",
+        "call_agent is only available during the proposal and approach-review steps of a define that is in progress."
+      );
+    }
+    const choice = resolveCrosscheck(detectLead(this.context.clientName(), this.context.env), this.context.env);
+    if (typeof choice === "string") {
+      return errorText("crosscheck_not_configured", choice);
+    }
+    return { root, owner, choice };
+  }
+  /** Creates the call, takes the working-tree fingerprint, and makes it the active call. */
+  async register(plan, id, dir) {
+    const { root, owner, choice } = plan;
+    let markDone = () => {
+    };
+    const call = {
+      id,
+      cli: choice.cli,
+      effort: choice.effort,
+      root,
+      changeName: owner.changeName,
+      step: owner.step,
+      dir,
+      startedAt: this.context.now(),
+      status: "running",
+      done: new Promise((resolve) => {
+        markDone = resolve;
+      }),
+      markDone: () => markDone(),
+      cancelRequested: false,
+      ...choice.model === void 0 ? {} : { model: choice.model }
+    };
+    call.fingerprintBefore = await workingTreeFingerprint(root, this.context.env);
+    this.calls.set(id, call);
+    this.active = call;
+    return call;
+  }
+  /** Starts the child, then waits for it up to the poll window. */
+  async launch(call, command) {
+    let logged;
+    try {
+      logged = spawnLogged(command, call.dir, call.root, this.context.env);
+    } catch (error2) {
+      await this.settle(call, { code: null, signal: null, launchError: launchErrorText(command, error2.message) });
+      call.markDone();
+      return this.snapshot(call);
+    }
+    call.child = logged.child;
+    logEvent(this.context, call.root, "call_start", {
+      call_id: call.id,
+      cli: call.cli,
+      model: call.model,
+      effort: call.effort,
+      step: call.step,
+      child_pid: logged.child.pid
+    });
+    this.watch(call, logged, command);
+    return this.wait(call);
+  }
+  /** Settles the call once, when its child closes or fails to start. */
+  watch(call, logged, command) {
+    const { child, closeLogs } = logged;
+    let finished = false;
+    const finish = (exit) => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      closeLogs();
+      void this.settle(call, exit).finally(call.markDone);
+    };
+    child.on("error", (error2) => {
+      if (child.pid === void 0) {
+        finish({ code: null, signal: null, launchError: launchErrorText(command, error2.message) });
+      }
+    });
+    child.on("close", (code, signal) => finish({ code, signal }));
   }
   signal(call, signal) {
     const pid = call.child?.pid;
@@ -29560,80 +29744,18 @@ var CallManager = class {
     return this.snapshot(call);
   }
   snapshot(call) {
-    const now = call.endedAt ?? this.context.now();
-    const base = {
-      status: call.status,
-      call_id: call.id,
-      cli: call.cli,
-      model: call.model ?? "default",
-      effort: call.effort,
-      elapsed: formatElapsed(now.getTime() - call.startedAt.getTime())
-    };
-    if (call.status === "running") {
-      base.next = "Call get_agent_call with this call_id to keep waiting. This is not the child's answer.";
-      return { text: JSON.stringify(base, null, 2) };
-    }
-    base.working_tree = call.workingTree ?? "unknown";
-    if (call.costUsd !== void 0) {
-      base.cost_usd = call.costUsd;
-    }
-    if (call.error) {
-      base.error = call.error;
-    }
-    if (call.response !== void 0) {
-      base.response = call.response;
-    }
-    return { text: JSON.stringify(base, null, 2), isError: call.status === "failed" };
+    return snapshotOf(call, this.context.now());
   }
-  async settle(call, code, signal, launchError) {
-    const stdout = readText(join5(call.dir, "stdout"));
-    const stderr = readText(join5(call.dir, "stderr"));
-    const exit = signal ? `signal ${signal}` : `exit code ${code}`;
-    if (call.cancelRequested) {
-      call.status = "canceled";
-      call.error = { code: "call_canceled", message: `The call was canceled (${exit}).` };
-    } else if (launchError) {
-      call.status = "failed";
-      call.error = { code: "launch_failed", message: launchError };
-    } else if (call.cli === "codex") {
-      const last = readText(join5(call.dir, "last-message.txt")).trim();
-      if (code === 0 && last !== "") {
-        call.status = "succeeded";
-        call.response = capResponse(last);
-      } else {
-        call.status = "failed";
-        const detail = [lastCodexErrors(stdout), tail(stderr, 1500)].filter(Boolean).join("\n");
-        call.error = { code: "execution_failed", message: `codex ended with ${exit} and no final message. ${detail}`.trim() };
-      }
-    } else {
-      let parsed;
-      try {
-        parsed = JSON.parse(stdout.trim());
-      } catch {
-        parsed = void 0;
-      }
-      if (typeof parsed?.total_cost_usd === "number") {
-        call.costUsd = parsed.total_cost_usd;
-      }
-      if (code === 0 && parsed && parsed.is_error !== true && typeof parsed.result === "string" && parsed.result.trim() !== "") {
-        call.status = "succeeded";
-        call.response = capResponse(parsed.result.trim());
-      } else {
-        call.status = "failed";
-        const reported = typeof parsed?.result === "string" ? parsed.result : parsed?.subtype ?? "";
-        call.error = {
-          code: "execution_failed",
-          message: `claude ended with ${exit}. ${[reported, tail(stderr, 1500)].filter(Boolean).join("\n")}`.trim()
-        };
-      }
-    }
+  /** Reads the child's result, checks whether the working tree changed, logs the end, and records the call. */
+  async settle(call, exit) {
+    applyOutcome(call, exit);
     call.endedAt = this.context.now();
     const after = await workingTreeFingerprint(call.root, this.context.env);
-    call.workingTree = call.fingerprintBefore === void 0 || after === void 0 ? "unknown" : call.fingerprintBefore === after ? "unchanged" : "changed";
+    call.workingTree = compareFingerprints(call.fingerprintBefore, after);
     logEvent(this.context, call.root, "call_end", {
       call_id: call.id,
       status: call.status,
-      exit,
+      exit: describeExit(exit),
       working_tree: call.workingTree,
       cost_usd: call.costUsd
     });
@@ -29643,7 +29765,7 @@ var CallManager = class {
   record(call) {
     try {
       const state = readState(call.root, call.changeName);
-      if (!state || !existsSync3(call.root)) {
+      if (!(state && existsSync3(call.root))) {
         return;
       }
       state.calls.push({
@@ -29662,14 +29784,20 @@ var CallManager = class {
     }
   }
 };
+function unknownCall(callId) {
+  return errorText("unknown_call", `No call with call_id ${JSON.stringify(callId)} was started by this server.`);
+}
+function launchErrorText(command, message) {
+  return `could not start ${command.command}: ${message}`;
+}
 
 // src/define.ts
 import { existsSync as existsSync5 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join9 } from "node:path";
 
 // src/checks.ts
 import { existsSync as existsSync4, readdirSync as readdirSync2, statSync as statSync3 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join8 } from "node:path";
 function isValidChangeName(name) {
   return /^[a-z0-9][a-z0-9-]*$/.test(name);
 }
@@ -29685,11 +29813,11 @@ function nonEmptyFile(path) {
   }
 }
 function nonEmptySpecs(root, changeDir) {
-  const specsDir = join6(root, changeDir, "specs");
+  const specsDir = join8(root, changeDir, "specs");
   if (!existsSync4(specsDir)) {
     return [];
   }
-  return readdirSync2(specsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `${changeDir}/specs/${entry.name}/spec.md`).filter((relative) => nonEmptyFile(join6(root, relative))).sort();
+  return readdirSync2(specsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `${changeDir}/specs/${entry.name}/spec.md`).filter((relative) => nonEmptyFile(join8(root, relative))).sort();
 }
 async function openspecStatuses(root, changeName, env) {
   const result = await run("openspec", ["status", "--change", changeName, "--json"], { cwd: root, env });
@@ -29705,7 +29833,7 @@ async function openspecStatuses(root, changeName, env) {
 }
 async function missingForStep(root, changeName, step, env) {
   const changeDir = changeDirFor(changeName);
-  const fileCheck = (relative) => nonEmptyFile(join6(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
+  const fileCheck = (relative) => nonEmptyFile(join8(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
   let openspecId;
   let missing;
   switch (step) {
@@ -29739,7 +29867,7 @@ async function missingForStep(root, changeName, step, env) {
 function planningArtifactFailures(root, changeDir) {
   const failures = [];
   for (const required2 of ["proposal.md", "design.md", "test-plan.md"]) {
-    if (!nonEmptyFile(join6(root, changeDir, required2))) {
+    if (!nonEmptyFile(join8(root, changeDir, required2))) {
       failures.push(`missing or empty ${changeDir}/${required2}`);
     }
   }
@@ -29750,11 +29878,14 @@ function planningArtifactFailures(root, changeDir) {
 }
 
 // src/finish.ts
+function gitRunner(root, env) {
+  return (...args) => run("git", args, { cwd: root, env });
+}
 function commitMessage(changeName) {
   return `chore: add change documents for ${changeName}`;
 }
 async function defaultBranch(root, env) {
-  const git = (...args) => run("git", args, { cwd: root, env });
+  const git = gitRunner(root, env);
   const originHead = await git("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD");
   if (originHead.code === 0 && originHead.stdout.trim().startsWith("origin/")) {
     return originHead.stdout.trim().slice("origin/".length);
@@ -29787,28 +29918,30 @@ function prBody(state, root) {
     `Validated with \`openspec validate --type change ${state.change_name}\`.`
   ].join("\n");
 }
-async function finishDefine(context, root, state) {
-  const env = context.env;
+async function validationRefusal(context, root, state) {
   const name = state.change_name;
-  const dir = state.change_dir;
-  const git = (...args) => run("git", args, { cwd: root, env });
   const validation = await run("openspec", ["validate", "--type", "change", name, "--no-interactive"], {
     cwd: root,
-    env
+    env: context.env
   });
-  const planning = planningArtifactFailures(root, dir);
-  if (validation.code !== 0 || planning.length > 0) {
-    logEvent(context, root, "finish_refused", { change: name, validation: validation.code, planning });
-    const lines2 = [`Refused: OpenSpec change "${name}" failed validation, so nothing was committed.`];
-    if (validation.code !== 0) {
-      lines2.push("", `openspec validate --type change ${name}:`, tail(output(validation), 4e3));
-    }
-    if (planning.length > 0) {
-      lines2.push("", "Planning artifacts:", ...planning.map((failure) => `- ${failure}`));
-    }
-    lines2.push("", "Fix these with the user, then call next_step again.");
-    return { text: lines2.join("\n"), isError: true };
+  const planning = planningArtifactFailures(root, state.change_dir);
+  if (validation.code === 0 && planning.length === 0) {
+    return void 0;
   }
+  logEvent(context, root, "finish_refused", { change: name, validation: validation.code, planning });
+  const lines = [`Refused: OpenSpec change "${name}" failed validation, so nothing was committed.`];
+  if (validation.code !== 0) {
+    lines.push("", `openspec validate --type change ${name}:`, tail(output(validation), 4e3));
+  }
+  if (planning.length > 0) {
+    lines.push("", "Planning artifacts:", ...planning.map((failure) => `- ${failure}`));
+  }
+  lines.push("", "Fix these with the user, then call next_step again.");
+  return { text: lines.join("\n"), isError: true };
+}
+async function commitChange(context, root, state, git) {
+  const name = state.change_name;
+  const dir = state.change_dir;
   const previous = readStateText(root, name);
   const at = context.now().toISOString();
   state.status = "complete";
@@ -29816,16 +29949,18 @@ async function finishDefine(context, root, state) {
   state.completed_at = at;
   state.steps["approach-review"] = { started_at: state.steps["approach-review"]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
-  const message = commitMessage(name);
   const add = await git("add", "--", dir);
-  const commit = add.code === 0 ? await git("commit", "-m", message, "--", dir) : add;
-  if (commit.code !== 0) {
-    if (previous !== void 0) {
-      writeStateText(root, name, previous);
-    }
-    await git("reset", "-q", "--", dir);
-    logEvent(context, root, "finish_commit_failed", { change: name });
-    return {
+  const commit = add.code === 0 ? await git("commit", "-m", commitMessage(name), "--", dir) : add;
+  if (commit.code === 0) {
+    return { sha: (await git("rev-parse", "--short", "HEAD")).stdout.trim() };
+  }
+  if (previous !== void 0) {
+    writeStateText(root, name, previous);
+  }
+  await git("reset", "-q", "--", dir);
+  logEvent(context, root, "finish_commit_failed", { change: name });
+  return {
+    failure: {
       text: [
         `Validation passed, but committing ${dir}/ failed, so the define is not finished:`,
         tail(output(commit)),
@@ -29833,58 +29968,80 @@ async function finishDefine(context, root, state) {
         "Tell the user what failed. After it is fixed, call next_step again to retry the commit."
       ].join("\n"),
       isError: true
+    }
+  };
+}
+async function leftoverLines(git) {
+  const status = await git("status", "--porcelain=v1", "--untracked-files=all");
+  const leftover = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  if (leftover.length === 0) {
+    return [];
+  }
+  const more = leftover.length > 10 ? `, and ${leftover.length - 10} more` : "";
+  return [`Not committed, left as they were: ${leftover.slice(0, 10).join(", ")}${more}.`];
+}
+async function pushAndOpenPr(root, env, state, target) {
+  const { branch, base } = target;
+  const push = await gitRunner(root, env)("push", "-u", "origin", branch);
+  if (push.code !== 0) {
+    return {
+      outcome: "push_failed",
+      lines: [`Push failed: ${tail(output(push), 1500)}`, "No pull request was opened, and nothing was retried."]
     };
   }
-  const sha = (await git("rev-parse", "--short", "HEAD")).stdout.trim();
+  const pr = await run(
+    "gh",
+    ["pr", "create", "--base", base, "--head", branch, "--title", `Define OpenSpec change ${state.change_name}`, "--body", prBody(state, root)],
+    { cwd: root, env: { ...env, GH_PROMPT_DISABLED: "1" } }
+  );
+  if (pr.code !== 0) {
+    return {
+      outcome: "pr_failed",
+      lines: [`Pushed ${branch} to origin, but opening the pull request failed: ${tail(output(pr), 1500)}`, "Nothing was retried."]
+    };
+  }
+  const url = pr.stdout.trim().split("\n").pop() ?? "";
+  return { outcome: "pr_opened", lines: [`Pushed ${branch} to origin and opened a pull request against ${base}: ${url}`] };
+}
+async function publishBranch(root, env, state, branch) {
+  const base = await defaultBranch(root, env);
+  if (branch === void 0) {
+    return { base, outcome: "detached", lines: ["HEAD is detached, so nothing was pushed. The user pushes when ready."] };
+  }
+  if (base === void 0) {
+    return {
+      base,
+      outcome: "unknown_default",
+      lines: [`Could not tell the repository's default branch, so ${branch} was not pushed. The user pushes when ready.`]
+    };
+  }
+  if (branch === base) {
+    return { base, outcome: "default_branch", lines: [`On the default branch ${branch}, so nothing was pushed. The user pushes when ready.`] };
+  }
+  return { base, ...await pushAndOpenPr(root, env, state, { branch, base }) };
+}
+async function finishDefine(context, root, state) {
+  const refusal = await validationRefusal(context, root, state);
+  if (refusal) {
+    return refusal;
+  }
+  const name = state.change_name;
+  const git = gitRunner(root, context.env);
+  const committed = await commitChange(context, root, state, git);
+  if ("failure" in committed) {
+    return committed.failure;
+  }
+  const { sha } = committed;
   const lines = [
     `OpenSpec change "${name}" is defined.`,
     "Validation passed: openspec validate and the planning-artifact check.",
-    `Committed ${sha} "${message}" with only ${dir}/.`
+    `Committed ${sha} "${commitMessage(name)}" with only ${state.change_dir}/.`,
+    ...await leftoverLines(git)
   ];
-  const status = await git("status", "--porcelain=v1", "--untracked-files=all");
-  const leftover = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
-  if (leftover.length > 0) {
-    const more = leftover.length > 10 ? `, and ${leftover.length - 10} more` : "";
-    lines.push(`Not committed, left as they were: ${leftover.slice(0, 10).join(", ")}${more}.`);
-  }
   const branchResult = await git("symbolic-ref", "--quiet", "--short", "HEAD");
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() : void 0;
-  const base = await defaultBranch(root, env);
-  let outcome;
-  if (branch === void 0) {
-    outcome = "detached";
-    lines.push("HEAD is detached, so nothing was pushed. The user pushes when ready.");
-  } else if (base === void 0) {
-    outcome = "unknown_default";
-    lines.push(`Could not tell the repository's default branch, so ${branch} was not pushed. The user pushes when ready.`);
-  } else if (branch === base) {
-    outcome = "default_branch";
-    lines.push(`On the default branch ${branch}, so nothing was pushed. The user pushes when ready.`);
-  } else {
-    const push = await git("push", "-u", "origin", branch);
-    if (push.code !== 0) {
-      outcome = "push_failed";
-      lines.push(`Push failed: ${tail(output(push), 1500)}`, "No pull request was opened, and nothing was retried.");
-    } else {
-      const pr = await run(
-        "gh",
-        ["pr", "create", "--base", base, "--head", branch, "--title", `Define OpenSpec change ${name}`, "--body", prBody(state, root)],
-        { cwd: root, env: { ...env, GH_PROMPT_DISABLED: "1" } }
-      );
-      const url = pr.stdout.trim().split("\n").pop() ?? "";
-      if (pr.code !== 0) {
-        outcome = "pr_failed";
-        lines.push(
-          `Pushed ${branch} to origin, but opening the pull request failed: ${tail(output(pr), 1500)}`,
-          "Nothing was retried."
-        );
-      } else {
-        outcome = "pr_opened";
-        lines.push(`Pushed ${branch} to origin and opened a pull request against ${base}: ${url}`);
-      }
-    }
-  }
-  lines.push("", "Tell the user the define workflow is finished and pass on the result above. Do not call next_step again.");
+  const { base, outcome, lines: publishLines } = await publishBranch(root, context.env, state, branch);
+  lines.push(...publishLines, "", "Tell the user the define workflow is finished and pass on the result above. Do not call next_step again.");
   logEvent(context, root, "finished", { change: name, sha, branch, base, outcome });
   return { text: lines.join("\n") };
 }
@@ -29909,6 +30066,34 @@ async function nextStep(context, calls2, args) {
   });
   return result;
 }
+function resolveName(root, args) {
+  const name = args.change_name?.trim() ?? "";
+  if (name !== "") {
+    return isValidChangeName(name) ? name : refuse(nameRuleMessage(name));
+  }
+  if (args.start) {
+    return refuse("start needs a change_name. Ask the user for one.");
+  }
+  const active = inProgressChanges(root);
+  const only = active[0];
+  if (active.length === 1 && only !== void 0) {
+    return isValidChangeName(only) ? only : refuse(nameRuleMessage(only));
+  }
+  if (active.length === 0) {
+    return refuse("no define is in progress in this repository. Start one with change_name and start: true.");
+  }
+  return refuse(`more than one define is in progress (${active.join(", ")}). Pass change_name.`);
+}
+function loadState(root, name) {
+  try {
+    return { state: readState(root, name) };
+  } catch (error2) {
+    if (error2 instanceof StateError) {
+      return { refusal: refuse(error2.message) };
+    }
+    throw error2;
+  }
+}
 async function nextStepIn(context, calls2, root, args) {
   const busy = calls2.running();
   if (busy) {
@@ -29916,78 +30101,74 @@ async function nextStepIn(context, calls2, root, args) {
       `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`
     );
   }
-  let name = args.change_name?.trim() ?? "";
-  if (name === "") {
-    if (args.start) {
-      return refuse("start needs a change_name. Ask the user for one.");
-    }
-    const active = inProgressChanges(root);
-    if (active.length === 1 && active[0] !== void 0) {
-      name = active[0];
-    } else if (active.length === 0) {
-      return refuse("no define is in progress in this repository. Start one with change_name and start: true.");
-    } else {
-      return refuse(`more than one define is in progress (${active.join(", ")}). Pass change_name.`);
-    }
+  const name = resolveName(root, args);
+  if (typeof name !== "string") {
+    return name;
   }
-  if (!isValidChangeName(name)) {
-    return refuse(nameRuleMessage(name));
+  const loaded = loadState(root, name);
+  if ("refusal" in loaded) {
+    return loaded.refusal;
   }
-  const changeDir = changeDirFor(name);
-  const absoluteDir = join7(root, changeDir);
-  let state;
-  try {
-    state = readState(root, name);
-  } catch (error2) {
-    if (error2 instanceof StateError) {
-      return refuse(error2.message);
-    }
-    throw error2;
-  }
-  const at = context.now().toISOString();
+  return args.start ? startDefine(context, root, name, loaded.state) : completeStep(context, root, name, loaded.state);
+}
+async function startDefine(context, root, name, state) {
   const leadCli = detectLead(context.clientName(), context.env);
-  const lead = leadCli ?? "unknown";
-  if (args.start) {
-    const crosscheck = resolveCrosscheck(leadCli, context.env);
-    if (typeof crosscheck === "string") {
-      return refuse(crosscheck);
-    }
-    if (!state) {
-      if (existsSync5(absoluteDir)) {
-        return refuse(
-          `OpenSpec change "${name}" already exists at ${absoluteDir}, and define-openspec-change did not start it. Choose another name.`
-        );
-      }
-      const created = await run("openspec", ["new", "change", name], { cwd: root, env: context.env });
-      if (created.code !== 0 || !existsSync5(absoluteDir)) {
-        return refuse(`openspec new change ${name} failed: ${output(created)}`);
-      }
-      state = newState(name, at, lead);
-      writeState(root, state, at);
-      return { text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: "proposal", mode: "new", completed: [] }) };
-    }
-    if (state.status === "complete" || state.current_step === null) {
-      return refuse(`OpenSpec change "${name}" was already defined (completed ${state.completed_at}). There is nothing left to do.`);
-    }
-    const step2 = state.current_step;
-    state.starts.push({ at, lead, mode: "resume", step: step2 });
-    writeState(root, state, at);
-    return {
-      text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: step2, mode: "resume", completed: completedSteps(state) })
-    };
+  const crosscheck = resolveCrosscheck(leadCli, context.env);
+  if (typeof crosscheck === "string") {
+    return refuse(crosscheck);
   }
+  const lead = leadCli ?? "unknown";
   if (!state) {
-    if (existsSync5(absoluteDir)) {
-      return refuse(`OpenSpec change "${name}" was not started with define-openspec-change, so there is no step to complete.`);
-    }
-    return refuse(`no define is in progress for "${name}". Start it with change_name "${name}" and start: true.`);
+    return createDefine(context, root, name, lead);
   }
   if (state.status === "complete" || state.current_step === null) {
+    return refuse(`OpenSpec change "${name}" was already defined (completed ${state.completed_at}). There is nothing left to do.`);
+  }
+  return resumeDefine(context, root, state, lead);
+}
+async function createDefine(context, root, name, lead) {
+  const absoluteDir = join9(root, changeDirFor(name));
+  if (existsSync5(absoluteDir)) {
+    return refuse(
+      `OpenSpec change "${name}" already exists at ${absoluteDir}, and define-openspec-change did not start it. Choose another name.`
+    );
+  }
+  const created = await run("openspec", ["new", "change", name], { cwd: root, env: context.env });
+  if (created.code !== 0 || !existsSync5(absoluteDir)) {
+    return refuse(`openspec new change ${name} failed: ${output(created)}`);
+  }
+  const at = context.now().toISOString();
+  writeState(root, newState(name, at, lead), at);
+  return { text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: "proposal", mode: "new", completed: [] }) };
+}
+function resumeDefine(context, root, state, lead) {
+  const step = state.current_step;
+  if (step === null) {
+    return refuse(`OpenSpec change "${state.change_name}" has no current step.`);
+  }
+  const at = context.now().toISOString();
+  state.starts.push({ at, lead, mode: "resume", step });
+  writeState(root, state, at);
+  return {
+    text: renderStep({ pluginRoot: context.pluginRoot, changeName: state.change_name, step, mode: "resume", completed: completedSteps(state) })
+  };
+}
+function refuseNoState(root, name) {
+  if (existsSync5(join9(root, changeDirFor(name)))) {
+    return refuse(`OpenSpec change "${name}" was not started with define-openspec-change, so there is no step to complete.`);
+  }
+  return refuse(`no define is in progress for "${name}". Start it with change_name "${name}" and start: true.`);
+}
+async function completeStep(context, root, name, state) {
+  if (!state) {
+    return refuseNoState(root, name);
+  }
+  const step = state.current_step;
+  if (state.status === "complete" || step === null) {
     return {
       text: `OpenSpec change "${name}" is already defined (completed ${state.completed_at}). The define workflow is finished; do not call next_step again.`
     };
   }
-  const step = state.current_step;
   const missing = await missingForStep(root, name, step, context.env);
   if (missing.length > 0) {
     return refuse(
@@ -29995,15 +30176,22 @@ async function nextStepIn(context, calls2, root, args) {
     );
   }
   const following = nextStepId(step);
-  if (!following) {
-    return finishDefine(context, root, state);
-  }
-  state.steps[step] = { started_at: state.steps[step]?.started_at ?? at, completed_at: at };
-  state.steps[following] = { started_at: at };
-  state.current_step = following;
+  return following ? advance(context, root, state, { from: step, to: following }) : finishDefine(context, root, state);
+}
+function advance(context, root, state, move) {
+  const at = context.now().toISOString();
+  state.steps[move.from] = { started_at: state.steps[move.from]?.started_at ?? at, completed_at: at };
+  state.steps[move.to] = { started_at: at };
+  state.current_step = move.to;
   writeState(root, state, at);
   return {
-    text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: following, mode: "continue", completed: completedSteps(state) })
+    text: renderStep({
+      pluginRoot: context.pluginRoot,
+      changeName: state.change_name,
+      step: move.to,
+      mode: "continue",
+      completed: completedSteps(state)
+    })
   };
 }
 
@@ -30014,23 +30202,34 @@ function sessionCwdFromMeta(meta) {
     return void 0;
   }
   const fields = meta;
+  return sandboxCwd(fields) ?? turnWorkspaceCwd(fields);
+}
+function sandboxCwd(fields) {
   for (const key of ["codex/sandbox-state-meta", "codex/sandbox-state"]) {
     const cwd = fields[key]?.sandboxCwd;
     if (typeof cwd === "string" && cwd !== "") {
-      try {
-        return cwd.startsWith("file:") ? fileURLToPath(cwd) : cwd;
-      } catch {
+      const path = toPath(cwd);
+      if (path !== void 0) {
+        return path;
       }
     }
   }
-  const workspaces = fields["x-codex-turn-metadata"]?.workspaces;
-  if (workspaces && typeof workspaces === "object") {
-    const keys = Object.keys(workspaces);
-    if (keys.length === 1) {
-      return keys[0];
-    }
-  }
   return void 0;
+}
+function toPath(cwd) {
+  try {
+    return cwd.startsWith("file:") ? fileURLToPath(cwd) : cwd;
+  } catch {
+    return void 0;
+  }
+}
+function turnWorkspaceCwd(fields) {
+  const workspaces = fields["x-codex-turn-metadata"]?.workspaces;
+  if (!workspaces || typeof workspaces !== "object") {
+    return void 0;
+  }
+  const keys = Object.keys(workspaces);
+  return keys.length === 1 ? keys[0] : void 0;
 }
 var CODEX_SANDBOX_META_CAPABILITY = "codex/sandbox-state-meta";
 
@@ -30050,14 +30249,7 @@ async function guarded(work) {
     return toResult({ text: `define-openspec-change internal error: ${error2.stack ?? String(error2)}`, isError: true });
   }
 }
-function createServer(makeContext) {
-  const server2 = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } }
-  );
-  const context = makeContext(server2);
-  const calls2 = new CallManager(context);
-  const cwdFor = (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd;
+function registerNextStep({ server: server2, context, calls: calls2, cwdFor }) {
   server2.registerTool(
     "next_step",
     {
@@ -30070,6 +30262,8 @@ function createServer(makeContext) {
     },
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls2, args))
   );
+}
+function registerCallAgent({ server: server2, calls: calls2, cwdFor }) {
   server2.registerTool(
     "call_agent",
     {
@@ -30082,6 +30276,8 @@ function createServer(makeContext) {
     },
     async ({ agent, prompt }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra)))
   );
+}
+function registerGetAgentCall({ server: server2, calls: calls2 }) {
   server2.registerTool(
     "get_agent_call",
     {
@@ -30092,6 +30288,8 @@ function createServer(makeContext) {
     },
     async ({ call_id }) => guarded(() => calls2.get(call_id))
   );
+}
+function registerCancelAgentCall({ server: server2, calls: calls2 }) {
   server2.registerTool(
     "cancel_agent_call",
     {
@@ -30101,6 +30299,19 @@ function createServer(makeContext) {
     },
     async ({ call_id }) => guarded(() => calls2.cancel(call_id))
   );
+}
+function createServer(makeContext) {
+  const server2 = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } }
+  );
+  const context = makeContext(server2);
+  const calls2 = new CallManager(context);
+  const deps = { server: server2, context, calls: calls2, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
+  registerNextStep(deps);
+  registerCallAgent(deps);
+  registerGetAgentCall(deps);
+  registerCancelAgentCall(deps);
   return { server: server2, calls: calls2 };
 }
 
@@ -30110,8 +30321,9 @@ var logBase = defaultLogBase();
 try {
   mkdirSync3(logBase, { recursive: true });
   appendFileSync2(
-    join8(logBase, "server-starts.log"),
-    JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot }) + "\n"
+    join10(logBase, "server-starts.log"),
+    `${JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot })}
+`
   );
 } catch {
 }

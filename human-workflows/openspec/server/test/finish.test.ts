@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
-import { CHANGE, driveToApproachReview, fakeLog, makeContext, makeFixture, session } from "./helpers.js";
+import { CHANGE, defined, driveToApproachReview, fakeLog, makeContext, makeFixture, session } from "./helpers.js";
 
 const DIR = `openspec/changes/${CHANGE}`;
 
@@ -73,10 +73,10 @@ test("on a feature branch it pushes the branch and opens a pull request against 
   assert.equal(fixture.git("ls-remote", "origin", "refs/heads/feat/reading-time").split("\t")[0], fixture.git("rev-parse", "HEAD"));
   const gh = fakeLog(fixture).filter((entry) => entry.bin === "gh");
   assert.equal(gh.length, 1);
-  const args = gh[0]!.args;
+  const args = defined(gh[0]).args;
   assert.deepEqual(args.slice(0, 8), ["pr", "create", "--base", "main", "--head", "feat/reading-time", "--title", `Define OpenSpec change ${CHANGE}`]);
   assert.equal(args[8], "--body");
-  assert.match(args[9]!, /- `openspec\/changes\/add-reading-time\/specs\/reading-time\/spec\.md`/);
+  assert.match(defined(args[9]), /- `openspec\/changes\/add-reading-time\/specs\/reading-time\/spec\.md`/);
 });
 
 test("a push failure is reported once, with the commit kept and no pull request", async () => {

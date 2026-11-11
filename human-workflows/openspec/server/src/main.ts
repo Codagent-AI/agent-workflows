@@ -15,7 +15,7 @@ try {
   mkdirSync(logBase, { recursive: true });
   appendFileSync(
     join(logBase, "server-starts.log"),
-    JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot }) + "\n",
+    `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot })}\n`,
   );
 } catch {
   // Logging never stops the server.

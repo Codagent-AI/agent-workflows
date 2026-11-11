@@ -10,13 +10,14 @@ import { finishDefine, type ToolText } from "./finish.js";
 import { output, run } from "./proc.js";
 import {
   completedSteps,
+  type DefineState,
   inProgressChanges,
   newState,
   readState,
   StateError,
   writeState,
 } from "./state.js";
-import { changeDirFor, nextStepId, renderStep } from "./steps.js";
+import { changeDirFor, nextStepId, renderStep, type StepId } from "./steps.js";
 
 export interface NextStepArgs {
   change_name?: string | undefined;
@@ -45,6 +46,38 @@ export async function nextStep(context: Context, calls: CallManager, args: NextS
   return result;
 }
 
+/** The change to act on: the named one, or the only define in progress. A refusal when neither works. */
+function resolveName(root: string, args: NextStepArgs): string | ToolText {
+  const name = args.change_name?.trim() ?? "";
+  if (name !== "") {
+    return isValidChangeName(name) ? name : refuse(nameRuleMessage(name));
+  }
+  if (args.start) {
+    return refuse("start needs a change_name. Ask the user for one.");
+  }
+  const active = inProgressChanges(root);
+  const only = active[0];
+  if (active.length === 1 && only !== undefined) {
+    return isValidChangeName(only) ? only : refuse(nameRuleMessage(only));
+  }
+  if (active.length === 0) {
+    return refuse("no define is in progress in this repository. Start one with change_name and start: true.");
+  }
+  return refuse(`more than one define is in progress (${active.join(", ")}). Pass change_name.`);
+}
+
+/** The change's saved state, or a refusal when its state file cannot be read. */
+function loadState(root: string, name: string): { state: DefineState | undefined } | { refusal: ToolText } {
+  try {
+    return { state: readState(root, name) };
+  } catch (error) {
+    if (error instanceof StateError) {
+      return { refusal: refuse(error.message) };
+    }
+    throw error;
+  }
+}
+
 async function nextStepIn(context: Context, calls: CallManager, root: string, args: NextStepArgs): Promise<ToolText> {
   const busy = calls.running();
   if (busy) {
@@ -52,100 +85,107 @@ async function nextStepIn(context: Context, calls: CallManager, root: string, ar
       `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`,
     );
   }
+  const name = resolveName(root, args);
+  if (typeof name !== "string") {
+    return name;
+  }
+  const loaded = loadState(root, name);
+  if ("refusal" in loaded) {
+    return loaded.refusal;
+  }
+  return args.start ? startDefine(context, root, name, loaded.state) : completeStep(context, root, name, loaded.state);
+}
 
-  let name = args.change_name?.trim() ?? "";
-  if (name === "") {
-    if (args.start) {
-      return refuse("start needs a change_name. Ask the user for one.");
-    }
-    const active = inProgressChanges(root);
-    if (active.length === 1 && active[0] !== undefined) {
-      name = active[0];
-    } else if (active.length === 0) {
-      return refuse('no define is in progress in this repository. Start one with change_name and start: true.');
-    } else {
-      return refuse(`more than one define is in progress (${active.join(", ")}). Pass change_name.`);
-    }
-  }
-  if (!isValidChangeName(name)) {
-    return refuse(nameRuleMessage(name));
-  }
-
-  const changeDir = changeDirFor(name);
-  const absoluteDir = join(root, changeDir);
-  let state;
-  try {
-    state = readState(root, name);
-  } catch (error) {
-    if (error instanceof StateError) {
-      return refuse(error.message);
-    }
-    throw error;
-  }
-  const at = context.now().toISOString();
+/** next_step with start: true. Checks the crosscheck config, then begins a new define or resumes one. */
+async function startDefine(context: Context, root: string, name: string, state: DefineState | undefined): Promise<ToolText> {
   const leadCli = detectLead(context.clientName(), context.env);
-  const lead = leadCli ?? "unknown";
-
-  if (args.start) {
-    // Check the crosscheck config before any step, so a missing one is set up before the proposal's review.
-    const crosscheck = resolveCrosscheck(leadCli, context.env);
-    if (typeof crosscheck === "string") {
-      return refuse(crosscheck);
-    }
-    if (!state) {
-      if (existsSync(absoluteDir)) {
-        return refuse(
-          `OpenSpec change "${name}" already exists at ${absoluteDir}, and define-openspec-change did not start it. Choose another name.`,
-        );
-      }
-      const created = await run("openspec", ["new", "change", name], { cwd: root, env: context.env });
-      if (created.code !== 0 || !existsSync(absoluteDir)) {
-        return refuse(`openspec new change ${name} failed: ${output(created)}`);
-      }
-      state = newState(name, at, lead);
-      writeState(root, state, at);
-      return { text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: "proposal", mode: "new", completed: [] }) };
-    }
-    if (state.status === "complete" || state.current_step === null) {
-      return refuse(`OpenSpec change "${name}" was already defined (completed ${state.completed_at}). There is nothing left to do.`);
-    }
-    const step = state.current_step;
-    state.starts.push({ at, lead, mode: "resume", step });
-    writeState(root, state, at);
-    return {
-      text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step, mode: "resume", completed: completedSteps(state) }),
-    };
+  // Check the crosscheck config before any step, so a missing one is set up before the proposal's review.
+  const crosscheck = resolveCrosscheck(leadCli, context.env);
+  if (typeof crosscheck === "string") {
+    return refuse(crosscheck);
   }
-
+  const lead = leadCli ?? "unknown";
   if (!state) {
-    if (existsSync(absoluteDir)) {
-      return refuse(`OpenSpec change "${name}" was not started with define-openspec-change, so there is no step to complete.`);
-    }
-    return refuse(`no define is in progress for "${name}". Start it with change_name "${name}" and start: true.`);
+    return createDefine(context, root, name, lead);
   }
   if (state.status === "complete" || state.current_step === null) {
+    return refuse(`OpenSpec change "${name}" was already defined (completed ${state.completed_at}). There is nothing left to do.`);
+  }
+  return resumeDefine(context, root, state, lead);
+}
+
+async function createDefine(context: Context, root: string, name: string, lead: string): Promise<ToolText> {
+  const absoluteDir = join(root, changeDirFor(name));
+  if (existsSync(absoluteDir)) {
+    return refuse(
+      `OpenSpec change "${name}" already exists at ${absoluteDir}, and define-openspec-change did not start it. Choose another name.`,
+    );
+  }
+  const created = await run("openspec", ["new", "change", name], { cwd: root, env: context.env });
+  if (created.code !== 0 || !existsSync(absoluteDir)) {
+    return refuse(`openspec new change ${name} failed: ${output(created)}`);
+  }
+  const at = context.now().toISOString();
+  writeState(root, newState(name, at, lead), at);
+  return { text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: "proposal", mode: "new", completed: [] }) };
+}
+
+/** Records a resume and returns the step the define stopped at. The caller has checked it is not complete. */
+function resumeDefine(context: Context, root: string, state: DefineState, lead: string): ToolText {
+  const step = state.current_step;
+  if (step === null) {
+    return refuse(`OpenSpec change "${state.change_name}" has no current step.`);
+  }
+  const at = context.now().toISOString();
+  state.starts.push({ at, lead, mode: "resume", step });
+  writeState(root, state, at);
+  return {
+    text: renderStep({ pluginRoot: context.pluginRoot, changeName: state.change_name, step, mode: "resume", completed: completedSteps(state) }),
+  };
+}
+
+/** The refusal for next_step without start when the change has no saved state. */
+function refuseNoState(root: string, name: string): ToolText {
+  if (existsSync(join(root, changeDirFor(name)))) {
+    return refuse(`OpenSpec change "${name}" was not started with define-openspec-change, so there is no step to complete.`);
+  }
+  return refuse(`no define is in progress for "${name}". Start it with change_name "${name}" and start: true.`);
+}
+
+/** next_step without start: checks the current step's artifact, then returns the next step or finishes. */
+async function completeStep(context: Context, root: string, name: string, state: DefineState | undefined): Promise<ToolText> {
+  if (!state) {
+    return refuseNoState(root, name);
+  }
+  const step = state.current_step;
+  if (state.status === "complete" || step === null) {
     return {
       text: `OpenSpec change "${name}" is already defined (completed ${state.completed_at}). The define workflow is finished; do not call next_step again.`,
     };
   }
-
-  const step = state.current_step;
   const missing = await missingForStep(root, name, step, context.env);
   if (missing.length > 0) {
     return refuse(
       `step "${step}" of OpenSpec change "${name}" is not complete. Missing: ${missing.join("; ")}. Finish the step, then call next_step again.`,
     );
   }
-
   const following = nextStepId(step);
-  if (!following) {
-    return finishDefine(context, root, state);
-  }
-  state.steps[step] = { started_at: state.steps[step]?.started_at ?? at, completed_at: at };
-  state.steps[following] = { started_at: at };
-  state.current_step = following;
+  return following ? advance(context, root, state, { from: step, to: following }) : finishDefine(context, root, state);
+}
+
+function advance(context: Context, root: string, state: DefineState, move: { from: StepId; to: StepId }): ToolText {
+  const at = context.now().toISOString();
+  state.steps[move.from] = { started_at: state.steps[move.from]?.started_at ?? at, completed_at: at };
+  state.steps[move.to] = { started_at: at };
+  state.current_step = move.to;
   writeState(root, state, at);
   return {
-    text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: following, mode: "continue", completed: completedSteps(state) }),
+    text: renderStep({
+      pluginRoot: context.pluginRoot,
+      changeName: state.change_name,
+      step: move.to,
+      mode: "continue",
+      completed: completedSteps(state),
+    }),
   };
 }

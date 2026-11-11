@@ -110,7 +110,7 @@ export function writeStateText(root: string, changeName: string, text: string): 
 
 export function writeState(root: string, state: DefineState, at: string): void {
   state.updated_at = at;
-  writeStateText(root, state.change_name, JSON.stringify(state, null, 2) + "\n");
+  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 /** Names of changes under openspec/changes/ whose define is in progress. */

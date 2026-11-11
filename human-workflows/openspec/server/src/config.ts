@@ -35,6 +35,61 @@ function optionalString(entry: Record<string, unknown>, key: string): string | u
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+function isMapping(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** The raw `human-workflows.crosscheck` value, or a problem when it is absent or empty. */
+function crosscheckList(root: Record<string, unknown>): unknown[] | string {
+  const section = root["human-workflows"];
+  const list = isMapping(section) ? section.crosscheck : undefined;
+  if (Array.isArray(list) && list.length > 0) {
+    return list;
+  }
+  if (root.crosscheck !== undefined) {
+    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.";
+  }
+  return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
+}
+
+/** One checked list entry, or the problem with it. `earlier` is the entries accepted so far. */
+function parseEntry(raw: unknown, index: number, earlier: CrosscheckChoice[]): CrosscheckChoice | string {
+  const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
+  if (!isMapping(raw)) {
+    return `${where} must be a mapping with cli, model, and effort.`;
+  }
+  const unknown = Object.keys(raw).filter((key) => !ENTRY_KEYS.has(key));
+  if (unknown.length > 0) {
+    return `${where} has unknown keys: ${unknown.join(", ")}. Allowed: cli, model, effort.`;
+  }
+  const cli = raw.cli;
+  if (cli !== "claude" && cli !== "codex") {
+    return `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`;
+  }
+  if (earlier.some((existing) => existing.cli === cli)) {
+    return `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`;
+  }
+  const model = optionalString(raw, "model");
+  const effort = optionalString(raw, "effort");
+  if (model === null || effort === null) {
+    return `${where}: model and effort must be non-empty text when given.`;
+  }
+  return model === undefined ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT };
+}
+
+/** Every list entry checked, or the first problem. */
+function parseEntries(list: unknown[]): CrosscheckChoice[] | string {
+  const entries: CrosscheckChoice[] = [];
+  for (const [index, raw] of list.entries()) {
+    const entry = parseEntry(raw, index, entries);
+    if (typeof entry === "string") {
+      return entry;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
 /**
  * Reads and checks the `human-workflows.crosscheck` list: one entry per CLI, each with a cli and an optional
  * model and effort. Other top-level keys, such as `factory-workflows`, are reserved for other workflows and ignored.
@@ -50,41 +105,9 @@ export function readConfig(env: NodeJS.ProcessEnv): ConfigResult {
   } catch (error) {
     return invalid(path, (error as Error).message);
   }
-  const root = (doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {}) as Record<string, unknown>;
-  const section = root["human-workflows"];
-  const list = section && typeof section === "object" && !Array.isArray(section) ? (section as Record<string, unknown>).crosscheck : undefined;
-  if (!Array.isArray(list) || list.length === 0) {
-    if (root.crosscheck !== undefined) {
-      return invalid(path, "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.");
-    }
-    return invalid(path, `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`);
-  }
-  const entries: CrosscheckChoice[] = [];
-  for (const [index, raw] of list.entries()) {
-    const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return invalid(path, `${where} must be a mapping with cli, model, and effort.`);
-    }
-    const entry = raw as Record<string, unknown>;
-    const unknown = Object.keys(entry).filter((key) => !ENTRY_KEYS.has(key));
-    if (unknown.length > 0) {
-      return invalid(path, `${where} has unknown keys: ${unknown.join(", ")}. Allowed: cli, model, effort.`);
-    }
-    const cli = entry.cli;
-    if (cli !== "claude" && cli !== "codex") {
-      return invalid(path, `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`);
-    }
-    if (entries.some((existing) => existing.cli === cli)) {
-      return invalid(path, `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`);
-    }
-    const model = optionalString(entry, "model");
-    const effort = optionalString(entry, "effort");
-    if (model === null || effort === null) {
-      return invalid(path, `${where}: model and effort must be non-empty text when given.`);
-    }
-    entries.push(model === undefined ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT });
-  }
-  return { ok: true, path, crosscheck: entries };
+  const list = crosscheckList(isMapping(doc) ? doc : {});
+  const entries = typeof list === "string" ? list : parseEntries(list);
+  return typeof entries === "string" ? invalid(path, entries) : { ok: true, path, crosscheck: entries };
 }
 
 /** True when `command` is an executable file on the PATH in `env`. */

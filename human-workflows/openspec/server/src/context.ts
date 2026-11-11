@@ -55,7 +55,7 @@ export function logEvent(context: Context, root: string, event: string, fields: 
     const dir = repoLogDir(context, root);
     mkdirSync(dir, { recursive: true });
     const line = JSON.stringify({ at: context.now().toISOString(), event, pid: process.pid, root, ...fields });
-    appendFileSync(join(dir, "events.jsonl"), line + "\n");
+    appendFileSync(join(dir, "events.jsonl"), `${line}\n`);
   } catch {
     // ignore
   }

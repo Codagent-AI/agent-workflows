@@ -14,6 +14,15 @@ export interface RunOptions {
   timeoutMs?: number;
 }
 
+function spawnPiped(command: string, args: string[], options: RunOptions) {
+  return spawn(command, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: options.timeoutMs ?? 120_000,
+  });
+}
+
 /** Runs a command to completion with stdin closed and returns its output. Never throws. */
 export function run(command: string, args: string[], options: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
@@ -26,14 +35,9 @@ export function run(command: string, args: string[], options: RunOptions): Promi
         resolve(result);
       }
     };
-    let child;
+    let child: ReturnType<typeof spawnPiped>;
     try {
-      child = spawn(command, args, {
-        cwd: options.cwd,
-        env: options.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: options.timeoutMs ?? 120_000,
-      });
+      child = spawnPiped(command, args, options);
     } catch (error) {
       finish({ code: null, stdout, stderr, launchError: String(error) });
       return;
@@ -55,5 +59,5 @@ export function output(result: RunResult): string {
 
 export function tail(text: string, max = 2000): string {
   const trimmed = text.trim();
-  return trimmed.length <= max ? trimmed : "..." + trimmed.slice(trimmed.length - max);
+  return trimmed.length <= max ? trimmed : `...${trimmed.slice(trimmed.length - max)}`;
 }

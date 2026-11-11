@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -106,13 +107,38 @@ export const DEFAULT_CONFIG = "human-workflows:\n  crosscheck:\n    - cli: codex
 
 /** Writes (or with null, removes) the fixture's ~/.agent-workflows/config.yaml. */
 export function writeConfig(fixture: Fixture, text: string | null): void {
-  const dir = join(fixture.env.HOME!, ".agent-workflows");
+  const dir = join(defined(fixture.env.HOME, "HOME"), ".agent-workflows");
   mkdirSync(dir, { recursive: true });
   if (text === null) {
     rmSync(join(dir, "config.yaml"), { force: true });
   } else {
     writeFileSync(join(dir, "config.yaml"), text);
   }
+}
+
+/** Every event the server logged under `base`, across the per-repository log folders. */
+function readEvents(base: string): Array<Record<string, unknown>> {
+  if (!existsSync(base)) return [];
+  return readdirSync(base)
+    .map((sub) => join(base, sub, "events.jsonl"))
+    .filter((file) => existsSync(file))
+    .flatMap((file) =>
+      readFileSync(file, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>),
+    );
+}
+
+/** Narrows a possibly undefined value, failing the test with a clear message instead of a non-null assertion. */
+export function defined<T>(value: T | undefined, what = "value"): T {
+  if (value === undefined) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
+/** The first fake CLI invocation made by `bin`. */
+export function fakeCall(fixture: Fixture, bin: string): ReturnType<typeof fakeLog>[number] {
+  return defined(fakeLog(fixture).find((entry) => entry.bin === bin), `a ${bin} call`);
 }
 
 /**
@@ -176,18 +202,7 @@ export function makeFixture(options: { remote?: boolean; branch?: string; config
       writeFileSync(path, text);
     },
     read: (relative) => readFileSync(join(repo, relative), "utf8"),
-    events: () => {
-      const results: Array<Record<string, unknown>> = [];
-      const base = join(dir, "logs");
-      if (!existsSync(base)) return results;
-      for (const sub of execFileSync("ls", [base], { encoding: "utf8" }).split("\n").filter(Boolean)) {
-        const file = join(base, sub, "events.jsonl");
-        if (existsSync(file)) {
-          for (const line of readFileSync(file, "utf8").split("\n").filter(Boolean)) results.push(JSON.parse(line));
-        }
-      }
-      return results;
-    },
+    events: () => readEvents(join(dir, "logs")),
   };
   if (remote) {
     fixture.remote = remote;
@@ -204,7 +219,7 @@ export function pathWithout(fixture: Fixture, missing: string[]): string {
   const bin = join(fixture.dir, `bin-without-${missing.join("-")}`);
   mkdirSync(bin, { recursive: true });
   symlinkSync(process.execPath, join(bin, "node"));
-  for (const name of ["openspec", "codex", "claude", "gh"].filter((name) => !missing.includes(name))) {
+  for (const name of ["openspec", "codex", "claude", "gh"].filter((candidate) => !missing.includes(candidate))) {
     copyFileSync(join(fixture.dir, "bin", name), join(bin, name));
     chmodSync(join(bin, name), 0o755);
   }

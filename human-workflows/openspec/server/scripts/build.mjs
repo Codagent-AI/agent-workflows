@@ -40,7 +40,7 @@ if (scratch) {
     current = undefined;
   }
   rmSync(scratch, { recursive: true, force: true });
-  if (!current || !fresh.equals(current)) {
+  if (!current?.equals(fresh)) {
     console.error("plugin/server.mjs does not match a fresh build. Run `npm run build` and commit the result.");
     process.exit(1);
   }

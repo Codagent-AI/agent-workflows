@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { CHANGE, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
+import { CHANGE, fakeCall, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
 
 type TextResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
 
@@ -87,7 +87,7 @@ test("started in the plugin folder as Codex does, it works in the session direct
 
     const review = JSON.parse(text(await client.callTool({ name: "call_agent", arguments: { agent: "crosscheck", prompt: "Review." }, _meta })));
     assert.equal(review.status, "succeeded");
-    const child = fakeLog(fixture).find((entry) => entry.bin === "claude")!;
+    const child = fakeCall(fixture, "claude");
     assert.equal(child.cwd, fixture.repo);
   } finally {
     await client.close();
