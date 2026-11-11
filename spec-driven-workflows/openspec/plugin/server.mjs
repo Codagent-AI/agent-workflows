@@ -22415,6 +22415,12 @@ async function finishDefine(context, root, state) {
     "Validation passed: openspec validate and the planning-artifact check.",
     `Committed ${sha} "${message}" with only ${dir}/.`
   ];
+  const status = await git("status", "--porcelain=v1", "--untracked-files=all");
+  const leftover = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  if (leftover.length > 0) {
+    const more = leftover.length > 10 ? `, and ${leftover.length - 10} more` : "";
+    lines.push(`Not committed, left as they were: ${leftover.slice(0, 10).join(", ")}${more}.`);
+  }
   const branchResult = await git("symbolic-ref", "--quiet", "--short", "HEAD");
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() : void 0;
   const base = await defaultBranch(root, env);

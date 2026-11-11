@@ -111,6 +111,14 @@ export async function finishDefine(context: Context, root: string, state: Define
     "Validation passed: openspec validate and the planning-artifact check.",
     `Committed ${sha} "${message}" with only ${dir}/.`,
   ];
+  // Other work in the tree stays as it was. Name it, because `openspec new change` can create
+  // openspec/config.yaml outside the change folder, and the user should know it is not committed.
+  const status = await git("status", "--porcelain=v1", "--untracked-files=all");
+  const leftover = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  if (leftover.length > 0) {
+    const more = leftover.length > 10 ? `, and ${leftover.length - 10} more` : "";
+    lines.push(`Not committed, left as they were: ${leftover.slice(0, 10).join(", ")}${more}.`);
+  }
   const branchResult = await git("symbolic-ref", "--quiet", "--short", "HEAD");
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() : undefined;
   const base = await defaultBranch(root, env);

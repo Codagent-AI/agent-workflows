@@ -29,6 +29,7 @@ test("on the default branch it validates, commits only the change folder, and pu
       `OpenSpec change "${CHANGE}" is defined.`,
       "Validation passed: openspec validate and the planning-artifact check.",
       `Committed ${sha} "chore: add change documents for ${CHANGE}" with only ${DIR}/.`,
+      "Not committed, left as they were: unrelated.txt.",
       "On the default branch main, so nothing was pushed. The user pushes when ready.",
       "",
       "Tell the user the define workflow is finished and pass on the result above. Do not call next_step again.",
