@@ -73,9 +73,13 @@ function registerCallAgent({ server, calls, cwdFor }: ToolDeps): void {
       inputSchema: {
         agent: z.string().describe('Must be "crosscheck".'),
         prompt: z.string().describe("The complete, standalone task for the child."),
+        change_name: z
+          .string()
+          .optional()
+          .describe("The change the review is for. Needed only when more than one define is in progress."),
       },
     },
-    async ({ agent, prompt }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra))),
+    async ({ agent, prompt, change_name }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra), change_name)),
   );
 }
 

@@ -61,6 +61,7 @@ const args = process.argv.slice(2);
 const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_"));
 if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ bin: "${cli}", args, cwd: process.cwd(), env: keep }) + "\\n");
 const delay = Number(process.env.FAKE_CHILD_SLEEP_MS || 0);
+if (process.env.FAKE_CHILD_IGNORE_TERM) process.on("SIGTERM", () => {});
 setTimeout(() => {
   if (process.env.FAKE_CHILD_WRITE) fs.writeFileSync(path.join(process.cwd(), process.env.FAKE_CHILD_WRITE), "written by child\\n");
   const code = Number(process.env.FAKE_CHILD_EXIT || 0);

@@ -25,6 +25,8 @@ export interface Call {
   /** Resolves `done`. Called once the call has settled. */
   markDone: () => void;
   cancelRequested: boolean;
+  /** Fires the SIGKILL that follows a cancel. */
+  killTimer?: NodeJS.Timeout;
   fingerprintBefore?: string;
   workingTree?: WorkingTreeChange;
   response?: string;

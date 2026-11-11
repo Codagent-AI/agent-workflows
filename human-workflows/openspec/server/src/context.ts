@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,13 +52,28 @@ export function repoLogDir(context: Context, root: string): string {
   return join(context.logBase, hash);
 }
 
+/** Makes a folder only its owner can use, and tightens one that already exists. Throws if it cannot. */
+export function ensurePrivateDir(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
+}
+
+/** The repository's log folder, or a folder under it, created so that only the current user can read it. */
+export function privateLogDir(context: Context, root: string, ...parts: string[]): string {
+  ensurePrivateDir(context.logBase);
+  const repoDir = repoLogDir(context, root);
+  ensurePrivateDir(repoDir);
+  const dir = join(repoDir, ...parts);
+  ensurePrivateDir(dir);
+  return dir;
+}
+
 /** Appends one JSON line to the repository's event log. Logging never fails a tool call. */
 export function logEvent(context: Context, root: string, event: string, fields: Record<string, unknown> = {}): void {
   try {
-    const dir = repoLogDir(context, root);
-    mkdirSync(dir, { recursive: true });
+    const dir = privateLogDir(context, root);
     const line = JSON.stringify({ at: context.now().toISOString(), event, pid: process.pid, root, ...fields });
-    appendFileSync(join(dir, "events.jsonl"), `${line}\n`);
+    appendFileSync(join(dir, "events.jsonl"), `${line}\n`, { mode: 0o600 });
   } catch {
     // ignore
   }

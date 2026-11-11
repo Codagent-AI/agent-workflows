@@ -41,13 +41,13 @@ function isMapping(value: unknown): value is Record<string, unknown> {
 
 /** The raw `human-workflows.crosscheck` value, or a problem when it is absent or empty. */
 function crosscheckList(root: Record<string, unknown>): unknown[] | string {
+  if (root.crosscheck !== undefined) {
+    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`. Remove the top-level one.";
+  }
   const section = root["human-workflows"];
   const list = isMapping(section) ? section.crosscheck : undefined;
   if (Array.isArray(list) && list.length > 0) {
     return list;
-  }
-  if (root.crosscheck !== undefined) {
-    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.";
   }
   return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
 }

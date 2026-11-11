@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { run } from "./proc.js";
 
-/** Adds an untracked file's name and contents to the hash. An unreadable file adds a marker instead. */
+/** Adds an untracked file's name and contents to the hash. A symlink adds its target, not what it points to. */
 function hashUntracked(hash: ReturnType<typeof createHash>, root: string, file: string): void {
   hash.update(file).update("\0");
   try {
     const path = join(root, file);
-    if (statSync(path).isFile()) {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      hash.update("-> ").update(readlinkSync(path));
+    } else if (stat.isFile()) {
       hash.update(readFileSync(path));
     }
   } catch {
@@ -29,6 +32,9 @@ export async function workingTreeFingerprint(root: string, env: NodeJS.ProcessEn
   }
   const diff = await git("diff", "HEAD", "--binary");
   const untracked = await git("ls-files", "-o", "--exclude-standard", "-z");
+  if (diff.code !== 0 || untracked.code !== 0) {
+    return undefined;
+  }
   const hash = createHash("sha256").update(status.stdout).update("\0").update(diff.stdout).update("\0");
   for (const file of untracked.stdout.split("\0").filter(Boolean).sort()) {
     hashUntracked(hash, root, file);

@@ -11,8 +11,32 @@ export interface ToolText {
 
 type Git = (...args: string[]) => Promise<RunResult>;
 
+/** Runs git with terminal prompts off, so a missing credential fails fast instead of waiting on a terminal. */
 function gitRunner(root: string, env: NodeJS.ProcessEnv): Git {
-  return (...args) => run("git", args, { cwd: root, env });
+  return (...args) => run("git", args, { cwd: root, env: { ...env, GIT_TERMINAL_PROMPT: "0" } });
+}
+
+/** The staged entries (mode, object, path) under a folder, so a failed commit can put them back. */
+async function stagedEntries(git: Git, dir: string): Promise<string[]> {
+  const listed = await git("ls-files", "-s", "-z", "--", dir);
+  return listed.stdout
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((entry) => {
+      const match = entry.match(/^(\d+) ([0-9a-f]+) 0\t(.*)$/s);
+      return match ? [`${match[1]},${match[2]},${match[3]}`] : [];
+    });
+}
+
+/** Puts the index under `dir` back to `entries`, leaving the working tree alone. */
+async function restoreIndex(git: Git, dir: string, entries: string[]): Promise<void> {
+  const current = (await git("ls-files", "-z", "--", dir)).stdout.split("\0").filter(Boolean);
+  if (current.length > 0) {
+    await git("update-index", "--force-remove", "--", ...current);
+  }
+  for (const entry of entries) {
+    await git("update-index", "--add", "--cacheinfo", entry);
+  }
 }
 
 export function commitMessage(changeName: string): string {
@@ -81,7 +105,7 @@ async function validationRefusal(context: Context, root: string, state: DefineSt
 
 /**
  * Marks the define complete and commits only the change folder. If the commit fails, the state file
- * goes back to what it was and the index is reset, so the next call retries.
+ * goes back to what it was and the index goes back to what the user had staged, so the next call retries.
  */
 async function commitChange(context: Context, root: string, state: DefineState, git: Git): Promise<{ failure: ToolText } | { sha: string }> {
   const name = state.change_name;
@@ -95,6 +119,7 @@ async function commitChange(context: Context, root: string, state: DefineState, 
   state.steps[last] = { started_at: state.steps[last]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
 
+  const staged = await stagedEntries(git, dir);
   const add = await git("add", "--", dir);
   const commit = add.code === 0 ? await git("commit", "-m", commitMessage(name), "--", dir) : add;
   if (commit.code === 0) {
@@ -103,7 +128,7 @@ async function commitChange(context: Context, root: string, state: DefineState, 
   if (previous !== undefined) {
     writeStateText(root, name, previous);
   }
-  await git("reset", "-q", "--", dir);
+  await restoreIndex(git, dir, staged);
   logEvent(context, root, "finish_commit_failed", { change: name });
   return {
     failure: {

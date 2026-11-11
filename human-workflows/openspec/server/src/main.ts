@@ -1,10 +1,10 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { defaultLogBase, waitMsFromEnv } from "./context.js";
+import { defaultLogBase, ensurePrivateDir, waitMsFromEnv } from "./context.js";
 import { createServer } from "./server.js";
 import { loadWorkflow, WorkflowError } from "./steps.js";
 
@@ -24,10 +24,11 @@ try {
 }
 
 try {
-  mkdirSync(logBase, { recursive: true });
+  ensurePrivateDir(logBase);
   appendFileSync(
     join(logBase, "server-starts.log"),
     `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot })}\n`,
+    { mode: 0o600 },
   );
 } catch {
   // Logging never stops the server.
@@ -45,8 +46,7 @@ const { server, calls } = createServer((mcp) => ({
 }));
 
 const shutdown = () => {
-  calls.killAll();
-  process.exit(0);
+  void calls.killAll().finally(() => process.exit(0));
 };
 process.stdin.on("close", shutdown);
 process.on("SIGTERM", shutdown);

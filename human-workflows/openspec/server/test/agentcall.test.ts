@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdirSync, readdirSync, statSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
+import { spawnLogged } from "../src/callchild.js";
 import { readConfig } from "../src/config.js";
+import { workingTreeFingerprint } from "../src/worktree.js";
 import { CHANGE, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
 
 const SESSION_VARS = {
@@ -80,13 +84,12 @@ test("a Codex lead gets a Claude child with no settings, no MCP servers, and rea
     "",
     "--strict-mcp-config",
     "--tools",
-    "Read,Grep,Glob,WebSearch,WebFetch",
+    "Read,Grep,Glob,WebSearch",
     "--allowedTools",
     "Read",
     "Grep",
     "Glob",
     "WebSearch",
-    "WebFetch",
     "--add-dir",
     context.pluginRoot,
     "--effort",
@@ -163,6 +166,7 @@ test("the config is checked: a crosscheck list of claude and codex entries with 
     ["human-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
     ["factory-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
     ["crosscheck:\n  - cli: codex\n", /goes under `human-workflows`/],
+    ["crosscheck:\n  - cli: claude\nhuman-workflows:\n  crosscheck:\n    - cli: codex\n", /goes under `human-workflows`/],
     ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /cli: claude or cli: codex/],
     ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /more than one `human-workflows.crosscheck` entry has cli: codex/],
     ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /unknown keys: reasoning/],
@@ -299,4 +303,103 @@ test("bad targets, empty prompts, and unknown calls are refused", async () => {
   assert.equal(parse(await calls.get("call-00000000")).error?.code, "unknown_call");
   assert.equal(parse(await calls.cancel("call-00000000")).error?.code, "unknown_call");
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
+});
+
+test("overlapping call_agent requests start only one child", async () => {
+  const { calls, fixture } = await atProposal({ waitMs: 50, extraEnv: { FAKE_CHILD_SLEEP_MS: "400" } });
+  const results = await Promise.all([calls.start("crosscheck", "One."), calls.start("crosscheck", "Two.")]);
+  const codes = results.map((result) => parse(result).error?.code ?? parse(result).status).sort();
+  assert.deepEqual(codes, ["call_in_progress", "running"]);
+  let polled = parse(await calls.get(String(parse(results.find((r) => !r.isError) ?? results[0]).call_id)));
+  for (let i = 0; i < 20 && polled.status === "running"; i++) {
+    polled = parse(await calls.get(String(polled.call_id)));
+  }
+  assert.equal(fakeLog(fixture).filter((entry) => entry.bin === "codex").length, 1);
+});
+
+test("with two defines in progress, call_agent needs change_name", async () => {
+  const { calls, next, fixture } = await atProposal();
+  await next({ change_name: "other-change", start: true });
+  const ambiguous = await calls.start("crosscheck", "Review.");
+  assert.equal(parse(ambiguous).error?.code, "ambiguous_change");
+  assert.match(parse(ambiguous).error?.message ?? "", /add-reading-time, other-change/);
+
+  const named = parse(await calls.start("crosscheck", "Review.", fixture.repo, "other-change"));
+  assert.equal(named.status, "succeeded");
+  const other = JSON.parse(fixture.read(`openspec/changes/other-change/${STATE_FILE}`));
+  const first = JSON.parse(fixture.read(`openspec/changes/${CHANGE}/${STATE_FILE}`));
+  assert.equal(other.calls.length, 1);
+  assert.equal(first.calls.length, 0);
+
+  const unknown = await calls.start("crosscheck", "Review.", fixture.repo, "no-such-change");
+  assert.equal(parse(unknown).error?.code, "call_agent_unavailable");
+});
+
+test("killAll kills a child that ignores SIGTERM", async () => {
+  const { calls } = await atProposal({ waitMs: 100, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000", FAKE_CHILD_IGNORE_TERM: "1" } });
+  const started = parse(await calls.start("crosscheck", "Review."));
+  assert.equal(started.status, "running");
+  await calls.killAll(200);
+  let polled = parse(await calls.get(String(started.call_id)));
+  for (let i = 0; i < 20 && polled.status === "running"; i++) {
+    polled = parse(await calls.get(String(started.call_id)));
+  }
+  assert.equal(polled.status, "canceled");
+});
+
+test("a call stays running until its working-tree check is done", async () => {
+  const { calls } = await atProposal({ extraEnv: { FAKE_CHILD_WRITE: "child-was-here.txt", FAKE_CHILD_SLEEP_MS: "100" }, waitMs: 20 });
+  const started = parse(await calls.start("crosscheck", "Review."));
+  const id = String(started.call_id);
+  while (calls.running()) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(parse(await calls.get(id)).working_tree, "changed");
+});
+
+test("call logs are private to the user, even in a folder that already existed", async () => {
+  const fixture = makeFixture();
+  const context = makeContext(fixture);
+  mkdirSync(context.logBase, { mode: 0o755 });
+  const s = session(context);
+  await s.next({ change_name: CHANGE, start: true });
+  const body = parse(await s.calls.start("crosscheck", "Review."));
+  const repoDir = join(context.logBase, readdirSync(context.logBase).filter((name) => !name.endsWith(".log"))[0] ?? "");
+  const callDir = join(repoDir, String(body.call_id));
+  const mode = (path: string) => statSync(path).mode & 0o777;
+  assert.equal(mode(context.logBase), 0o700);
+  assert.equal(mode(repoDir), 0o700);
+  assert.equal(mode(callDir), 0o700);
+  for (const file of ["prompt.txt", "command.json", "stdout", "stderr"]) {
+    assert.equal(mode(join(callDir, file)), 0o600, file);
+  }
+});
+
+test("a log file that cannot be opened closes the one that was", () => {
+  const fixture = makeFixture();
+  const dir = join(fixture.dir, "call-logs");
+  mkdirSync(join(dir, "stderr"), { recursive: true });
+  const open = () => readdirSync("/dev/fd").length;
+  const before = open();
+  assert.throws(() => spawnLogged({ command: "true", args: [] }, dir, fixture.repo, fixture.env));
+  assert.equal(open(), before);
+});
+
+test("the working-tree fingerprint sees a retargeted symlink and is unknown when git cannot compare", async () => {
+  const fixture = makeFixture();
+  mkdirSync(join(fixture.repo, "a"));
+  mkdirSync(join(fixture.repo, "b"));
+  symlinkSync("a", join(fixture.repo, "link"));
+  const before = await workingTreeFingerprint(fixture.repo, fixture.env);
+  rmSync(join(fixture.repo, "link"));
+  symlinkSync("b", join(fixture.repo, "link"));
+  const after = await workingTreeFingerprint(fixture.repo, fixture.env);
+  assert.ok(before && after);
+  assert.notEqual(before, after);
+
+  const unborn = join(fixture.dir, "unborn");
+  mkdirSync(unborn);
+  fixture.git("-C", unborn, "init", "-q");
+  writeFileSync(join(unborn, "file.txt"), "x\n");
+  assert.equal(await workingTreeFingerprint(unborn, fixture.env), undefined);
 });

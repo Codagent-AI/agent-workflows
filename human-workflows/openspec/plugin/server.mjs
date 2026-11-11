@@ -14590,7 +14590,7 @@ var require_dist2 = __commonJS({
 });
 
 // src/main.ts
-import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync3 } from "node:fs";
+import { appendFileSync as appendFileSync2 } from "node:fs";
 import { dirname, join as join10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -20735,7 +20735,7 @@ var StdioServerTransport = class {
 
 // src/context.ts
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20807,13 +20807,24 @@ function repoLogDir(context, root) {
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 12);
   return join(context.logBase, hash);
 }
+function ensurePrivateDir(path) {
+  mkdirSync(path, { recursive: true, mode: 448 });
+  chmodSync(path, 448);
+}
+function privateLogDir(context, root, ...parts) {
+  ensurePrivateDir(context.logBase);
+  const repoDir = repoLogDir(context, root);
+  ensurePrivateDir(repoDir);
+  const dir = join(repoDir, ...parts);
+  ensurePrivateDir(dir);
+  return dir;
+}
 function logEvent(context, root, event, fields = {}) {
   try {
-    const dir = repoLogDir(context, root);
-    mkdirSync(dir, { recursive: true });
+    const dir = privateLogDir(context, root);
     const line = JSON.stringify({ at: context.now().toISOString(), event, pid: process.pid, root, ...fields });
     appendFileSync(join(dir, "events.jsonl"), `${line}
-`);
+`, { mode: 384 });
   } catch {
   }
 }
@@ -28988,9 +28999,6 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
-// src/agentcall.ts
-import { existsSync as existsSync3 } from "node:fs";
-
 // src/call.ts
 function errorText(code, message, extra = {}) {
   return { text: JSON.stringify({ error: { code, message }, ...extra }, null, 2), isError: true };
@@ -29027,16 +29035,299 @@ function snapshotOf(call, now) {
   return { text: JSON.stringify(base, null, 2), isError: call.status === "failed" };
 }
 
-// src/calloutcome.ts
+// src/state.ts
+import { existsSync, readdirSync, readFileSync as readFileSync2, renameSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+
+// src/steps.ts
+var import_yaml = __toESM(require_dist2(), 1);
 import { readFileSync } from "node:fs";
 import { join as join2 } from "node:path";
+var WorkflowError = class extends Error {
+};
+var PLACEHOLDERS = ["{{change_name}}", "{{skills_dir}}"];
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+function parseStep(raw, index, seen) {
+  const label = `step ${index + 1}`;
+  if (!isRecord(raw)) {
+    throw new WorkflowError(`${label} must be a mapping with an id and a prompt.`);
+  }
+  const { id, prompt, tools } = raw;
+  if (!nonEmptyString(id)) {
+    throw new WorkflowError(`${label} needs an id.`);
+  }
+  if (seen.has(id)) {
+    throw new WorkflowError(`step id "${id}" is used twice.`);
+  }
+  seen.add(id);
+  if (!nonEmptyString(prompt)) {
+    throw new WorkflowError(`step "${id}" needs a prompt.`);
+  }
+  const unknown2 = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
+  if (unknown2) {
+    throw new WorkflowError(`step "${id}" has an unknown placeholder ${unknown2}.`);
+  }
+  if (tools !== void 0 && (!Array.isArray(tools) || tools.some((tool) => tool !== "call_agent"))) {
+    throw new WorkflowError(`step "${id}" has tools that are not [call_agent]. Only call_agent is supported.`);
+  }
+  return { id, prompt, callAgent: Array.isArray(tools) && tools.length > 0 };
+}
+function parseWorkflow(text) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text);
+  } catch (error2) {
+    throw new WorkflowError(`is not valid YAML: ${error2.message}`);
+  }
+  if (!isRecord(raw)) {
+    throw new WorkflowError("must be a mapping with name, description, and steps.");
+  }
+  if (!nonEmptyString(raw.name)) {
+    throw new WorkflowError("needs a name.");
+  }
+  if (!nonEmptyString(raw.description)) {
+    throw new WorkflowError("needs a description.");
+  }
+  if (!Array.isArray(raw.steps) || raw.steps.length === 0) {
+    throw new WorkflowError("needs at least one step under steps.");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const steps = raw.steps.map((step, index) => parseStep(step, index, seen));
+  return { name: raw.name.trim(), description: raw.description.trim(), steps };
+}
+function loadWorkflow(pluginRoot2) {
+  const path = join2(pluginRoot2, "workflow.yaml");
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error2) {
+    throw new WorkflowError(`Cannot read ${path}: ${error2.message}`);
+  }
+  try {
+    return parseWorkflow(text);
+  } catch (error2) {
+    if (error2 instanceof WorkflowError) {
+      throw new WorkflowError(`${path} ${error2.message}`);
+    }
+    throw error2;
+  }
+}
+function stepIds(workflow2) {
+  return workflow2.steps.map((step) => step.id);
+}
+function isStepId(workflow2, value) {
+  return typeof value === "string" && stepIds(workflow2).includes(value);
+}
+function firstStepId(workflow2) {
+  return workflow2.steps[0]?.id ?? "";
+}
+function lastStepId(workflow2) {
+  return workflow2.steps[workflow2.steps.length - 1]?.id ?? "";
+}
+function allowsCallAgent(workflow2, step) {
+  return workflow2.steps.some((candidate) => candidate.id === step && candidate.callAgent);
+}
+function stepNumber(workflow2, step) {
+  return stepIds(workflow2).indexOf(step) + 1;
+}
+function nextStepId(workflow2, step) {
+  return workflow2.steps[stepIds(workflow2).indexOf(step) + 1]?.id;
+}
+function changeDirFor(changeName) {
+  return `openspec/changes/${changeName}`;
+}
+function stepBody(workflow2, pluginRoot2, step, changeName) {
+  const prompt = workflow2.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
+  return prompt.replaceAll("{{change_name}}", changeName).replaceAll("{{skills_dir}}", join2(pluginRoot2, "skills")).trim();
+}
+function renderStep(input) {
+  const { workflow: workflow2, changeName, step, mode } = input;
+  const position = `(step ${stepNumber(workflow2, step)} of ${workflow2.steps.length})`;
+  const changeDir = changeDirFor(changeName);
+  const parts = [];
+  switch (mode) {
+    case "new":
+      parts.push(`Created OpenSpec change "${changeName}" at \`${changeDir}/\`.`);
+      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
+      parts.push(`The current step is "${step}" ${position}.`);
+      break;
+    case "continue":
+      parts.push(`Continuing to step "${step}" ${position}.`);
+      break;
+    case "resume":
+      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
+      parts.push(`Resuming step: "${step}" ${position}. If you already started on this step, resume from where you left off.`);
+      if (input.completed.length > 0) {
+        parts.push(
+          `Completed steps: ${input.completed.join(", ")}. Their artifacts are under \`${changeDir}/\`.`
+        );
+      }
+      break;
+  }
+  parts.push("Before doing anything else, announce that you are starting this step.");
+  parts.push(stepBody(workflow2, input.pluginRoot, step, changeName));
+  let completion = `When you or the user determine this step is complete, call the \`next_step\` tool with change_name "${changeName}". Make that call the final action of the step, and carry out the instructions it returns in this conversation. Do not merely say that the step is complete.`;
+  if (!nextStepId(workflow2, step)) {
+    completion += " This is the last step: that call validates the change and commits its documents.";
+  }
+  parts.push(completion);
+  return parts.join("\n\n");
+}
+
+// src/state.ts
+var STATE_FILE = ".define-openspec-change.json";
+var StateError = class extends Error {
+};
+function statePath(root, changeName) {
+  return join3(root, changeDirFor(changeName), STATE_FILE);
+}
+function newState(workflow2, changeName, at, lead) {
+  const first = firstStepId(workflow2);
+  return {
+    schema: 1,
+    workflow: "define-openspec-change",
+    change_name: changeName,
+    change_dir: changeDirFor(changeName),
+    status: "in_progress",
+    current_step: first,
+    steps: { [first]: { started_at: at } },
+    starts: [{ at, lead, mode: "new", step: first }],
+    calls: [],
+    created_at: at,
+    updated_at: at,
+    completed_at: null
+  };
+}
+function readState(workflow2, root, changeName) {
+  const path = statePath(root, changeName);
+  if (!existsSync(path)) {
+    return void 0;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync2(path, "utf8"));
+  } catch (error2) {
+    throw new StateError(`${path} is not valid JSON: ${error2.message}`);
+  }
+  const state = parsed;
+  const validStep = state.current_step === null || isStepId(workflow2, state.current_step);
+  const knownSteps = Object.keys(state.steps ?? {}).every((id) => isStepId(workflow2, id));
+  if (state.schema !== 1 || state.change_name !== changeName || state.status !== "in_progress" && state.status !== "complete" || !validStep || !knownSteps || state.status === "in_progress" && state.current_step === null) {
+    throw new StateError(`${path} is not a define-openspec-change state file this version understands.`);
+  }
+  state.steps ??= {};
+  state.starts ??= [];
+  state.calls ??= [];
+  return state;
+}
+function readStateText(root, changeName) {
+  const path = statePath(root, changeName);
+  return existsSync(path) ? readFileSync2(path, "utf8") : void 0;
+}
+function writeStateText(root, changeName, text) {
+  const path = statePath(root, changeName);
+  const temporary = `${path}.tmp-${process.pid}`;
+  writeFileSync(temporary, text);
+  renameSync(temporary, path);
+}
+function writeState(root, state, at) {
+  state.updated_at = at;
+  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}
+`);
+}
+function inProgressChanges(workflow2, root) {
+  const changes = join3(root, "openspec", "changes");
+  if (!existsSync(changes)) {
+    return [];
+  }
+  const names = [];
+  for (const entry of readdirSync(changes, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === "archive") {
+      continue;
+    }
+    try {
+      const state = readState(workflow2, root, entry.name);
+      if (state?.status === "in_progress") {
+        names.push(entry.name);
+      }
+    } catch {
+    }
+  }
+  return names.sort();
+}
+function completedSteps(workflow2, state) {
+  return stepIds(workflow2).filter((step) => state.steps[step]?.completed_at !== void 0);
+}
+
+// src/callowner.ts
+function eligibleOwners(workflow2, root) {
+  const owners = [];
+  for (const name of inProgressChanges(workflow2, root)) {
+    const step = readState(workflow2, root, name)?.current_step;
+    if (step && allowsCallAgent(workflow2, step)) {
+      owners.push({ changeName: name, step });
+    }
+  }
+  return owners;
+}
+function chooseCallOwner(workflow2, root, changeName) {
+  const owners = eligibleOwners(workflow2, root);
+  const wanted = changeName?.trim() ?? "";
+  const named = wanted === "" ? void 0 : owners.find((candidate) => candidate.changeName === wanted);
+  const only = owners.length === 1 ? owners[0] : void 0;
+  const owner = wanted === "" ? only : named;
+  if (owner) {
+    return owner;
+  }
+  if (wanted === "" && owners.length > 1) {
+    const names = owners.map((candidate) => candidate.changeName).join(", ");
+    return errorText("ambiguous_change", `More than one define can use call_agent (${names}). Pass change_name.`);
+  }
+  return errorText(
+    "call_agent_unavailable",
+    "call_agent is only available during the proposal and approach-review steps of a define that is in progress" + (wanted === "" ? "." : `, and "${wanted}" is not at one of them.`)
+  );
+}
+
+// src/callrecord.ts
+import { existsSync as existsSync2 } from "node:fs";
+function recordCall(context, call) {
+  try {
+    const state = readState(context.workflow, call.root, call.changeName);
+    if (!(state && existsSync2(call.root))) {
+      return;
+    }
+    state.calls.push({
+      call_id: call.id,
+      step: call.step,
+      cli: call.cli,
+      ...call.model === void 0 ? {} : { model: call.model },
+      effort: call.effort,
+      status: call.status,
+      ...call.workingTree === void 0 ? {} : { working_tree: call.workingTree },
+      started_at: call.startedAt.toISOString(),
+      ended_at: (call.endedAt ?? context.now()).toISOString()
+    });
+    writeState(call.root, state, context.now().toISOString());
+  } catch {
+  }
+}
+
+// src/calloutcome.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+import { join as join4 } from "node:path";
 var MAX_RESPONSE_CHARS = 2e5;
 function describeExit(exit) {
   return exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code}`;
 }
 function readText(path) {
   try {
-    return readFileSync(path, "utf8");
+    return readFileSync3(path, "utf8");
   } catch {
     return "";
   }
@@ -29070,12 +29361,12 @@ function fail(call, code, message) {
   call.error = { code, message };
 }
 function codexOutcome(call, exit) {
-  const last = readText(join2(call.dir, "last-message.txt")).trim();
+  const last = readText(join4(call.dir, "last-message.txt")).trim();
   if (exit.code === 0 && last !== "") {
     succeed(call, last);
     return;
   }
-  const detail = [lastCodexErrors(readText(join2(call.dir, "stdout"))), tail(readText(join2(call.dir, "stderr")), 1500)].filter(Boolean).join("\n");
+  const detail = [lastCodexErrors(readText(join4(call.dir, "stdout"))), tail(readText(join4(call.dir, "stderr")), 1500)].filter(Boolean).join("\n");
   fail(call, "execution_failed", `codex ended with ${describeExit(exit)} and no final message. ${detail}`.trim());
 }
 function parseClaudeResult(stdout) {
@@ -29092,7 +29383,7 @@ function claudeAnswer(parsed, code) {
   return void 0;
 }
 function claudeOutcome(call, exit) {
-  const parsed = parseClaudeResult(readText(join2(call.dir, "stdout")));
+  const parsed = parseClaudeResult(readText(join4(call.dir, "stdout")));
   if (typeof parsed?.total_cost_usd === "number") {
     call.costUsd = parsed.total_cost_usd;
   }
@@ -29102,7 +29393,7 @@ function claudeOutcome(call, exit) {
     return;
   }
   const reported = typeof parsed?.result === "string" ? parsed.result : parsed?.subtype ?? "";
-  const stderr = tail(readText(join2(call.dir, "stderr")), 1500);
+  const stderr = tail(readText(join4(call.dir, "stderr")), 1500);
   fail(call, "execution_failed", `claude ended with ${describeExit(exit)}. ${[reported, stderr].filter(Boolean).join("\n")}`.trim());
 }
 function applyOutcome(call, exit) {
@@ -29121,8 +29412,8 @@ function applyOutcome(call, exit) {
 // src/callchild.ts
 import { spawn as spawn2 } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, mkdirSync as mkdirSync2, openSync, writeFileSync } from "node:fs";
-import { join as join3 } from "node:path";
+import { closeSync, openSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // src/child.ts
 var PLUGIN_NAME = "define-openspec-change";
@@ -29177,7 +29468,7 @@ function childCommand(input) {
     args2.push("-o", input.lastMessageFile, "--", input.prompt);
     return { command: "codex", args: args2 };
   }
-  const tools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
+  const tools = ["Read", "Grep", "Glob", "WebSearch"];
   const args = [
     "-p",
     "--output-format",
@@ -29212,17 +29503,23 @@ function childEnv(env) {
 // src/callchild.ts
 function prepareChild(context, root, prompt, choice) {
   const id = `call-${randomBytes(4).toString("hex")}`;
-  const dir = join3(repoLogDir(context, root), id);
-  mkdirSync2(dir, { recursive: true });
-  const lastMessageFile = join3(dir, "last-message.txt");
+  const dir = privateLogDir(context, root, id);
+  const lastMessageFile = join5(dir, "last-message.txt");
   const command = childCommand({ ...choice, prompt, pluginRoot: context.pluginRoot, lastMessageFile });
-  writeFileSync(join3(dir, "prompt.txt"), prompt);
-  writeFileSync(join3(dir, "command.json"), JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2));
+  writeFileSync2(join5(dir, "prompt.txt"), prompt, { mode: 384 });
+  const shown = JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2);
+  writeFileSync2(join5(dir, "command.json"), shown, { mode: 384 });
   return { id, dir, command };
 }
 function spawnLogged(command, dir, root, env) {
-  const stdoutFd = openSync(join3(dir, "stdout"), "w");
-  const stderrFd = openSync(join3(dir, "stderr"), "w");
+  const stdoutFd = openSync(join5(dir, "stdout"), "w", 384);
+  let stderrFd;
+  try {
+    stderrFd = openSync(join5(dir, "stderr"), "w", 384);
+  } catch (error2) {
+    closeSync(stdoutFd);
+    throw error2;
+  }
   const closeLogs = () => {
     closeSync(stdoutFd);
     closeSync(stderrFd);
@@ -29242,10 +29539,10 @@ function spawnLogged(command, dir, root, env) {
 }
 
 // src/config.ts
-var import_yaml = __toESM(require_dist2(), 1);
-import { accessSync, constants, existsSync, readFileSync as readFileSync2, statSync } from "node:fs";
+var import_yaml2 = __toESM(require_dist2(), 1);
+import { accessSync, constants, existsSync as existsSync3, readFileSync as readFileSync4, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join as join4 } from "node:path";
+import { delimiter, join as join6 } from "node:path";
 var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 var DEFAULT_EFFORT = "high";
 var CLIS = ["claude", "codex"];
@@ -29253,7 +29550,7 @@ var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
 var ENTRY_KEYS = /* @__PURE__ */ new Set(["cli", "model", "effort"]);
 var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
 function configPath(env) {
-  return join4(env.HOME || homedir(), ".agent-workflows", "config.yaml");
+  return join6(env.HOME || homedir(), ".agent-workflows", "config.yaml");
 }
 function invalid(path, problem) {
   return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
@@ -29269,13 +29566,13 @@ function isMapping(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function crosscheckList(root) {
+  if (root.crosscheck !== void 0) {
+    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`. Remove the top-level one.";
+  }
   const section = root["human-workflows"];
   const list = isMapping(section) ? section.crosscheck : void 0;
   if (Array.isArray(list) && list.length > 0) {
     return list;
-  }
-  if (root.crosscheck !== void 0) {
-    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.";
   }
   return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
 }
@@ -29315,12 +29612,12 @@ function parseEntries(list) {
 }
 function readConfig(env) {
   const path = configPath(env);
-  if (!existsSync(path)) {
+  if (!existsSync3(path)) {
     return { ok: false, path, reason: "missing", message: `There is no ${CONFIG_DISPLAY_PATH} (${path}), so the crosscheck agent is not configured.` };
   }
   let doc;
   try {
-    doc = (0, import_yaml.parse)(readFileSync2(path, "utf8"));
+    doc = (0, import_yaml2.parse)(readFileSync4(path, "utf8"));
   } catch (error2) {
     return invalid(path, error2.message);
   }
@@ -29333,7 +29630,7 @@ function onPath(command, env) {
     if (dir === "") {
       continue;
     }
-    const candidate = join4(dir, command);
+    const candidate = join6(dir, command);
     try {
       if (statSync(candidate).isFile()) {
         accessSync(candidate, constants.X_OK);
@@ -29367,244 +29664,18 @@ function resolveCrosscheck(lead, env) {
   return typeof choice === "string" ? `${choice} ${SETUP_HINT}` : choice;
 }
 
-// src/state.ts
-import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync4, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join6 } from "node:path";
-
-// src/steps.ts
-var import_yaml2 = __toESM(require_dist2(), 1);
-import { readFileSync as readFileSync3 } from "node:fs";
-import { join as join5 } from "node:path";
-var WorkflowError = class extends Error {
-};
-var PLACEHOLDERS = ["{{change_name}}", "{{skills_dir}}"];
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function nonEmptyString(value) {
-  return typeof value === "string" && value.trim() !== "";
-}
-function parseStep(raw, index, seen) {
-  const label = `step ${index + 1}`;
-  if (!isRecord(raw)) {
-    throw new WorkflowError(`${label} must be a mapping with an id and a prompt.`);
-  }
-  const { id, prompt, tools } = raw;
-  if (!nonEmptyString(id)) {
-    throw new WorkflowError(`${label} needs an id.`);
-  }
-  if (seen.has(id)) {
-    throw new WorkflowError(`step id "${id}" is used twice.`);
-  }
-  seen.add(id);
-  if (!nonEmptyString(prompt)) {
-    throw new WorkflowError(`step "${id}" needs a prompt.`);
-  }
-  const unknown2 = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
-  if (unknown2) {
-    throw new WorkflowError(`step "${id}" has an unknown placeholder ${unknown2}.`);
-  }
-  if (tools !== void 0 && (!Array.isArray(tools) || tools.some((tool) => tool !== "call_agent"))) {
-    throw new WorkflowError(`step "${id}" has tools that are not [call_agent]. Only call_agent is supported.`);
-  }
-  return { id, prompt, callAgent: Array.isArray(tools) && tools.length > 0 };
-}
-function parseWorkflow(text) {
-  let raw;
-  try {
-    raw = (0, import_yaml2.parse)(text);
-  } catch (error2) {
-    throw new WorkflowError(`is not valid YAML: ${error2.message}`);
-  }
-  if (!isRecord(raw)) {
-    throw new WorkflowError("must be a mapping with name, description, and steps.");
-  }
-  if (!nonEmptyString(raw.name)) {
-    throw new WorkflowError("needs a name.");
-  }
-  if (!nonEmptyString(raw.description)) {
-    throw new WorkflowError("needs a description.");
-  }
-  if (!Array.isArray(raw.steps) || raw.steps.length === 0) {
-    throw new WorkflowError("needs at least one step under steps.");
-  }
-  const seen = /* @__PURE__ */ new Set();
-  const steps = raw.steps.map((step, index) => parseStep(step, index, seen));
-  return { name: raw.name.trim(), description: raw.description.trim(), steps };
-}
-function loadWorkflow(pluginRoot2) {
-  const path = join5(pluginRoot2, "workflow.yaml");
-  let text;
-  try {
-    text = readFileSync3(path, "utf8");
-  } catch (error2) {
-    throw new WorkflowError(`Cannot read ${path}: ${error2.message}`);
-  }
-  try {
-    return parseWorkflow(text);
-  } catch (error2) {
-    if (error2 instanceof WorkflowError) {
-      throw new WorkflowError(`${path} ${error2.message}`);
-    }
-    throw error2;
-  }
-}
-function stepIds(workflow2) {
-  return workflow2.steps.map((step) => step.id);
-}
-function isStepId(workflow2, value) {
-  return typeof value === "string" && stepIds(workflow2).includes(value);
-}
-function firstStepId(workflow2) {
-  return workflow2.steps[0]?.id ?? "";
-}
-function lastStepId(workflow2) {
-  return workflow2.steps[workflow2.steps.length - 1]?.id ?? "";
-}
-function allowsCallAgent(workflow2, step) {
-  return workflow2.steps.some((candidate) => candidate.id === step && candidate.callAgent);
-}
-function stepNumber(workflow2, step) {
-  return stepIds(workflow2).indexOf(step) + 1;
-}
-function nextStepId(workflow2, step) {
-  return workflow2.steps[stepIds(workflow2).indexOf(step) + 1]?.id;
-}
-function changeDirFor(changeName) {
-  return `openspec/changes/${changeName}`;
-}
-function stepBody(workflow2, pluginRoot2, step, changeName) {
-  const prompt = workflow2.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
-  return prompt.replaceAll("{{change_name}}", changeName).replaceAll("{{skills_dir}}", join5(pluginRoot2, "skills")).trim();
-}
-function renderStep(input) {
-  const { workflow: workflow2, changeName, step, mode } = input;
-  const position = `(step ${stepNumber(workflow2, step)} of ${workflow2.steps.length})`;
-  const changeDir = changeDirFor(changeName);
-  const parts = [];
-  switch (mode) {
-    case "new":
-      parts.push(`Created OpenSpec change "${changeName}" at \`${changeDir}/\`.`);
-      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
-      parts.push(`The current step is "${step}" ${position}.`);
-      break;
-    case "continue":
-      parts.push(`Continuing to step "${step}" ${position}.`);
-      break;
-    case "resume":
-      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
-      parts.push(`Resuming step: "${step}" ${position}. If you already started on this step, resume from where you left off.`);
-      if (input.completed.length > 0) {
-        parts.push(
-          `Completed steps: ${input.completed.join(", ")}. Their artifacts are under \`${changeDir}/\`.`
-        );
-      }
-      break;
-  }
-  parts.push("Before doing anything else, announce that you are starting this step.");
-  parts.push(stepBody(workflow2, input.pluginRoot, step, changeName));
-  let completion = `When you or the user determine this step is complete, call the \`next_step\` tool with change_name "${changeName}". Make that call the final action of the step, and carry out the instructions it returns in this conversation. Do not merely say that the step is complete.`;
-  if (!nextStepId(workflow2, step)) {
-    completion += " This is the last step: that call validates the change and commits its documents.";
-  }
-  parts.push(completion);
-  return parts.join("\n\n");
-}
-
-// src/state.ts
-var STATE_FILE = ".define-openspec-change.json";
-var StateError = class extends Error {
-};
-function statePath(root, changeName) {
-  return join6(root, changeDirFor(changeName), STATE_FILE);
-}
-function newState(workflow2, changeName, at, lead) {
-  const first = firstStepId(workflow2);
-  return {
-    schema: 1,
-    workflow: "define-openspec-change",
-    change_name: changeName,
-    change_dir: changeDirFor(changeName),
-    status: "in_progress",
-    current_step: first,
-    steps: { [first]: { started_at: at } },
-    starts: [{ at, lead, mode: "new", step: first }],
-    calls: [],
-    created_at: at,
-    updated_at: at,
-    completed_at: null
-  };
-}
-function readState(workflow2, root, changeName) {
-  const path = statePath(root, changeName);
-  if (!existsSync2(path)) {
-    return void 0;
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync4(path, "utf8"));
-  } catch (error2) {
-    throw new StateError(`${path} is not valid JSON: ${error2.message}`);
-  }
-  const state = parsed;
-  const validStep = state.current_step === null || isStepId(workflow2, state.current_step);
-  const knownSteps = Object.keys(state.steps ?? {}).every((id) => isStepId(workflow2, id));
-  if (state.schema !== 1 || state.change_name !== changeName || state.status !== "in_progress" && state.status !== "complete" || !validStep || !knownSteps || state.status === "in_progress" && state.current_step === null) {
-    throw new StateError(`${path} is not a define-openspec-change state file this version understands.`);
-  }
-  state.steps ??= {};
-  state.starts ??= [];
-  state.calls ??= [];
-  return state;
-}
-function readStateText(root, changeName) {
-  const path = statePath(root, changeName);
-  return existsSync2(path) ? readFileSync4(path, "utf8") : void 0;
-}
-function writeStateText(root, changeName, text) {
-  const path = statePath(root, changeName);
-  const temporary = `${path}.tmp-${process.pid}`;
-  writeFileSync2(temporary, text);
-  renameSync(temporary, path);
-}
-function writeState(root, state, at) {
-  state.updated_at = at;
-  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}
-`);
-}
-function inProgressChanges(workflow2, root) {
-  const changes = join6(root, "openspec", "changes");
-  if (!existsSync2(changes)) {
-    return [];
-  }
-  const names = [];
-  for (const entry of readdirSync(changes, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === "archive") {
-      continue;
-    }
-    try {
-      const state = readState(workflow2, root, entry.name);
-      if (state?.status === "in_progress") {
-        names.push(entry.name);
-      }
-    } catch {
-    }
-  }
-  return names.sort();
-}
-function completedSteps(workflow2, state) {
-  return stepIds(workflow2).filter((step) => state.steps[step]?.completed_at !== void 0);
-}
-
 // src/worktree.ts
 import { createHash as createHash2 } from "node:crypto";
-import { readFileSync as readFileSync5, statSync as statSync2 } from "node:fs";
+import { lstatSync, readFileSync as readFileSync5, readlinkSync } from "node:fs";
 import { join as join7 } from "node:path";
 function hashUntracked(hash, root, file) {
   hash.update(file).update("\0");
   try {
     const path = join7(root, file);
-    if (statSync2(path).isFile()) {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      hash.update("-> ").update(readlinkSync(path));
+    } else if (stat.isFile()) {
       hash.update(readFileSync5(path));
     }
   } catch {
@@ -29619,6 +29690,9 @@ async function workingTreeFingerprint(root, env) {
   }
   const diff = await git("diff", "HEAD", "--binary");
   const untracked = await git("ls-files", "-o", "--exclude-standard", "-z");
+  if (diff.code !== 0 || untracked.code !== 0) {
+    return void 0;
+  }
   const hash = createHash2("sha256").update(status.stdout).update("\0").update(diff.stdout).update("\0");
   for (const file of untracked.stdout.split("\0").filter(Boolean).sort()) {
     hashUntracked(hash, root, file);
@@ -29635,35 +29709,37 @@ function compareFingerprints(before, after) {
 // src/agentcall.ts
 var CROSSCHECK_AGENT = "crosscheck";
 var KILL_GRACE_MS = 1e4;
-function findCallOwner(workflow2, root) {
-  const states = inProgressChanges(workflow2, root).map((name) => ({ name, state: readState(workflow2, root, name) }));
-  for (const { name, state } of states) {
-    if (state?.current_step && allowsCallAgent(workflow2, state.current_step)) {
-      return { changeName: name, step: state.current_step };
-    }
-  }
-  return void 0;
-}
+var SHUTDOWN_GRACE_MS = 3e3;
 var CallManager = class {
   constructor(context) {
     this.context = context;
   }
   calls = /* @__PURE__ */ new Map();
   active;
+  /** True from the busy check until a new call is the active one. */
+  starting = false;
   running() {
     return this.active?.status === "running" ? this.active : void 0;
   }
-  async start(agent, prompt, cwd = this.context.cwd) {
+  async start(agent, prompt, cwd = this.context.cwd, changeName) {
     const refusal = this.startRefusal(agent, prompt);
     if (refusal) {
       return refusal;
     }
-    const plan = await this.planStart(cwd);
-    if ("text" in plan) {
-      return plan;
+    this.starting = true;
+    let call;
+    let command;
+    try {
+      const plan = await this.planStart(cwd, changeName);
+      if ("text" in plan) {
+        return plan;
+      }
+      const prepared = prepareChild(this.context, plan.root, prompt, plan.choice);
+      command = prepared.command;
+      call = await this.register(plan, prepared.id, prepared.dir);
+    } finally {
+      this.starting = false;
     }
-    const { id, dir, command } = prepareChild(this.context, plan.root, prompt, plan.choice);
-    const call = await this.register(plan, id, dir);
     return this.launch(call, command);
   }
   async get(callId) {
@@ -29678,20 +29754,38 @@ var CallManager = class {
     if (call.status !== "running") {
       return this.snapshot(call);
     }
-    call.cancelRequested = true;
-    this.signal(call, "SIGTERM");
-    const timer = setTimeout(() => this.signal(call, "SIGKILL"), KILL_GRACE_MS);
-    timer.unref();
+    this.terminate(call);
     await Promise.race([call.done, new Promise((resolve) => setTimeout(resolve, Math.min(this.context.waitMs, 15e3)))]);
     return this.snapshot(call);
   }
-  /** Stops every running child. Called when the server exits, so no child outlives its lead. */
-  killAll() {
-    for (const call of this.calls.values()) {
+  /**
+   * Stops every running child. Called when the server exits, so no child outlives its lead. A child
+   * that is still running after `graceMs` is killed.
+   */
+  async killAll(graceMs = SHUTDOWN_GRACE_MS) {
+    const running = [...this.calls.values()].filter((call) => call.status === "running");
+    for (const call of running) {
+      this.terminate(call);
+    }
+    let timer;
+    await Promise.race([
+      Promise.all(running.map((call) => call.done)),
+      new Promise((resolve) => timer = setTimeout(resolve, graceMs))
+    ]);
+    clearTimeout(timer);
+    for (const call of running) {
       if (call.status === "running") {
-        call.cancelRequested = true;
-        this.signal(call, "SIGTERM");
+        this.signal(call, "SIGKILL");
       }
+    }
+  }
+  /** Asks the child to stop, and kills it if it is still there after the grace period. Safe to repeat. */
+  terminate(call) {
+    call.cancelRequested = true;
+    this.signal(call, "SIGTERM");
+    if (call.killTimer === void 0) {
+      call.killTimer = setTimeout(() => this.signal(call, "SIGKILL"), KILL_GRACE_MS);
+      call.killTimer.unref();
     }
   }
   /** The refusal for a bad request or a call already running, if any. */
@@ -29701,6 +29795,9 @@ var CallManager = class {
     }
     if (prompt.trim() === "") {
       return errorText("invalid_request", "prompt is required.");
+    }
+    if (this.starting) {
+      return errorText("call_in_progress", "Another call_agent is still starting. Try again in a moment.");
     }
     const busy = this.running();
     if (busy) {
@@ -29713,19 +29810,16 @@ var CallManager = class {
     return void 0;
   }
   /** Finds the repository, the define the call belongs to, and the crosscheck to run, or says why it cannot. */
-  async planStart(cwd) {
+  async planStart(cwd, changeName) {
     let root;
     try {
       root = await repoRoot({ ...this.context, cwd });
     } catch (error2) {
       return errorText("call_agent_unavailable", error2.message);
     }
-    const owner = findCallOwner(this.context.workflow, root);
-    if (!owner) {
-      return errorText(
-        "call_agent_unavailable",
-        "call_agent is only available during the proposal and approach-review steps of a define that is in progress."
-      );
+    const owner = chooseCallOwner(this.context.workflow, root, changeName);
+    if ("text" in owner) {
+      return owner;
     }
     const choice = resolveCrosscheck(detectLead(this.context.clientName(), this.context.env), this.context.env);
     if (typeof choice === "string") {
@@ -29792,6 +29886,10 @@ var CallManager = class {
       }
       finished = true;
       closeLogs();
+      clearTimeout(call.killTimer);
+      if (call.cancelRequested) {
+        this.signal(call, "SIGKILL");
+      }
       void this.settle(call, exit).finally(call.markDone);
     };
     child.on("error", (error2) => {
@@ -29828,9 +29926,10 @@ var CallManager = class {
   }
   /** Reads the child's result, checks whether the working tree changed, logs the end, and records the call. */
   async settle(call, exit) {
-    applyOutcome(call, exit);
-    call.endedAt = this.context.now();
+    const endedAt = this.context.now();
     const after = await workingTreeFingerprint(call.root, this.context.env);
+    applyOutcome(call, exit);
+    call.endedAt = endedAt;
     call.workingTree = compareFingerprints(call.fingerprintBefore, after);
     logEvent(this.context, call.root, "call_end", {
       call_id: call.id,
@@ -29839,29 +29938,7 @@ var CallManager = class {
       working_tree: call.workingTree,
       cost_usd: call.costUsd
     });
-    this.record(call);
-  }
-  /** Adds the finished call to the change's state file, after the working-tree check. */
-  record(call) {
-    try {
-      const state = readState(this.context.workflow, call.root, call.changeName);
-      if (!(state && existsSync3(call.root))) {
-        return;
-      }
-      state.calls.push({
-        call_id: call.id,
-        step: call.step,
-        cli: call.cli,
-        ...call.model === void 0 ? {} : { model: call.model },
-        effort: call.effort,
-        status: call.status,
-        ...call.workingTree === void 0 ? {} : { working_tree: call.workingTree },
-        started_at: call.startedAt.toISOString(),
-        ended_at: (call.endedAt ?? this.context.now()).toISOString()
-      });
-      writeState(call.root, state, this.context.now().toISOString());
-    } catch {
-    }
+    recordCall(this.context, call);
   }
 };
 function unknownCall(callId) {
@@ -29876,7 +29953,7 @@ import { existsSync as existsSync5 } from "node:fs";
 import { join as join9 } from "node:path";
 
 // src/checks.ts
-import { existsSync as existsSync4, readdirSync as readdirSync2, statSync as statSync3 } from "node:fs";
+import { existsSync as existsSync4, readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
 import { join as join8 } from "node:path";
 function isValidChangeName(name) {
   return /^[a-z0-9][a-z0-9-]*$/.test(name);
@@ -29886,7 +29963,7 @@ function nameRuleMessage(name) {
 }
 function nonEmptyFile(path) {
   try {
-    const stat = statSync3(path);
+    const stat = statSync2(path);
     return stat.isFile() && stat.size > 0;
   } catch {
     return false;
@@ -29959,7 +30036,23 @@ function planningArtifactFailures(root, changeDir) {
 
 // src/finish.ts
 function gitRunner(root, env) {
-  return (...args) => run("git", args, { cwd: root, env });
+  return (...args) => run("git", args, { cwd: root, env: { ...env, GIT_TERMINAL_PROMPT: "0" } });
+}
+async function stagedEntries(git, dir) {
+  const listed = await git("ls-files", "-s", "-z", "--", dir);
+  return listed.stdout.split("\0").filter(Boolean).flatMap((entry) => {
+    const match = entry.match(/^(\d+) ([0-9a-f]+) 0\t(.*)$/s);
+    return match ? [`${match[1]},${match[2]},${match[3]}`] : [];
+  });
+}
+async function restoreIndex(git, dir, entries) {
+  const current = (await git("ls-files", "-z", "--", dir)).stdout.split("\0").filter(Boolean);
+  if (current.length > 0) {
+    await git("update-index", "--force-remove", "--", ...current);
+  }
+  for (const entry of entries) {
+    await git("update-index", "--add", "--cacheinfo", entry);
+  }
 }
 function commitMessage(changeName) {
   return `chore: add change documents for ${changeName}`;
@@ -30030,6 +30123,7 @@ async function commitChange(context, root, state, git) {
   const last = lastStepId(context.workflow);
   state.steps[last] = { started_at: state.steps[last]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
+  const staged = await stagedEntries(git, dir);
   const add = await git("add", "--", dir);
   const commit = add.code === 0 ? await git("commit", "-m", commitMessage(name), "--", dir) : add;
   if (commit.code === 0) {
@@ -30038,7 +30132,7 @@ async function commitChange(context, root, state, git) {
   if (previous !== void 0) {
     writeStateText(root, name, previous);
   }
-  await git("reset", "-q", "--", dir);
+  await restoreIndex(git, dir, staged);
   logEvent(context, root, "finish_commit_failed", { change: name });
   return {
     failure: {
@@ -30363,10 +30457,11 @@ function registerCallAgent({ server: server2, calls: calls2, cwdFor }) {
       description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to about 100 seconds: returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.`,
       inputSchema: {
         agent: external_exports.string().describe('Must be "crosscheck".'),
-        prompt: external_exports.string().describe("The complete, standalone task for the child.")
+        prompt: external_exports.string().describe("The complete, standalone task for the child."),
+        change_name: external_exports.string().optional().describe("The change the review is for. Needed only when more than one define is in progress.")
       }
     },
-    async ({ agent, prompt }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra)))
+    async ({ agent, prompt, change_name }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra), change_name))
   );
 }
 function registerGetAgentCall({ server: server2, calls: calls2 }) {
@@ -30422,11 +30517,12 @@ try {
   throw error2;
 }
 try {
-  mkdirSync3(logBase, { recursive: true });
+  ensurePrivateDir(logBase);
   appendFileSync2(
     join10(logBase, "server-starts.log"),
     `${JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot })}
-`
+`,
+    { mode: 384 }
   );
 } catch {
 }
@@ -30441,8 +30537,7 @@ var { server, calls } = createServer((mcp) => ({
   now: () => /* @__PURE__ */ new Date()
 }));
 var shutdown = () => {
-  calls.killAll();
-  process.exit(0);
+  void calls.killAll().finally(() => process.exit(0));
 };
 process.stdin.on("close", shutdown);
 process.on("SIGTERM", shutdown);

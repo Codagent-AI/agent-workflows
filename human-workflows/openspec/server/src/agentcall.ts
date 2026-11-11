@@ -1,35 +1,17 @@
-import { existsSync } from "node:fs";
-
 import { type Call, errorText, snapshotOf } from "./call.js";
+import { type CallOwner, chooseCallOwner } from "./callowner.js";
+import { recordCall } from "./callrecord.js";
 import { applyOutcome, describeExit, type Exit } from "./calloutcome.js";
 import { type LoggedChild, prepareChild, spawnLogged } from "./callchild.js";
 import { type ChildCommand, type CrosscheckChoice, detectLead } from "./child.js";
 import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
 import type { ToolText } from "./finish.js";
-import { inProgressChanges, readState, writeState } from "./state.js";
-import { allowsCallAgent, type StepId, type Workflow } from "./steps.js";
 import { compareFingerprints, workingTreeFingerprint } from "./worktree.js";
 
 export const CROSSCHECK_AGENT = "crosscheck";
 const KILL_GRACE_MS = 10_000;
-
-/** The define a call runs for: the change in progress and the step it is at. */
-interface CallOwner {
-  changeName: string;
-  step: StepId;
-}
-
-/** The in-progress define that is at a step where call_agent is available, if any. */
-function findCallOwner(workflow: Workflow, root: string): CallOwner | undefined {
-  const states = inProgressChanges(workflow, root).map((name) => ({ name, state: readState(workflow, root, name) }));
-  for (const { name, state } of states) {
-    if (state?.current_step && allowsCallAgent(workflow, state.current_step)) {
-      return { changeName: name, step: state.current_step };
-    }
-  }
-  return undefined;
-}
+const SHUTDOWN_GRACE_MS = 3_000;
 
 /** Everything a start needs once its checks pass. */
 interface StartPlan {
@@ -42,6 +24,8 @@ interface StartPlan {
 export class CallManager {
   private readonly calls = new Map<string, Call>();
   private active: Call | undefined;
+  /** True from the busy check until a new call is the active one. */
+  private starting = false;
 
   constructor(private readonly context: Context) {}
 
@@ -49,17 +33,26 @@ export class CallManager {
     return this.active?.status === "running" ? this.active : undefined;
   }
 
-  async start(agent: string, prompt: string, cwd: string = this.context.cwd): Promise<ToolText> {
+  async start(agent: string, prompt: string, cwd: string = this.context.cwd, changeName?: string): Promise<ToolText> {
     const refusal = this.startRefusal(agent, prompt);
     if (refusal) {
       return refusal;
     }
-    const plan = await this.planStart(cwd);
-    if ("text" in plan) {
-      return plan;
+    // Hold the slot before the first await, so overlapping starts cannot both pass the busy check.
+    this.starting = true;
+    let call: Call;
+    let command: ChildCommand;
+    try {
+      const plan = await this.planStart(cwd, changeName);
+      if ("text" in plan) {
+        return plan;
+      }
+      const prepared = prepareChild(this.context, plan.root, prompt, plan.choice);
+      command = prepared.command;
+      call = await this.register(plan, prepared.id, prepared.dir);
+    } finally {
+      this.starting = false;
     }
-    const { id, dir, command } = prepareChild(this.context, plan.root, prompt, plan.choice);
-    const call = await this.register(plan, id, dir);
     return this.launch(call, command);
   }
 
@@ -76,21 +69,40 @@ export class CallManager {
     if (call.status !== "running") {
       return this.snapshot(call);
     }
-    call.cancelRequested = true;
-    this.signal(call, "SIGTERM");
-    const timer = setTimeout(() => this.signal(call, "SIGKILL"), KILL_GRACE_MS);
-    timer.unref();
+    this.terminate(call);
     await Promise.race([call.done, new Promise((resolve) => setTimeout(resolve, Math.min(this.context.waitMs, 15_000)))]);
     return this.snapshot(call);
   }
 
-  /** Stops every running child. Called when the server exits, so no child outlives its lead. */
-  killAll(): void {
-    for (const call of this.calls.values()) {
+  /**
+   * Stops every running child. Called when the server exits, so no child outlives its lead. A child
+   * that is still running after `graceMs` is killed.
+   */
+  async killAll(graceMs: number = SHUTDOWN_GRACE_MS): Promise<void> {
+    const running = [...this.calls.values()].filter((call) => call.status === "running");
+    for (const call of running) {
+      this.terminate(call);
+    }
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.all(running.map((call) => call.done)),
+      new Promise((resolve) => (timer = setTimeout(resolve, graceMs))),
+    ]);
+    clearTimeout(timer);
+    for (const call of running) {
       if (call.status === "running") {
-        call.cancelRequested = true;
-        this.signal(call, "SIGTERM");
+        this.signal(call, "SIGKILL");
       }
+    }
+  }
+
+  /** Asks the child to stop, and kills it if it is still there after the grace period. Safe to repeat. */
+  private terminate(call: Call): void {
+    call.cancelRequested = true;
+    this.signal(call, "SIGTERM");
+    if (call.killTimer === undefined) {
+      call.killTimer = setTimeout(() => this.signal(call, "SIGKILL"), KILL_GRACE_MS);
+      call.killTimer.unref();
     }
   }
 
@@ -101,6 +113,9 @@ export class CallManager {
     }
     if (prompt.trim() === "") {
       return errorText("invalid_request", "prompt is required.");
+    }
+    if (this.starting) {
+      return errorText("call_in_progress", "Another call_agent is still starting. Try again in a moment.");
     }
     const busy = this.running();
     if (busy) {
@@ -114,19 +129,16 @@ export class CallManager {
   }
 
   /** Finds the repository, the define the call belongs to, and the crosscheck to run, or says why it cannot. */
-  private async planStart(cwd: string): Promise<StartPlan | ToolText> {
+  private async planStart(cwd: string, changeName: string | undefined): Promise<StartPlan | ToolText> {
     let root: string;
     try {
       root = await repoRoot({ ...this.context, cwd });
     } catch (error) {
       return errorText("call_agent_unavailable", (error as Error).message);
     }
-    const owner = findCallOwner(this.context.workflow, root);
-    if (!owner) {
-      return errorText(
-        "call_agent_unavailable",
-        "call_agent is only available during the proposal and approach-review steps of a define that is in progress.",
-      );
+    const owner = chooseCallOwner(this.context.workflow, root, changeName);
+    if ("text" in owner) {
+      return owner;
     }
     const choice = resolveCrosscheck(detectLead(this.context.clientName(), this.context.env), this.context.env);
     if (typeof choice === "string") {
@@ -195,6 +207,12 @@ export class CallManager {
       }
       finished = true;
       closeLogs();
+      // The leader is gone. Clear the timer so a reused group id is never signaled, and sweep any
+      // group members a cancel left behind.
+      clearTimeout(call.killTimer);
+      if (call.cancelRequested) {
+        this.signal(call, "SIGKILL");
+      }
       void this.settle(call, exit).finally(call.markDone);
     };
     child.on("error", (error) => {
@@ -236,9 +254,12 @@ export class CallManager {
 
   /** Reads the child's result, checks whether the working tree changed, logs the end, and records the call. */
   private async settle(call: Call, exit: Exit): Promise<void> {
-    applyOutcome(call, exit);
-    call.endedAt = this.context.now();
+    const endedAt = this.context.now();
+    // The call stays running until its working-tree check is done, so next_step and get_agent_call
+    // never see a finished call with an unknown result.
     const after = await workingTreeFingerprint(call.root, this.context.env);
+    applyOutcome(call, exit);
+    call.endedAt = endedAt;
     call.workingTree = compareFingerprints(call.fingerprintBefore, after);
     logEvent(this.context, call.root, "call_end", {
       call_id: call.id,
@@ -247,31 +268,7 @@ export class CallManager {
       working_tree: call.workingTree,
       cost_usd: call.costUsd,
     });
-    this.record(call);
-  }
-
-  /** Adds the finished call to the change's state file, after the working-tree check. */
-  private record(call: Call): void {
-    try {
-      const state = readState(this.context.workflow, call.root, call.changeName);
-      if (!(state && existsSync(call.root))) {
-        return;
-      }
-      state.calls.push({
-        call_id: call.id,
-        step: call.step,
-        cli: call.cli,
-        ...(call.model === undefined ? {} : { model: call.model }),
-        effort: call.effort,
-        status: call.status,
-        ...(call.workingTree === undefined ? {} : { working_tree: call.workingTree }),
-        started_at: call.startedAt.toISOString(),
-        ended_at: (call.endedAt ?? this.context.now()).toISOString(),
-      });
-      writeState(call.root, state, this.context.now().toISOString());
-    } catch {
-      // The call result still reaches the lead.
-    }
+    recordCall(this.context, call);
   }
 }
 

@@ -90,7 +90,7 @@ export function childCommand(input: ChildInput): ChildCommand {
     args.push("-o", input.lastMessageFile, "--", input.prompt);
     return { command: "codex", args };
   }
-  const tools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
+  const tools = ["Read", "Grep", "Glob", "WebSearch"];
   const args = [
     "-p",
     "--output-format",

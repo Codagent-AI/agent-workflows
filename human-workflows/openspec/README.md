@@ -14,6 +14,7 @@ The steps and their prompts are written in one file, [`plugin/workflow.yaml`](pl
 
 ## Requirements
 
+- macOS or Linux. Windows is not supported: the server launches the child CLIs and the `openspec`, `git`, and `gh` commands directly, and does not handle `.cmd` shims or `.exe` lookups.
 - Node.js 20 or later on `PATH`. The server is one bundled file, `plugin/server.mjs`, with no install step.
 - The `openspec` CLI on `PATH`, in a repository that has an `openspec/` folder.
 - git. On a branch other than the default branch, `gh` must also be signed in, so the plugin can open the pull request.
@@ -98,7 +99,7 @@ The server checks the file when it starts. It refuses to start, and says what is
 
 ## The crosscheck
 
-`call_agent` takes `agent: "crosscheck"` and a standalone prompt. It starts one child agent, waits up to 100 seconds, and returns the child's result or `status: "running"` with a `call_id`. The lead then calls `get_agent_call` until the call ends. Only one call runs at a time, and a call can last at most 60 minutes. `cancel_agent_call` stops it.
+`call_agent` takes `agent: "crosscheck"` and a standalone prompt. When more than one define is in progress it also needs `change_name`, so the call is recorded against the right change. It starts one child agent, waits up to 100 seconds, and returns the child's result or `status: "running"` with a `call_id`. The lead then calls `get_agent_call` until the call ends. Only one call runs at a time, and a call can last at most 60 minutes. `cancel_agent_call` stops it.
 
 The child's CLI, model, and effort come from `~/.agent-workflows/config.yaml` (see [Configuration](#configuration)). It has no access to the lead's conversation and runs read-only:
 
@@ -108,7 +109,7 @@ The child's CLI, model, and effort come from `~/.agent-workflows/config.yaml` (s
   - still loads your own Codex configuration, including its MCP servers, plugins, and hooks. The read-only sandbox covers shell commands and file edits, not those tools.
 - **Claude child**:
   - runs `claude -p --setting-sources "" --strict-mcp-config --no-session-persistence --effort <effort> [--model <model>]`;
-  - can use only Read, Grep, Glob, WebSearch, and WebFetch;
+  - can use only Read, Grep, Glob, and WebSearch;
   - loads no settings, plugins, or MCP servers.
 
 The child reads the review skill from the plugin folder by absolute path. Each call reports whether the working tree changed while the child ran.
@@ -136,9 +137,9 @@ factory-workflows: {}
 
 One environment variable remains, for testing: `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS` (default `100`) sets how long `call_agent` and `get_agent_call` wait before they return `running`.
 
-Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards that variable through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`. Claude Code passes its whole environment to the server.
+Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards that variable through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, the Bedrock and Vertex settings that go with them (`AWS_PROFILE`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION`, and `GOOGLE_APPLICATION_CREDENTIALS`), `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`. Claude Code passes its whole environment to the server.
 
-Logs go to `$TMPDIR/define-openspec-change/`:
+Logs go to `$TMPDIR/define-openspec-change/`. The folders are readable only by you (mode 700), and so are the files in them:
 
 - `server-starts.log` gets one line each time the server starts.
 - `<repo-hash>/events.jsonl` records each tool call.

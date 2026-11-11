@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -156,4 +156,34 @@ test("a failed commit restores the state file and unstages the change", async ()
   assert.equal(fixture.read(`${DIR}/${STATE_FILE}`), before);
   assert.equal(fixture.git("diff", "--cached", "--name-only"), "");
   assert.equal(fixture.git("log", "-1", "--format=%s"), "initial");
+});
+
+test("a failed commit keeps what the user had staged", async () => {
+  const fixture = makeFixture();
+  const hook = join(fixture.repo, ".git", "hooks", "pre-commit");
+  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+  chmodSync(hook, 0o755);
+  const { next } = session(makeContext(fixture));
+  await driveToApproachReview(next, fixture);
+  fixture.write(`${DIR}/design.md`, "staged version\n");
+  fixture.git("add", `${DIR}/design.md`);
+  fixture.write(`${DIR}/design.md`, "later edit\n");
+
+  const result = await next({ change_name: CHANGE });
+  assert.equal(result.isError, true);
+  assert.equal(fixture.git("show", `:${DIR}/design.md`), "staged version");
+  assert.equal(fixture.read(`${DIR}/design.md`), "later edit\n");
+  assert.equal(fixture.git("diff", "--cached", "--name-only").trim(), `${DIR}/design.md`);
+});
+
+test("the push runs with git terminal prompts off", async () => {
+  const fixture = makeFixture({ remote: true, branch: "feature/define" });
+  const seen = join(fixture.dir, "prompt-setting.txt");
+  const hook = join(fixture.repo, ".git", "hooks", "pre-push");
+  writeFileSync(hook, `#!/bin/sh\nprintf '%s' "$GIT_TERMINAL_PROMPT" > '${seen}'\n`);
+  chmodSync(hook, 0o755);
+  const { next } = session(makeContext(fixture));
+  await driveToApproachReview(next, fixture);
+  await next({ change_name: CHANGE });
+  assert.equal(readFileSync(seen, "utf8"), "0");
 });
