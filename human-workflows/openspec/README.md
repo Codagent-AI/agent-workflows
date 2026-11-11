@@ -15,7 +15,7 @@ The steps and their prompts are written in one file, [`plugin/workflow.yaml`](pl
 ## Requirements
 
 - macOS or Linux. Windows is not supported: the server launches the child CLIs and the `openspec`, `git`, and `gh` commands directly, and does not handle `.cmd` shims or `.exe` lookups.
-- Node.js 20 or later on `PATH`. The server is one bundled file, `plugin/server.mjs`, with no install step.
+- Node.js 26 or later on `PATH`. The server is one bundled file, `plugin/server.mjs`, with no install step.
 - The `openspec` CLI on `PATH`, tested with OpenSpec 1.17.0. The server runs `openspec new change`, `openspec status --change <name> --json`, and `openspec validate --type change <name> --no-interactive`.
 - A repository that has an `openspec/` folder.
 - git. On a branch other than the default branch, `gh` must also be signed in, so the plugin can open the pull request.
