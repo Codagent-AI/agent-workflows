@@ -11,7 +11,10 @@ import { CODEX_SANDBOX_META_CAPABILITY, sessionCwdFromMeta } from "./session.js"
 import { callAgentStepsText } from "./steps.js";
 
 export const SERVER_NAME = "define";
-export const SERVER_VERSION = "0.1.0";
+
+/** Set at build time from plugin/.claude-plugin/plugin.json (see scripts/build.mjs). Unbundled code has none. */
+declare const __SERVER_VERSION__: string | undefined;
+export const SERVER_VERSION = typeof __SERVER_VERSION__ === "undefined" ? "0.0.0-unbundled" : __SERVER_VERSION__;
 
 function toResult(result: ToolText) {
   return {

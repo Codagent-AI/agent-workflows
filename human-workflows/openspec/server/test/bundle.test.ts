@@ -34,6 +34,8 @@ test("the committed bundle serves the four tools over stdio", async () => {
   try {
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
     assert.deepEqual(tools, ["call_agent", "cancel_agent_call", "get_agent_call", "next_step"]);
+    const manifest = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".claude-plugin", "plugin.json"), "utf8")) as { version: string };
+    assert.equal(client.getServerVersion()?.version, manifest.version, "the server reports the plugin manifest's version");
 
     const started = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE, start: true } });
     assert.equal((started as TextResult).isError, undefined);

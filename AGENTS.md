@@ -16,4 +16,4 @@
 - Add tests to the existing suites in `server/test/`.
 - The skills in `plugin/skills/` and `plugin/workflow.yaml` are the source of truth for define. `plugin/PROVENANCE.md` is the only place that names where they were copied from. Record what changed in a copied file there.
 - Do not name the tools these files were copied from anywhere else in this folder, such as in READMEs, code comments, tests, skills, or the workflow prompts.
-- Keep the plugin name and version the same in `plugin/.claude-plugin/plugin.json`, `plugin/.codex-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.
+- The plugin's version is set in `plugin/.claude-plugin/plugin.json`. Keep it the same in `plugin/.codex-plugin/plugin.json` and `server/package.json`; `npm run build` stops if they differ. The server reports the manifest's version, injected at build time. The Claude marketplace entry has no version, so the plugin manifest wins. Keep the plugin name the same in the manifests and both marketplace files.

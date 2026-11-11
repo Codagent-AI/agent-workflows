@@ -45514,7 +45514,7 @@ function sessionCwdFromMeta(meta3) {
 
 // src/server.ts
 var SERVER_NAME = "define";
-var SERVER_VERSION = "0.1.0";
+var SERVER_VERSION = false ? "0.0.0-unbundled" : "0.1.0";
 function toResult(result) {
   return {
     content: [{ type: "text", text: result.text }],

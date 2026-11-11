@@ -32,7 +32,15 @@ The repository root is also a plugin marketplace for both CLIs:
 Both list the plugins under `human-workflows/`. On Claude Code, install one with:
 
 ```
-/plugin install define-openspec-change --marketplace Codagent-AI/agent-workflows
+/plugin marketplace add Codagent-AI/agent-workflows
+/plugin install define-openspec-change@agent-workflows
+```
+
+On Codex, from a clone of this repository:
+
+```sh
+codex plugin marketplace add /path/to/agent-workflows
+codex plugin add define-openspec-change@agent-workflows
 ```
 
 The full install steps for both CLIs are in each plugin's README.

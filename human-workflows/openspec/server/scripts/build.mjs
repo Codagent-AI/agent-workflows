@@ -10,6 +10,20 @@ import { build } from "esbuild";
 const serverDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const committed = join(serverDir, "..", "plugin", "server.mjs");
 const check = process.argv.includes("--check");
+
+// The plugin manifest is the one place the version is set. The server reports it, and the other
+// files that carry a version must match it, or the build stops.
+const readJson = (...parts) => JSON.parse(readFileSync(join(serverDir, ...parts), "utf8"));
+const version = readJson("..", "plugin", ".claude-plugin", "plugin.json").version;
+for (const other of [
+  ["..", "plugin", ".codex-plugin", "plugin.json"],
+  ["package.json"],
+]) {
+  if (readJson(...other).version !== version) {
+    console.error(`${other.join("/")} has version ${readJson(...other).version}, but plugin/.claude-plugin/plugin.json has ${version}. Change them together.`);
+    process.exit(1);
+  }
+}
 const scratch = check ? mkdtempSync(join(tmpdir(), "define-openspec-change-build-")) : undefined;
 const outfile = scratch ? join(scratch, "server.mjs") : committed;
 
@@ -21,6 +35,7 @@ await build({
   format: "esm",
   target: "node26",
   legalComments: "eof",
+  define: { __SERVER_VERSION__: JSON.stringify(version) },
   logLevel: "warning",
   banner: {
     js: [

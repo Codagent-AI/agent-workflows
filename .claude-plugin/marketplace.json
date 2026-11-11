@@ -9,7 +9,6 @@
   "plugins": [
     {
       "name": "define-openspec-change",
-      "version": "0.1.0",
       "source": "./human-workflows/openspec/plugin",
       "description": "Define an OpenSpec change step by step (proposal, specs, design, test plan, approach review) with a cross-vendor review, then commit the change documents.",
       "license": "MIT",
