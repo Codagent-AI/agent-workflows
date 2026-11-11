@@ -44,6 +44,8 @@ nodes:
       change_name: $INPUTS.change_name
       acceptance_rounds: $INPUTS.acceptance_rounds
       acceptance_fix_scope: $INPUTS.acceptance_fix_scope
+      # The same value as max_rounds in codagent-verify-change's validate-inputs node.
+      max_rounds: 10
 
   - id: check-definition
     depends_on: [validate-inputs]

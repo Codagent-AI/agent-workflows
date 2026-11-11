@@ -6,6 +6,7 @@ import { checkDraftPr } from '../../.shared/lib/pull-request.ts';
 
 runCheck(() => {
   const attempts = Number(required(process.env.INPUTS_ATTEMPTS, 'attempts'));
-  const { prUrl, ...result } = checkDraftPr(runCommand, sleep, attempts, 3);
+  const intervalSeconds = Number(required(process.env.INPUTS_INTERVAL_SECONDS, 'interval_seconds'));
+  const { prUrl, ...result } = checkDraftPr(runCommand, sleep, attempts, intervalSeconds);
   return { ...result, pr_url: prUrl };
 });

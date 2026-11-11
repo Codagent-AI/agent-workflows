@@ -3,7 +3,6 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  MAX_ACCEPTANCE_ROUNDS,
   acceptanceRoundsProblems,
   booleanProblems,
   changeNameProblems,
@@ -71,18 +70,23 @@ describe('nonEmptyProblems (TestValidateNonemptyParam)', () => {
 
 describe('acceptanceRoundsProblems', () => {
   test.each(['1', '3', '10'])('accepts %s', value => {
-    expect(acceptanceRoundsProblems(value)).toEqual([]);
+    expect(acceptanceRoundsProblems(value, 10)).toEqual([]);
+  });
+
+  test('the ceiling is the one given', () => {
+    expect(acceptanceRoundsProblems('4', 3)).toHaveLength(1);
+    expect(acceptanceRoundsProblems('3', 3)).toEqual([]);
   });
 
   test.each(['0', '11', '', '-1', '1.5', 'three', ' 3', '3 ', '1e1'])('rejects %p', value => {
-    const problems = acceptanceRoundsProblems(value);
+    const problems = acceptanceRoundsProblems(value, 10);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain(`from 1 to ${String(MAX_ACCEPTANCE_ROUNDS)}`);
+    expect(problems[0]).toContain('from 1 to 10');
   });
 });
 
 describe('inputProblems', () => {
-  const valid = { changeName: 'demo', acceptanceRounds: '3', acceptanceFixScope: 'resolve everything' };
+  const valid = { changeName: 'demo', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything' };
 
   test('accepts valid inputs, with or without verify-change flags', () => {
     expect(inputProblems(valid)).toEqual([]);
@@ -94,6 +98,7 @@ describe('inputProblems', () => {
       inputProblems({
         changeName: 'Demo',
         acceptanceRounds: '0',
+        maxRounds: 10,
         acceptanceFixScope: ' ',
         skipImplementationReview: 'yes',
       })
@@ -132,5 +137,44 @@ describe('check script bindings', () => {
       .filter(node => node.script !== undefined && scripts.has(node.script))
       .flatMap(node => ['strict', 'blocked', 'reason'].filter(name => !(name in (node.with ?? {}))).map(name => `${node.id}: ${name}`));
     expect(missing).toEqual([]);
+  });
+});
+
+// Timing values live in the YAML, next to the loop or timeout they depend on, and reach the
+// scripts through bindings. These tests fail when the two drift apart.
+describe('timing bindings', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  interface Node {
+    id: string;
+    with?: Record<string, number | string>;
+    timeout?: number;
+    loop_group?: { max_iterations: number; nodes: Node[] };
+  }
+  const load = (workflow: string): Node[] =>
+    (Bun.YAML.parse(readFileSync(join(pack, workflow, `${workflow}.yaml`), 'utf8')) as { nodes: Node[] }).nodes;
+  const find = (nodes: Node[], id: string): Node => {
+    const all = nodes.flatMap(node => [node, ...(node.loop_group?.nodes ?? [])]);
+    const found = all.find(node => node.id === id);
+    if (!found) throw new Error(`no node ${id}`);
+    return found;
+  };
+
+  test('max_rounds is the acceptance loop ceiling in both workflows', () => {
+    const ceiling = find(load('verify-change'), 'acceptance-rounds').loop_group?.max_iterations;
+    expect(ceiling).toBeGreaterThan(0);
+    expect(find(load('verify-change'), 'validate-inputs').with?.max_rounds).toBe(ceiling);
+    expect(find(load('implement-change'), 'validate-inputs').with?.max_rounds).toBe(ceiling);
+  });
+
+  test('the wait-ci timeout outlasts the minutes it polls', () => {
+    const node = find(load('verify-change'), 'wait-ci');
+    expect(node.timeout).toBeGreaterThan(Number(node.with?.max_minutes) * 60_000);
+  });
+
+  test('every draft pull request check binds its retry interval', () => {
+    const checks = load('verify-change').flatMap(node => [node, ...(node.loop_group?.nodes ?? [])]);
+    const draftChecks = checks.filter(node => node.with?.attempts !== undefined);
+    expect(draftChecks.length).toBeGreaterThan(0);
+    for (const node of draftChecks) expect(node.with?.interval_seconds).toBe(3);
   });
 });

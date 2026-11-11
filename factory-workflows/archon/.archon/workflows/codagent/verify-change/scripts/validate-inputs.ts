@@ -7,6 +7,7 @@ const skipReview = required(process.env.INPUTS_SKIP_IMPLEMENTATION_REVIEW, 'skip
 const stopUnchanged = required(process.env.INPUTS_STOP_UNCHANGED_ACCEPTANCE, 'stop_unchanged_acceptance');
 const problems = inputProblems({
   changeName: required(process.env.INPUTS_CHANGE_NAME, 'change_name'),
+  maxRounds: Number(required(process.env.INPUTS_MAX_ROUNDS, 'max_rounds')),
   acceptanceRounds: rounds,
   acceptanceFixScope: required(process.env.INPUTS_ACCEPTANCE_FIX_SCOPE, 'acceptance_fix_scope'),
   skipImplementationReview: skipReview,

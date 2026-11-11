@@ -20,20 +20,20 @@ export function nonEmptyProblems(name: string, value: string): Problems {
   return value.replace(/[ \t\n\v\f\r]/g, '') === '' ? [`${name} must not be empty`] : [];
 }
 
-/** The most acceptance rounds a run can have: the loop's max_iterations must be a literal. */
-export const MAX_ACCEPTANCE_ROUNDS = 10;
-
-export function acceptanceRoundsProblems(value: string): Problems {
+/** `max` is the acceptance loop's max_iterations, which must be a literal in the workflow. */
+export function acceptanceRoundsProblems(value: string, max: number): Problems {
   const rounds = /^[0-9]+$/.test(value) ? Number(value) : Number.NaN;
-  return rounds >= 1 && rounds <= MAX_ACCEPTANCE_ROUNDS
+  return rounds >= 1 && rounds <= max
     ? []
-    : [`acceptance_rounds must be a whole number from 1 to ${MAX_ACCEPTANCE_ROUNDS}, got: ${value}`];
+    : [`acceptance_rounds must be a whole number from 1 to ${String(max)}, got: ${value}`];
 }
 
 /** The inputs both workflows check before any other node. The two flags are verify-change's. */
 export interface WorkflowInputs {
   changeName: string;
   acceptanceRounds: string;
+  /** The most acceptance rounds the workflow allows: the loop's max_iterations. */
+  maxRounds: number;
   acceptanceFixScope: string;
   skipImplementationReview?: string;
   stopUnchangedAcceptance?: string;
@@ -49,6 +49,6 @@ export function inputProblems(inputs: WorkflowInputs): Problems {
     ...changeNameProblems(inputs.changeName),
     ...flags.flatMap(([name, value]) => (value === undefined ? [] : booleanProblems(name, value))),
     ...nonEmptyProblems('acceptance_fix_scope', inputs.acceptanceFixScope),
-    ...acceptanceRoundsProblems(inputs.acceptanceRounds),
+    ...acceptanceRoundsProblems(inputs.acceptanceRounds, inputs.maxRounds),
   ];
 }

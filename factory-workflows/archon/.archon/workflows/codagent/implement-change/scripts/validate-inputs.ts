@@ -5,6 +5,7 @@ import { inputProblems } from '../../.shared/lib/params.ts';
 
 const problems = inputProblems({
   changeName: required(process.env.INPUTS_CHANGE_NAME, 'change_name'),
+  maxRounds: Number(required(process.env.INPUTS_MAX_ROUNDS, 'max_rounds')),
   acceptanceRounds: required(process.env.INPUTS_ACCEPTANCE_ROUNDS, 'acceptance_rounds'),
   acceptanceFixScope: required(process.env.INPUTS_ACCEPTANCE_FIX_SCOPE, 'acceptance_fix_scope'),
 });
