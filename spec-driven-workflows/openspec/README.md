@@ -72,7 +72,8 @@ Progress is saved in `openspec/changes/<name>/.define-openspec-change.json` and 
 ### Approvals
 
 - Claude Code asks before each call to the plugin's tools. To stop the prompts, allow them in your settings: `"permissions": { "allow": ["mcp__plugin_define-openspec-change_define"] }`.
-- Codex runs the plugin's four tools without asking, because `plugin/.codex-mcp.json` sets them to `approve`. Without that, `codex exec` refuses every `next_step` call, since it has nobody to ask. The last `next_step` call commits, and on a branch it also pushes and opens a pull request.
+- Codex follows your own approval settings for the plugin's tools. The plugin doesn't pre-approve them.
+- The last `next_step` call commits, and on a branch it also pushes and opens a pull request.
 
 ## The crosscheck
 
