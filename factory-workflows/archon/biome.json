@@ -1,0 +1,99 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.3/schema.json",
+  "root": true,
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      ".archon/**/*.ts",
+      "tests/**/*.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 10
+          }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 50
+          }
+        },
+        "noExcessiveNestedTestSuites": "error",
+        "noForEach": "error",
+        "useMaxParams": {
+          "level": "error",
+          "options": {
+            "max": 4
+          }
+        },
+        "useSimplifiedLogicExpression": "error"
+      },
+      "style": {
+        "noNestedTernary": "error",
+        "noNegationElse": "error",
+        "noParameterAssign": "error",
+        "noShoutyConstants": "error",
+        "noUselessElse": "error",
+        "noYodaExpression": "error",
+        "useCollapsedElseIf": "error",
+        "useExplicitLengthCheck": "error"
+      },
+      "suspicious": {
+        "noImportCycles": "error"
+      },
+      "nursery": {
+        "noExcessiveClassesPerFile": {
+          "level": "error",
+          "options": {
+            "maxClasses": 1
+          }
+        },
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 300
+          }
+        },
+        "noNestedPromises": "error",
+        "noShadow": "error",
+        "noUselessReturn": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "tests/**"
+      ],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          },
+          "nursery": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 500
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

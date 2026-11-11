@@ -23,9 +23,10 @@ Paths are relative to this folder, `factory-workflows/archon/`.
   .shared/lib/                       TypeScript modules the scripts share
   .shared/implement-change.md        how the implementor works and tests
   .shared/verify-behavior.md         how the checklist is written and evidenced
-tests/                               bun tests for .shared/lib
+tests/                               bun tests for .shared/lib, and run-fixtures.ts
 tests/data/changes/                  sample change definitions the fixtures use
 PROVENANCE.md                        where the workflows came from
+package.json, biome.json, .jscpd.json  lint tools for development; the pack does not use them
 ```
 
 Every check is a TypeScript script node run by bun. Agents read the two `.shared/*.md` documents through `$PACK_DIR`.
@@ -99,27 +100,18 @@ A failed check goes to one agent repair, then the same check runs again in stric
 
 ## Tests
 
-Neither test layer makes model calls or contacts GitHub.
-
-**Dry-run fixtures.** Each workflow's `fixtures/*.stubs.yaml` stub the agent, git-push and GitHub nodes and run the other scripts for real. Archon finds `.archon/` only at a git repository's root, and executes scripts in a scratch worktree of `HEAD`, so run them from a committed copy of this folder:
+Run these from this folder after `bun install`. None of them makes model calls or contacts GitHub.
 
 ```sh
-tmp=$(mktemp -d)
-rsync -a --exclude .git ./ "$tmp/"
-git -C "$tmp" init -q
-git -C "$tmp" add -A
-git -C "$tmp" -c user.name=test -c user.email=test@example.com commit -qm fixtures
-cd "$tmp"
-archon validate workflows
-archon workflow test .archon/workflows/codagent
+bun run test:fixtures   # the workflows' dry-run fixtures
+bun test tests/         # the script tests
+bun run lint            # Biome and jscpd
 ```
 
-Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. The bun tests cover the scripts' side of those paths.
+**Dry-run fixtures** are the workflow tests. Each workflow's `fixtures/*.stubs.yaml` is one case for `archon workflow test`: it stubs the agent, git-push and GitHub nodes, runs the other scripts for real, and states the outcome and the nodes the run must reach. Archon looks for them in a `fixtures/` folder next to the workflow. Archon finds `.archon/` only at a git repository's root, so `tests/run-fixtures.ts` runs them from a committed copy of this folder with a throwaway Archon home. Set `ARCHON` to use an Archon other than the one on PATH, such as `bun <archon checkout>/packages/cli/src/cli.ts`.
 
-**Script tests.** From this folder:
+Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. The script tests cover the scripts' side of those paths.
 
-```sh
-bun test tests/
-```
+**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands; a test that calls the real ones fails.
 
-They run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands; a test that calls the real ones fails.
+**Lint.** Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more in the TypeScript or workflow YAML; fixtures are exempt. Fix the code rather than raising a limit or adding an ignore comment.
