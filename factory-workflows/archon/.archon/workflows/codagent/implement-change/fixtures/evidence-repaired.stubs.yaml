@@ -1,7 +1,7 @@
 # An incomplete checklist after implementation starts the evidence repairs; the first
 # repair completes it, and the audit runs.
 validate-inputs: "inputs are valid"
-validate-definition: { ok: true, problems: "" }
+check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
 commit-definition__check-clean-before-implementation: "no tracked changes"

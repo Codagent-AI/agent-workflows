@@ -1,7 +1,7 @@
 # Every check passes: the audit's findings reach resolve-findings, review-assumptions and
 # simplify stay skipped, and acceptance is ready in the first round.
 validate-inputs: "inputs are valid"
-validate-definition: { ok: true, problems: "" }
+check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
 commit-definition__check-clean-before-implementation: "no tracked changes"

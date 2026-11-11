@@ -18,6 +18,9 @@ nodes:
       change_name: $INPUTS.change_name
       change_dir: $INPUTS.change_dir
       change_kind: $INPUTS.change_kind
+      strict: false
+      blocked: false
+      reason: ""
     output_format: &check
       type: object
       properties:

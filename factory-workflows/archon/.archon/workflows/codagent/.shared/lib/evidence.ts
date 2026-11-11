@@ -15,7 +15,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
-import { type CheckResult, artifactsDir, checkMode, fail, pass, report, requireOk, stopIfBlocked } from './check.ts';
+import { type CheckResult, artifactsDir, fail, pass, requireOk } from './check.ts';
 import { cells, checklistPath, isTableLine, nonEmptyFile, rawCells } from './checklist.ts';
 import { planProblems } from './checklist-plan.ts';
 import { checkNotBlocked } from './worktree.ts';
@@ -160,26 +160,19 @@ export function checkEvidence(input: EvidenceInput): CheckResult {
   return finish(input, evidenceDir, problems);
 }
 
-/** What an evidence check script reads from its bindings, read after the blocked checks. */
-export interface EvidenceScriptInputs {
-  changeDir: string;
-  findings?: string;
-}
-
-/** The body of the check-evidence scripts: stop on a blocked repair or record, then check. */
-export function runEvidenceScript(readInputs: () => EvidenceScriptInputs): void {
-  const mode = checkMode();
-  stopIfBlocked(mode);
+/**
+ * The check of the check-evidence scripts: a blocked record fails the node at once, and
+ * otherwise the checklist is checked. `findings` is given only after the audit.
+ */
+export function checkEvidenceRun(changeDir: string, findings?: string): CheckResult {
   const dir = artifactsDir();
   const notBlocked = checkNotBlocked(dir);
   if (!notBlocked.ok) requireOk(notBlocked, '');
-  const { changeDir, findings } = readInputs();
-  const result = checkEvidence({
+  return checkEvidence({
     checklistFile: checklistPath(changeDir),
     evidenceDir: join(dir, 'evidence'),
     problemsFile: join(dir, 'evidence-problems.txt'),
     planFile: join(dir, 'planned-checklist.md'),
     ...(findings === undefined ? {} : { findings }),
   });
-  report(result, mode);
 }

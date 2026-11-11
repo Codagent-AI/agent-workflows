@@ -101,6 +101,9 @@ nodes:
     runtime: bun
     with:
       change_dir: $INPUTS.change_dir
+      strict: false
+      blocked: false
+      reason: ""
     output_format: &check
       type: object
       properties:
@@ -172,6 +175,9 @@ nodes:
     runtime: bun
     with:
       change_dir: $INPUTS.change_dir
+      strict: false
+      blocked: false
+      reason: ""
     output_format: *check
 
   # Up to two evidence repairs; the second continues the first's session.
@@ -197,6 +203,7 @@ nodes:
             change_dir: $INPUTS.change_dir
             blocked: $complete-evidence.output.blocked
             reason: $complete-evidence.output.reason
+            strict: false
           output_format: *check
 
   - id: audit
@@ -234,6 +241,9 @@ nodes:
     with:
       change_dir: $INPUTS.change_dir
       findings: $audit.output
+      strict: false
+      blocked: false
+      reason: ""
     output_format: *check
 
   - id: evidence-repairs-after-review
@@ -259,6 +269,7 @@ nodes:
             findings: $audit.output
             blocked: $complete-evidence-after-review.output.blocked
             reason: $complete-evidence-after-review.output.reason
+            strict: false
           output_format: *check
 
   - id: check-clean
@@ -266,6 +277,10 @@ nodes:
     trigger_rule: none_failed_min_one_success
     script: check-clean
     runtime: bun
+    with:
+      strict: false
+      blocked: false
+      reason: ""
     output_format: *check
 
   - id: repair-clean
@@ -298,6 +313,9 @@ nodes:
     runtime: bun
     with:
       start_head: $record-implementation-start.output.head
+      strict: false
+      blocked: false
+      reason: ""
     output_format: *check
 
   - id: repair-implementation-commits

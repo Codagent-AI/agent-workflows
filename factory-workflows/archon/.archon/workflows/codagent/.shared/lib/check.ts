@@ -8,8 +8,10 @@
 //     before anything is rechecked;
 //   - `strict: true` fails the node when the check still fails.
 //
-// These three bindings are optional, so they are read through `binding()` rather than as
-// literal `process.env.INPUTS_*` reads that the workflow loader requires every node to bind.
+// Every node that runs a check script binds all three (`strict: false`, `blocked: false` and
+// `reason: ""` on the first run), and tests/params.test.ts checks that they do. The loader
+// reads only a node's own script for `INPUTS_*` names and does not follow imports, so that
+// test is what catches a misspelt binding.
 
 export interface CheckResult {
   ok: boolean;
@@ -28,33 +30,39 @@ export interface CheckMode {
   reason: string;
 }
 
-/** An optional `with:` binding of the running node, or '' when the node does not bind it. */
-export function binding(name: string): string {
-  return process.env[`INPUTS_${name.toUpperCase()}`] ?? '';
-}
-
 export function checkMode(): CheckMode {
   return {
-    strict: binding('strict') === 'true',
-    blocked: binding('blocked') === 'true',
-    reason: binding('reason'),
+    strict: process.env.INPUTS_STRICT === 'true',
+    blocked: process.env.INPUTS_BLOCKED === 'true',
+    reason: process.env.INPUTS_REASON ?? '',
   };
 }
 
 /** Ends the script when the repair agent reported itself blocked. */
-export function stopIfBlocked(mode: CheckMode): void {
+function stopIfBlocked(mode: CheckMode): void {
   if (!mode.blocked) return;
   process.stderr.write(`REPAIR_BLOCKED: ${mode.reason.trim() || 'the repair agent gave no reason'}\n`);
   process.exit(1);
 }
 
 /** Prints the result as the node's output, failing the node on a strict failure. */
-export function report(result: CheckResult, mode: CheckMode, extra: Record<string, unknown> = {}): void {
+function report(result: CheckResult, mode: CheckMode, extra: Record<string, unknown> = {}): void {
   if (!result.ok && mode.strict) {
     process.stderr.write(`${result.problems}\n`);
     process.exit(1);
   }
   process.stdout.write(`${JSON.stringify({ ok: result.ok, problems: result.problems, ...extra })}\n`);
+}
+
+/**
+ * The body of a check script. It stops on a blocked repair, runs the check and prints the
+ * result. Any field of the result other than `ok` and `problems` is printed with them.
+ */
+export function runCheck(check: () => CheckResult): void {
+  const mode = checkMode();
+  stopIfBlocked(mode);
+  const { ok, problems, ...extra } = check();
+  report({ ok, problems }, mode, extra);
 }
 
 /** Ends a script that has no repair: success prints a line, failure fails the node. */

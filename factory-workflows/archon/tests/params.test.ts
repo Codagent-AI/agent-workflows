@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   MAX_ACCEPTANCE_ROUNDS,
@@ -75,5 +77,33 @@ describe('acceptanceRoundsProblems', () => {
     const problems = acceptanceRoundsProblems(value);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain(`from 1 to ${String(MAX_ACCEPTANCE_ROUNDS)}`);
+  });
+});
+
+// The loader reads only a node's own script for INPUTS_* names, not the modules it imports,
+// so a misspelt `strict:` would load cleanly. This is the check that catches it.
+describe('check script bindings', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  const workflows = readdirSync(pack).filter(name => !name.startsWith('.'));
+  const checkScripts = (workflow: string): Set<string> => {
+    const dir = join(pack, workflow, 'scripts');
+    const names = readdirSync(dir).filter(file => /runCheck\(/.test(readFileSync(join(dir, file), 'utf8')));
+    return new Set(names.map(file => file.replace(/\.ts$/, '')));
+  };
+  interface Node {
+    id: string;
+    script?: string;
+    with?: Record<string, unknown>;
+    loop_group?: { nodes: Node[] };
+  }
+  const flatten = (nodes: Node[]): Node[] => nodes.flatMap(node => [node, ...flatten(node.loop_group?.nodes ?? [])]);
+
+  test.each(workflows)('%s binds strict, blocked and reason on every check node', workflow => {
+    const scripts = checkScripts(workflow);
+    const parsed = Bun.YAML.parse(readFileSync(join(pack, workflow, `${workflow}.yaml`), 'utf8')) as { nodes: Node[] };
+    const missing = flatten(parsed.nodes)
+      .filter(node => node.script !== undefined && scripts.has(node.script))
+      .flatMap(node => ['strict', 'blocked', 'reason'].filter(name => !(name in (node.with ?? {}))).map(name => `${node.id}: ${name}`));
+    expect(missing).toEqual([]);
   });
 });
