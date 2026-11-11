@@ -24,6 +24,8 @@
         "XDG_CONFIG_HOME"
       ],
       "tools": {
+        "next_step": { "approval_mode": "approve" },
+        "call_agent": { "approval_mode": "approve" },
         "get_agent_call": { "approval_mode": "approve" },
         "cancel_agent_call": { "approval_mode": "approve" }
       }
