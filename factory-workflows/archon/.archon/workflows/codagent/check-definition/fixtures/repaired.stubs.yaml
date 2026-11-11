@@ -1,0 +1,14 @@
+# A failed validation reaches a fresh lead repair with the validation output.
+validate-definition: { ok: false, problems: "validate-planning-artifacts: missing or empty design.md" }
+repair-definition: "Added design.md."
+verify-definition: { ok: true, problems: "" }
+fixture:
+  expect: completed
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/invalid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+  reached: [repair-definition, verify-definition]
+  resolved-text-contains:
+    repair-definition: "You are running autonomously with no human in the loop."

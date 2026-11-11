@@ -1,0 +1,35 @@
+# A missing implementation whose repair reports itself blocked fails the recheck.
+validate-inputs: "inputs are valid"
+validate-definition: { ok: true, problems: "" }
+check-definition__verify-definition: { ok: true, problems: "" }
+commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
+commit-definition__check-clean-before-implementation: "no tracked changes"
+record-definition-head: { head: "1111111111111111111111111111111111111111" }
+implementor-checklist: "Wrote the checklist."
+check-implementor-checklist-not-blocked: "not blocked"
+check-implementor-checklist: "checklist committed"
+verify-checklist: { ok: true, problems: "" }
+record-implementation-start: { head: "2222222222222222222222222222222222222222" }
+implement: "Implemented the change."
+check-implementation-not-blocked: "not blocked"
+check-evidence: { ok: true, problems: "" }
+audit: "I-2: the fallback greeting has no test that asserts it (specs/greeting/spec.md)."
+resolve-findings: "Added the fallback test."
+check-findings-not-blocked: "not blocked"
+recheck-evidence: { ok: true, problems: "" }
+check-clean: { ok: true, problems: "" }
+verify-implementation-commits: { ok: false, problems: "no commits since 2222222222222222222222222222222222222222; the change was not implemented" }
+repair-implementation-commits: { blocked: true, reason: "the change needs a decision on the greeting format" }
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: recheck-implementation-commits
+  reached: [repair-implementation-commits]
+  resolved-text-contains:
+    repair-implementation-commits: "no commit since 2222222222222222222222222222222222222222"
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.

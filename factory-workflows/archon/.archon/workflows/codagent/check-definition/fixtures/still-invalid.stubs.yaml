@@ -1,0 +1,15 @@
+# The repair does not fix the definition, so the strict check after the loop
+# fails the run with the remaining problems.
+repair-definition: "Tried to fix the definition."
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: verify-definition
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/invalid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+  reached: [repair-definition]
+  resolved-text-contains:
+    repair-definition: "lacks SHALL or MUST language"

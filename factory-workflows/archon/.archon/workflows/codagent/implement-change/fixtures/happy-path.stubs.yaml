@@ -1,0 +1,50 @@
+# Every check passes: the audit's findings reach resolve-findings, review-assumptions and
+# simplify stay skipped, and acceptance is ready in the first round.
+validate-inputs: "inputs are valid"
+validate-definition: { ok: true, problems: "" }
+check-definition__verify-definition: { ok: true, problems: "" }
+commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
+commit-definition__check-clean-before-implementation: "no tracked changes"
+record-definition-head: { head: "1111111111111111111111111111111111111111" }
+implementor-checklist: "Wrote the checklist."
+check-implementor-checklist-not-blocked: "not blocked"
+check-implementor-checklist: "checklist committed"
+verify-checklist: { ok: true, problems: "" }
+record-implementation-start: { head: "2222222222222222222222222222222222222222" }
+implement: "Implemented the change."
+check-implementation-not-blocked: "not blocked"
+check-evidence: { ok: true, problems: "" }
+audit: "I-2: the fallback greeting has no test that asserts it (specs/greeting/spec.md)."
+resolve-findings: "Added the fallback test."
+check-findings-not-blocked: "not blocked"
+recheck-evidence: { ok: true, problems: "" }
+check-clean: { ok: true, problems: "" }
+verify-implementation-commits: { ok: true, problems: "" }
+session-report: "## Assumption Audit"
+verify-change__validate-inputs: { rounds: 3, review: false, stop_unchanged: true }
+verify-change__verify-assumptions-handoff: { ok: true, problems: "" }
+verify-change__verify-clean-for-pr: { ok: true, problems: "" }
+verify-change__open-draft-pr: { blocked: false, reason: "" }
+verify-change__verify-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
+reset-round-evidence: { round: 0, last: false }
+acceptance-test: { ci_ready: true, reason: "" }
+wait-ci: { status: passed, had_checks: true, head_moved: false, report: "ci/round-0.md" }
+acceptance-handoff: "Wrote the handoff; READY."
+acceptance-gate: { ready: true, fix: false, reasons: "" }
+check-acceptance-progress: { progressed: true, push: false }
+verify-change__write-acceptance-status: "acceptance preparation complete"
+verify-change__verify-acceptance-handoff: { ok: true, problems: "" }
+fixture:
+  expect: completed
+  reached: [implementor-checklist, implement, audit, resolve-findings, session-report, acceptance-test, acceptance-gate, verify-change__verify-acceptance-handoff]
+  resolved-text-contains:
+    implementor-checklist: "You are running autonomously with no human in the loop."
+    audit: "You are running autonomously with no human in the loop."
+    resolve-findings: "I-2: the fallback greeting has no test"
+    session-report: "# Session report instructions"
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.

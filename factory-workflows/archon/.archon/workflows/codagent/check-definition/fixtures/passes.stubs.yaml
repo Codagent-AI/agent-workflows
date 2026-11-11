@@ -1,0 +1,10 @@
+# A valid definition passes the first validation, so no repair runs.
+exec-code: true
+fixture:
+  expect: completed
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+  reached: [validate-definition, verify-definition]

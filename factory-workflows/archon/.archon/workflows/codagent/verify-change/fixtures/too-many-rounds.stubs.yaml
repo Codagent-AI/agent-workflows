@@ -1,0 +1,13 @@
+# acceptance_rounds above the loop's ceiling of 10 fails the input check.
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: validate-inputs
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_label: spec-driven change
+    artifact_validation_instruction: Validate any changed spec artifact.
+    skip_implementation_review: "true"
+    stop_unchanged_acceptance: "true"
+    acceptance_rounds: "11"

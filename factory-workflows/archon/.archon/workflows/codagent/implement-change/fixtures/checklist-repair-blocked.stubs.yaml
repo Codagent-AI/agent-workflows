@@ -1,0 +1,23 @@
+# A checklist repair that reports itself blocked fails the recheck.
+validate-inputs: "inputs are valid"
+validate-definition: { ok: true, problems: "" }
+check-definition__verify-definition: { ok: true, problems: "" }
+commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
+commit-definition__check-clean-before-implementation: "no tracked changes"
+record-definition-head: { head: "1111111111111111111111111111111111111111" }
+implementor-checklist: "Wrote the checklist."
+check-implementor-checklist-not-blocked: "not blocked"
+check-implementor-checklist: "checklist committed"
+verify-checklist: { ok: false, problems: "checklist.md has uncommitted changes" }
+repair-checklist: { blocked: true, reason: "the checklist path is outside the repository" }
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: recheck-checklist
+  reached: [repair-checklist]
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.

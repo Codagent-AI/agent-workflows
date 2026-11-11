@@ -1,0 +1,10 @@
+# A spec-driven change's planning step commits its definition, so the commit
+# passes without committing and the clean check runs.
+exec-code: true
+fixture:
+  expect: completed
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_kind: spec-driven
+  reached: [commit-definition, check-clean-before-implementation]
