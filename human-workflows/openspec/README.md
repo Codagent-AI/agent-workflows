@@ -129,7 +129,7 @@ Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` or any other plugin-root var
 ## Layout
 
 ```
-spec-driven-workflows/openspec/
+human-workflows/openspec/
   README.md
   plugin/                      the installable plugin root
     .claude-plugin/plugin.json
@@ -149,7 +149,7 @@ The Claude Code entry point is the `define` skill. A `commands/define.md` with t
 ## Development
 
 ```sh
-cd spec-driven-workflows/openspec/server
+cd human-workflows/openspec/server
 npm install
 npm run build   # writes ../plugin/server.mjs
 npm run check   # typecheck, bundle-matches-build check, tests

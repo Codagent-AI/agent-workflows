@@ -8,7 +8,7 @@
       "name": "define-openspec-change",
       "source": {
         "source": "local",
-        "path": "./spec-driven-workflows/openspec/plugin"
+        "path": "./human-workflows/openspec/plugin"
       },
       "policy": {
         "installation": "AVAILABLE",

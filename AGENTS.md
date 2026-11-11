@@ -2,12 +2,12 @@
 
 ## Layout rule
 
-- Top-level folders are named by purpose: `spec-driven-workflows/`, `factory-workflows/`.
-- Folders under them are named by what they depend on: `spec-driven-workflows/openspec/`, `factory-workflows/archon/`.
+- Top-level folders are named by purpose: `human-workflows/` for plugins where a person and an agent work together, and `factory-workflows/` for workflows an engine runs without a person.
+- Folders under them are named by what they depend on: `human-workflows/openspec/`, `factory-workflows/archon/`.
 - New work goes under the purpose folder it serves. Add a dependency folder when the dependency differs.
 - Keep the README's layout table current when you add a folder.
 
-## spec-driven-workflows/openspec
+## human-workflows/openspec
 
 - `plugin/` is the installable plugin root. Codex, and Claude Code for a Git marketplace, copy only that folder into the plugin cache, so nothing outside it is reachable at run time. Keep `node_modules` and sources out of it.
 - `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.

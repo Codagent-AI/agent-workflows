@@ -24,7 +24,7 @@ await build({
   logLevel: "warning",
   banner: {
     js: [
-      "// Generated from spec-driven-workflows/openspec/server by `npm run build`. Do not edit.",
+      "// Generated from human-workflows/openspec/server by `npm run build`. Do not edit.",
       'import { createRequire as __defineCreateRequire } from "node:module";',
       "const require = __defineCreateRequire(import.meta.url);",
     ].join("\n"),

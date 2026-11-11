@@ -6,7 +6,7 @@
     "name": "Codagent-AI",
     "url": "https://github.com/Codagent-AI"
   },
-  "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/spec-driven-workflows/openspec",
+  "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/human-workflows/openspec",
   "repository": "https://github.com/Codagent-AI/agent-workflows",
   "license": "MIT",
   "keywords": [
