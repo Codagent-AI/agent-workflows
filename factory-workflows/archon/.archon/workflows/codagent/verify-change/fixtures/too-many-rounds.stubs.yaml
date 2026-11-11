@@ -4,9 +4,9 @@ fixture:
   expect: failed
   fail-node: validate-inputs
   inputs:
-    change_name: greet-by-name
-    change_dir: tests/data/changes/valid-change
-    change_label: spec-driven change
+    change_name: valid-change
+    changes_root: tests/data/changes
+    change_kind: spec-driven
     artifact_validation_instruction: Validate any changed spec artifact.
     skip_implementation_review: "true"
     stop_unchanged_acceptance: "true"

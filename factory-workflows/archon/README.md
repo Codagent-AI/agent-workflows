@@ -20,6 +20,7 @@ Paths are relative to this folder, `factory-workflows/archon/`.
   verify-change/                     codagent-verify-change
   check-definition/                  codagent-check-definition
   commit-definition/                 codagent-commit-definition
+  .pack/pack.yaml                    the pack settings and their defaults
   .shared/lib/                       TypeScript modules the scripts share
   .shared/implement-change.md        how the implementor works and tests
   .shared/verify-behavior.md         how the checklist is written and evidenced
@@ -39,26 +40,35 @@ Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers you
 archon workflow run codagent-implement-change \
   --cwd /path/to/target --no-worktree \
   --workflow-source /path/to/agent-workflows/factory-workflows/archon \
-  --input change_name=<name> \
-  --input change_dir=openspec/changes/<name> \
-  --input change_label="OpenSpec change" \
-  --input change_kind=openspec \
-  --input artifact_validation_instruction="Run openspec validate <name>."
+  --input change_name=<name>
 ```
 
 With `--no-worktree` the run works on the target checkout's current branch, which becomes the pull request's branch.
 
-| Input | Default | Meaning |
+`change_name` is the only input a launch must give. Everything else is a pack setting, declared in `.archon/workflows/codagent/.pack/pack.yaml`, with defaults for an OpenSpec repository. The change's folder is derived: `<changes_root>/<change_name>`, which is `openspec/changes/<name>` by default.
+
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| `change_name` | required | Lowercase letters, digits and hyphens. |
-| `change_dir` | required | The change's folder, relative to the checkout. |
-| `change_label` | required | Human label for the change kind, such as `OpenSpec change`. |
-| `change_kind` | required | `openspec` (also checked with `openspec validate`, and committed by the workflow) or `spec-driven` (whose definition must already be committed). |
-| `artifact_validation_instruction` | required | One sentence telling agents how to validate a changed artifact. |
+| `change_kind` | `openspec` | `openspec` (also checked with `openspec validate`, and committed by the workflow) or `spec-driven` (whose definition must already be committed). |
+| `changes_root` | `openspec/changes` | The folder that holds the changes. An `openspec` change must use the default. |
+| `change_label` | `OpenSpec change` | Human label for the change kind, used in the agents' prompts. |
+| `artifact_validation_instruction` | empty | One sentence telling agents how to validate a changed artifact. Empty means the `openspec validate` sentence naming the change for `openspec`; a `spec-driven` change must set it. |
 | `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
 | `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the lead resolves in each acceptance fix. |
 
-`codagent-verify-change` run on its own takes the same inputs except `change_kind`, plus `skip_implementation_review` (default `false`; `true` skips the assumption review and simplification) and `stop_unchanged_acceptance` (default `false`; `true` ends the rounds when a fix changes nothing and asks for no retest). `codagent-implement-change` sets both to `true`.
+A project that is not the default sets its values in `.archon/packs/codagent.yaml` in the target checkout, under `settings:` only:
+
+```yaml
+settings:
+  change_kind: spec-driven
+  changes_root: specs/changes
+  change_label: spec-driven change
+  artifact_validation_instruction: Validate a changed spec with the spec linter.
+```
+
+Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`change_kind` must be `openspec` or `spec-driven`), refuses the run before any node runs.
+
+`codagent-verify-change` run on its own reads the same settings and takes `change_name`, plus `skip_implementation_review` (default `false`; `true` skips the assumption review and simplification) and `stop_unchanged_acceptance` (default `false`; `true` ends the rounds when a fix changes nothing and asks for no retest). `codagent-implement-change` sets both to `true`. They are inputs of the caller, not settings, because they describe how the caller composed the workflow and not the project.
 
 ### Roles
 

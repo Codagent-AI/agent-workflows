@@ -83,10 +83,6 @@ function identityProblems(input: PlanningInput): string[] {
     return [`unsupported change_kind: ${input.changeKind}`];
   }
   if (input.changeDir === '') return ['change_dir must not be empty'];
-  const expectedDir = `openspec/changes/${input.changeName}`;
-  if (input.changeKind === 'openspec' && input.changeDir !== expectedDir) {
-    return [`change_dir must be ${expectedDir} for ${input.changeKind}: ${input.changeDir}`];
-  }
   return [];
 }
 

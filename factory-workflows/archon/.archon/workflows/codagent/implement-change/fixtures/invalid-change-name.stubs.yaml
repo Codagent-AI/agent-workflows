@@ -5,7 +5,6 @@ fixture:
   fail-node: validate-inputs
   inputs:
     change_name: Greet-By-Name
-    change_dir: tests/data/changes/valid-change
-    change_label: spec-driven change
+    changes_root: tests/data/changes
     change_kind: spec-driven
     artifact_validation_instruction: Validate any changed spec artifact.

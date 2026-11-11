@@ -1,5 +1,5 @@
 # A missing implementation whose repair reports itself blocked fails the recheck.
-validate-inputs: "inputs are valid"
+validate-inputs: { change_dir: tests/data/changes/valid-change, artifact_validation_instruction: "Validate any changed spec artifact." }
 check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
@@ -26,8 +26,7 @@ fixture:
   resolved-text-contains:
     repair-implementation-commits: "\"kind\":\"git\""
   inputs:
-    change_name: greet-by-name
-    change_dir: tests/data/changes/valid-change
-    change_label: spec-driven change
+    change_name: valid-change
+    changes_root: tests/data/changes
     change_kind: spec-driven
     artifact_validation_instruction: Validate any changed spec artifact.

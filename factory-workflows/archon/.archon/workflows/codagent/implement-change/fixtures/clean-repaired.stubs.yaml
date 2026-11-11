@@ -1,5 +1,5 @@
 # Uncommitted tracked changes reach the implementor's repair, and the strict recheck passes.
-validate-inputs: "inputs are valid"
+validate-inputs: { change_dir: tests/data/changes/valid-change, artifact_validation_instruction: "Validate any changed spec artifact." }
 check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
@@ -20,7 +20,7 @@ repair-clean: { blocked: false, reason: "" }
 recheck-clean: { ok: true, problems: "" }
 verify-implementation-commits: { ok: true, problems: "" }
 session-report: "## Assumption Audit"
-verify-change__validate-inputs: { rounds: 3, review: false, stop_unchanged: true }
+verify-change__validate-inputs: { change_dir: tests/data/changes/valid-change, artifact_validation_instruction: "Validate any changed spec artifact.", rounds: 3, review: false, stop_unchanged: true }
 verify-change__verify-assumptions-handoff: { ok: true, problems: "" }
 verify-change__verify-clean-for-pr: { ok: true, problems: "" }
 verify-change__open-draft-pr: { blocked: false, reason: "" }
@@ -40,8 +40,7 @@ fixture:
   resolved-text-contains:
     repair-clean: "M src/greet.ts"
   inputs:
-    change_name: greet-by-name
-    change_dir: tests/data/changes/valid-change
-    change_label: spec-driven change
+    change_name: valid-change
+    changes_root: tests/data/changes
     change_kind: spec-driven
     artifact_validation_instruction: Validate any changed spec artifact.

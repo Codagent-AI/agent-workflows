@@ -3,14 +3,16 @@ description: >-
   Review implementation assumptions, open a draft pull request, and run bounded
   acceptance-test rounds for an implemented change.
 
+# change_name is the run's own input and the two flags are the caller's. The rest are the pack's
+# settings (.pack/pack.yaml). Run on its own, this workflow reads them from the pack; included, it
+# takes nothing from its pack, so the includer passes them, and the declarations below let it.
 inputs:
   change_name: { required: true }
-  change_dir: { required: true }
-  change_label: { required: true }
-  artifact_validation_instruction: { required: true }
-  acceptance_rounds:
-    default: "3"
-    description: Most acceptance-test rounds, 1 to 10.
+  change_kind: {}
+  changes_root: {}
+  change_label: {}
+  artifact_validation_instruction: {}
+  acceptance_rounds: {}
   # A caller that already reviewed its implementation's assumptions and ran a
   # maintainability pass sets this to skip review-assumptions and simplify. The
   # assumptions handoff check still runs.
@@ -19,10 +21,7 @@ inputs:
   # unchanged and writes no acceptance-retest-reason.txt: another tester round
   # could only repeat the last one.
   stop_unchanged_acceptance: { default: "false" }
-  # Which findings the lead resolves in each acceptance fix. Callers can narrow
-  # it so unrelated problems go to the assumptions ledger instead.
-  acceptance_fix_scope:
-    default: "Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems."
+  acceptance_fix_scope: {}
 
 # The run's verdict is whether acceptance converged. A run that did not converge still
 # completes, so the handoff reaches a human; its authored outcome is failed.
@@ -35,6 +34,9 @@ nodes:
     runtime: bun
     with:
       change_name: $INPUTS.change_name
+      change_kind: $INPUTS.change_kind
+      changes_root: $INPUTS.changes_root
+      artifact_validation_instruction: $INPUTS.artifact_validation_instruction
       acceptance_rounds: $INPUTS.acceptance_rounds
       # The acceptance loop's max_iterations, which must be a literal.
       max_rounds: &max-rounds 10
@@ -44,10 +46,12 @@ nodes:
     output_format:
       type: object
       properties:
+        change_dir: { type: string }
+        artifact_validation_instruction: { type: string }
         rounds: { type: integer }
         review: { type: boolean }
         stop_unchanged: { type: boolean }
-      required: [rounds, review, stop_unchanged]
+      required: [change_dir, artifact_validation_instruction, rounds, review, stop_unchanged]
       additionalProperties: false
 
   - id: review-assumptions
@@ -59,7 +63,7 @@ nodes:
     with: &change
       change_label: $INPUTS.change_label
       change_name: $INPUTS.change_name
-      change_dir: $INPUTS.change_dir
+      change_dir: $validate-inputs.output.change_dir
 
   - id: verify-assumptions-handoff
     depends_on: [validate-inputs, review-assumptions]
@@ -261,7 +265,7 @@ nodes:
           with:
             change_label: $INPUTS.change_label
             change_name: $INPUTS.change_name
-            change_dir: $INPUTS.change_dir
+            change_dir: $validate-inputs.output.change_dir
             acceptance_round: $reset-round-evidence.output.round
             acceptance_rounds: $validate-inputs.output.rounds
           output_format:
@@ -337,7 +341,7 @@ nodes:
             change_name: $INPUTS.change_name
             acceptance_round: $reset-round-evidence.output.round
             acceptance_fix_scope: $INPUTS.acceptance_fix_scope
-            artifact_validation_instruction: $INPUTS.artifact_validation_instruction
+            artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
 
         - id: check-acceptance-progress
           depends_on: [acceptance-gate, acceptance-fix]

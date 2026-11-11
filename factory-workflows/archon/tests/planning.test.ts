@@ -102,12 +102,6 @@ describe('validatePlanningArtifacts input checks', () => {
   test('rejects an empty change dir', () => {
     expect(validate({ changeDir: '', changeKind: 'spec-driven' }).problems).toContain('change_dir must not be empty');
   });
-
-  test('openspec requires the conventional change dir', () => {
-    const result = validate({ changeDir: 'elsewhere/demo' });
-    expect(result.ok).toBe(false);
-    expect(result.problems).toContain('change_dir must be openspec/changes/demo for openspec: elsewhere/demo');
-  });
 });
 
 describe('validatePlanningArtifacts spec-driven kind', () => {

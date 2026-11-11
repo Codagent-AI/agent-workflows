@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import {
   acceptanceRoundsProblems,
   booleanProblems,
+  changeDir,
   changeNameProblems,
+  changesRootProblems,
   inputProblems,
   nonEmptyProblems,
+  validationInstruction,
 } from '../.archon/workflows/codagent/.shared/lib/params.ts';
 
 describe('changeNameProblems (validate-change-name.sh)', () => {
@@ -85,8 +88,38 @@ describe('acceptanceRoundsProblems', () => {
   });
 });
 
+describe('changeDir and changesRootProblems', () => {
+  test('the change folder is the changes root and the name', () => {
+    expect(changeDir('openspec/changes', 'demo')).toBe('openspec/changes/demo');
+    expect(changeDir('specs/changes/', 'demo')).toBe('specs/changes/demo');
+  });
+
+  test('an openspec change must use the OpenSpec folder, and a spec-driven one may not', () => {
+    expect(changesRootProblems('openspec', 'openspec/changes/')).toEqual([]);
+    expect(changesRootProblems('openspec', 'elsewhere')).toEqual(['changes_root must be openspec/changes for openspec: elsewhere']);
+    expect(changesRootProblems('spec-driven', 'elsewhere')).toEqual([]);
+  });
+
+  test('the root must not be empty', () => {
+    expect(changesRootProblems('spec-driven', ' ')).toEqual(['changes_root must not be empty']);
+  });
+});
+
+describe('validationInstruction', () => {
+  test('an openspec change gets the sentence naming it', () => {
+    expect(validationInstruction('openspec', 'demo', '')).toBe(
+      'When an approved artifact changed, run `openspec validate --type change "demo"`.'
+    );
+  });
+
+  test('the setting wins, and a spec-driven change has none of its own', () => {
+    expect(validationInstruction('openspec', 'demo', 'Run the linter.')).toBe('Run the linter.');
+    expect(validationInstruction('spec-driven', 'demo', '')).toBe('');
+  });
+});
+
 describe('inputProblems', () => {
-  const valid = { changeName: 'demo', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything' };
+  const valid = { changeName: 'demo', changesRoot: 'openspec/changes', changeKind: 'openspec', validationSetting: '', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything' };
 
   test('accepts valid inputs, with or without verify-change flags', () => {
     expect(inputProblems(valid)).toEqual([]);
@@ -97,12 +130,21 @@ describe('inputProblems', () => {
     expect(
       inputProblems({
         changeName: 'Demo',
+        changesRoot: 'openspec/changes',
+        changeKind: 'openspec',
+        validationSetting: '',
         acceptanceRounds: '0',
         maxRounds: 10,
         acceptanceFixScope: ' ',
         skipImplementationReview: 'yes',
       })
     ).toHaveLength(4);
+  });
+
+  test('checks the root against the kind when the kind is given', () => {
+    expect(inputProblems({ ...valid, changeKind: 'openspec', changesRoot: 'elsewhere' })).toHaveLength(1);
+    expect(inputProblems({ ...valid, changeKind: 'spec-driven', changesRoot: 'elsewhere', validationSetting: 'Lint.' })).toEqual([]);
+    expect(inputProblems({ ...valid, changeKind: 'spec-driven' })).toEqual(['artifact_validation_instruction must not be empty']);
   });
 
   test('checks the flags only when given', () => {
@@ -176,5 +218,51 @@ describe('timing bindings', () => {
     const draftChecks = checks.filter(node => node.with?.attempts !== undefined);
     expect(draftChecks.length).toBeGreaterThan(0);
     for (const node of draftChecks) expect(node.with?.interval_seconds).toBe(3);
+  });
+});
+
+// A block takes nothing from its pack, so implement-change passes each pack setting a block
+// declares through `with:`. A per-run `--input` override reaches the block only if the value
+// passed is the includer's own `$INPUTS.<name>`; these tests fail when one is dropped or renamed.
+describe('pack settings reach the included blocks', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  interface Workflow {
+    inputs?: Record<string, unknown>;
+    nodes: { id: string; include?: string; with?: Record<string, string> }[];
+  }
+  const read = (path: string): Workflow => Bun.YAML.parse(readFileSync(join(pack, path), 'utf8')) as Workflow;
+  const settings = Object.keys((read('.pack/pack.yaml').inputs ?? {}) as Record<string, unknown>);
+  const includes = read('implement-change/implement-change.yaml').nodes.filter(node => node.include !== undefined);
+
+  test('the pack declares the project constants', () => {
+    expect(settings.sort()).toEqual(
+      [
+        'acceptance_fix_scope',
+        'acceptance_rounds',
+        'artifact_validation_instruction',
+        'change_kind',
+        'change_label',
+        'changes_root',
+      ].sort()
+    );
+  });
+
+  test('the run declares no input a setting already declares', () => {
+    const own = Object.keys(read('implement-change/implement-change.yaml').inputs ?? {});
+    expect(own.filter(name => settings.includes(name))).toEqual([]);
+  });
+
+  test.each(includes.map(node => [node.id, node] as const))('%s is given every input it declares', (_id, node) => {
+    const target = node.include?.replace(/^codagent-/, '') ?? '';
+    const declared = Object.entries(read(`${target}/${target}.yaml`).inputs ?? {}).filter(
+      ([, spec]) => (spec as { default?: string }).default === undefined
+    );
+    expect(Object.keys(node.with ?? {}).sort()).toEqual(expect.arrayContaining(declared.map(([name]) => name).sort()));
+    expect(Object.keys(node.with ?? {}).filter(name => !(name in (read(`${target}/${target}.yaml`).inputs ?? {})))).toEqual([]);
+  });
+
+  test.each(includes.map(node => [node.id, node] as const))('%s passes each setting on unchanged', (_id, node) => {
+    const passed = Object.entries(node.with ?? {}).filter(([name]) => settings.includes(name));
+    expect(passed.filter(([name, value]) => value !== `$INPUTS.${name}`)).toEqual([]);
   });
 });

@@ -1,0 +1,31 @@
+# The pack's settings: the constants of a project. A project sets them in
+# `.archon/packs/codagent.yaml` under `settings:`; the defaults suit an OpenSpec repository.
+# A run can override any of them with `--input name=value`.
+inputs:
+  change_kind:
+    type: enum
+    values: [openspec, spec-driven]
+    default: openspec
+    description: >-
+      openspec: also checked with `openspec validate` and committed by the workflow.
+      spec-driven: the definition must already be committed.
+  changes_root:
+    default: openspec/changes
+    description: >-
+      The folder that holds the changes, relative to the checkout. A change lives in
+      <changes_root>/<change_name>. An openspec change must use the default.
+  change_label:
+    default: OpenSpec change
+    description: Human label for the change kind, used in the agents' prompts.
+  artifact_validation_instruction:
+    default: ""
+    description: >-
+      One sentence telling agents how to validate a changed artifact. Leave it empty
+      for an openspec change, which gets the `openspec validate` sentence naming the
+      change. A spec-driven change must set it.
+  acceptance_rounds:
+    default: "3"
+    description: Most acceptance-test rounds, 1 to 10.
+  acceptance_fix_scope:
+    default: Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems.
+    description: Which findings the lead resolves in each acceptance fix.
