@@ -41,12 +41,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # The dry-run fixtures run on Archon from source, pinned to the commit
-      # the pack is tested with.
+      # The dry-run fixtures run on Archon from source: the Codagent-AI fork's
+      # dev branch, synced with upstream, at the commit the pack is tested with.
       - uses: actions/checkout@v7
         with:
           repository: Codagent-AI/Archon
-          ref: f7dfe364b09bd32cf7735d0cac5aca5de4336641
+          ref: 0ab333c6fe69428e5717b89eb3c0538c18cd965e
           path: .ci/archon
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
