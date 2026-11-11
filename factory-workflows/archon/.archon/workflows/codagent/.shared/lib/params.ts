@@ -15,8 +15,9 @@ export function booleanProblems(name: string, value: string): Problems {
   return value === 'true' || value === 'false' ? [] : [`${name} must be true or false, got: ${value}`];
 }
 
+// Only ASCII whitespace counts as empty: a non-breaking space is content.
 export function nonEmptyProblems(name: string, value: string): Problems {
-  return value.trim() === '' ? [`${name} must not be empty`] : [];
+  return value.replace(/[ \t\n\v\f\r]/g, '') === '' ? [`${name} must not be empty`] : [];
 }
 
 /** The most acceptance rounds a run can have: the loop's max_iterations must be a literal. */
