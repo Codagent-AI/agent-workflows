@@ -2,6 +2,7 @@ import { nonEmptySpecs, planningArtifactFailures } from "./checks.js";
 import { type Context, logEvent } from "./context.js";
 import { output, type RunResult, run, tail } from "./proc.js";
 import { readStateText, type DefineState, writeState, writeStateText } from "./state.js";
+import { lastStepId } from "./steps.js";
 
 export interface ToolText {
   text: string;
@@ -90,7 +91,8 @@ async function commitChange(context: Context, root: string, state: DefineState, 
   state.status = "complete";
   state.current_step = null;
   state.completed_at = at;
-  state.steps["approach-review"] = { started_at: state.steps["approach-review"]?.started_at ?? at, completed_at: at };
+  const last = lastStepId(context.workflow);
+  state.steps[last] = { started_at: state.steps[last]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
 
   const add = await git("add", "--", dir);

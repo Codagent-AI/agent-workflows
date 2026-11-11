@@ -17,7 +17,7 @@ import {
   StateError,
   writeState,
 } from "./state.js";
-import { changeDirFor, nextStepId, renderStep, type StepId } from "./steps.js";
+import { changeDirFor, firstStepId, nextStepId, renderStep, type StepId, type Workflow } from "./steps.js";
 
 export interface NextStepArgs {
   change_name?: string | undefined;
@@ -47,7 +47,7 @@ export async function nextStep(context: Context, calls: CallManager, args: NextS
 }
 
 /** The change to act on: the named one, or the only define in progress. A refusal when neither works. */
-function resolveName(root: string, args: NextStepArgs): string | ToolText {
+function resolveName(workflow: Workflow, root: string, args: NextStepArgs): string | ToolText {
   const name = args.change_name?.trim() ?? "";
   if (name !== "") {
     return isValidChangeName(name) ? name : refuse(nameRuleMessage(name));
@@ -55,7 +55,7 @@ function resolveName(root: string, args: NextStepArgs): string | ToolText {
   if (args.start) {
     return refuse("start needs a change_name. Ask the user for one.");
   }
-  const active = inProgressChanges(root);
+  const active = inProgressChanges(workflow, root);
   const only = active[0];
   if (active.length === 1 && only !== undefined) {
     return isValidChangeName(only) ? only : refuse(nameRuleMessage(only));
@@ -67,9 +67,9 @@ function resolveName(root: string, args: NextStepArgs): string | ToolText {
 }
 
 /** The change's saved state, or a refusal when its state file cannot be read. */
-function loadState(root: string, name: string): { state: DefineState | undefined } | { refusal: ToolText } {
+function loadState(workflow: Workflow, root: string, name: string): { state: DefineState | undefined } | { refusal: ToolText } {
   try {
-    return { state: readState(root, name) };
+    return { state: readState(workflow, root, name) };
   } catch (error) {
     if (error instanceof StateError) {
       return { refusal: refuse(error.message) };
@@ -85,11 +85,11 @@ async function nextStepIn(context: Context, calls: CallManager, root: string, ar
       `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`,
     );
   }
-  const name = resolveName(root, args);
+  const name = resolveName(context.workflow, root, args);
   if (typeof name !== "string") {
     return name;
   }
-  const loaded = loadState(root, name);
+  const loaded = loadState(context.workflow, root, name);
   if ("refusal" in loaded) {
     return loaded.refusal;
   }
@@ -126,8 +126,11 @@ async function createDefine(context: Context, root: string, name: string, lead: 
     return refuse(`openspec new change ${name} failed: ${output(created)}`);
   }
   const at = context.now().toISOString();
-  writeState(root, newState(name, at, lead), at);
-  return { text: renderStep({ pluginRoot: context.pluginRoot, changeName: name, step: "proposal", mode: "new", completed: [] }) };
+  writeState(root, newState(context.workflow, name, at, lead), at);
+  const step = firstStepId(context.workflow);
+  return {
+    text: renderStep({ workflow: context.workflow, pluginRoot: context.pluginRoot, changeName: name, step, mode: "new", completed: [] }),
+  };
 }
 
 /** Records a resume and returns the step the define stopped at. The caller has checked it is not complete. */
@@ -140,7 +143,14 @@ function resumeDefine(context: Context, root: string, state: DefineState, lead: 
   state.starts.push({ at, lead, mode: "resume", step });
   writeState(root, state, at);
   return {
-    text: renderStep({ pluginRoot: context.pluginRoot, changeName: state.change_name, step, mode: "resume", completed: completedSteps(state) }),
+    text: renderStep({
+      workflow: context.workflow,
+      pluginRoot: context.pluginRoot,
+      changeName: state.change_name,
+      step,
+      mode: "resume",
+      completed: completedSteps(context.workflow, state),
+    }),
   };
 }
 
@@ -169,7 +179,7 @@ async function completeStep(context: Context, root: string, name: string, state:
       `step "${step}" of OpenSpec change "${name}" is not complete. Missing: ${missing.join("; ")}. Finish the step, then call next_step again.`,
     );
   }
-  const following = nextStepId(step);
+  const following = nextStepId(context.workflow, step);
   return following ? advance(context, root, state, { from: step, to: following }) : finishDefine(context, root, state);
 }
 
@@ -181,11 +191,12 @@ function advance(context: Context, root: string, state: DefineState, move: { fro
   writeState(root, state, at);
   return {
     text: renderStep({
+      workflow: context.workflow,
       pluginRoot: context.pluginRoot,
       changeName: state.change_name,
       step: move.to,
       mode: "continue",
-      completed: completedSteps(state),
+      completed: completedSteps(context.workflow, state),
     }),
   };
 }

@@ -1,6 +1,6 @@
 # Provenance
 
-This plugin copies its skills from Agent Skills and its step prompts from Agent Runner. The copies here
+This plugin copies its skills from Agent Skills and its workflow from Agent Runner. The copies here
 are now the source of truth for define-openspec-change. Agent Skills and Agent Runner were not changed.
 
 ## Sources
@@ -54,28 +54,30 @@ which writes the `human-workflows.crosscheck` list in `~/.agent-workflows/config
 `~/.agent-runner/config.yaml` profile, and the setup skill's recommended models come from that
 profile (Codex) and from Runner's `lead` profile (Claude).
 
-## Step prompts
+## Workflow
 
-`steps/*.md` come from Agent Runner `workflows/core/define-change-v1.0.yaml` at `0151294`, one file
-per step, with the OpenSpec caller's values from `workflows/openspec/change-v3.0.yaml` (lines 19 to 25)
-filled in:
+`workflow.yaml` comes from Agent Runner `workflows/core/define-change-v1.0.yaml` at `0151294`. The five
+steps and their prompts are in the same order. The session, mode, and parameter settings are gone, since
+every step runs in the lead's one interactive session. `tools: [call_agent]` stays on the proposal and
+approach-review steps. The file name and description are the same. The OpenSpec caller's values from
+`workflows/openspec/change-v3.0.yaml` (lines 19 to 25) are filled in:
 
 - `{{change_dir}}` became `openspec/changes/{{change_name}}`;
 - `{{change_label}}` became `OpenSpec change`;
 - `{{artifact_location_instruction}}` became its OpenSpec text.
 
-Every file renames `codagent:<skill>` to `define-openspec-change:<skill>`. Other changes:
+Every prompt renames `codagent:<skill>` to `define-openspec-change:<skill>`. Other changes:
 
-| File | Changes |
+| Step | Changes |
 | --- | --- |
-| `steps/proposal.md` | The intake sentence now refers to the conversation so far instead of intake context supplied above. The child must read and follow the proposal-review skill at `{{skills_dir}}/proposal-review/SKILL.md` instead of using `codagent:proposal-review`, because the child does not load this plugin. |
-| `steps/specs.md` | Rename only. |
-| `steps/design.md` | Rename only. |
-| `steps/test-plan.md` | Rename only. |
-| `steps/approach-review.md` | The child must read and follow the review-approach skill at `{{skills_dir}}/review-approach/SKILL.md` instead of using `codagent:review-approach`. |
+| `proposal` | The intake sentence now refers to the conversation so far instead of intake context supplied above. The child must read and follow the proposal-review skill at `{{skills_dir}}/proposal-review/SKILL.md` instead of using `codagent:proposal-review`, because the child does not load this plugin. |
+| `specs` | Rename only. |
+| `design` | Rename only. |
+| `test-plan` | Rename only. |
+| `approach-review` | The child must read and follow the review-approach skill at `{{skills_dir}}/review-approach/SKILL.md` instead of using `codagent:review-approach`. |
 
-The server fills `{{change_name}}` and `{{skills_dir}}` (the absolute path of this plugin's `skills/`
-folder) when it returns a step.
+The server loads and checks `workflow.yaml` when it starts, and fills `{{change_name}}` and
+`{{skills_dir}}` (the absolute path of this plugin's `skills/` folder) when it returns a step.
 
 The server also adds the text Runner added around each step, from `internal/exec/agent.go` at
 `0151294`: the step prefix from `buildStepPrefix` ("You are running in the ... workflow", "Continuing

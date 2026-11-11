@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { changeDirFor, isStepId, STEP_IDS, type StepId } from "./steps.js";
+import { changeDirFor, firstStepId, isStepId, type StepId, stepIds, type Workflow } from "./steps.js";
 
 export const STATE_FILE = ".define-openspec-change.json";
 
@@ -50,16 +50,17 @@ export function statePath(root: string, changeName: string): string {
   return join(root, changeDirFor(changeName), STATE_FILE);
 }
 
-export function newState(changeName: string, at: string, lead: string): DefineState {
+export function newState(workflow: Workflow, changeName: string, at: string, lead: string): DefineState {
+  const first = firstStepId(workflow);
   return {
     schema: 1,
     workflow: "define-openspec-change",
     change_name: changeName,
     change_dir: changeDirFor(changeName),
     status: "in_progress",
-    current_step: "proposal",
-    steps: { proposal: { started_at: at } },
-    starts: [{ at, lead, mode: "new", step: "proposal" }],
+    current_step: first,
+    steps: { [first]: { started_at: at } },
+    starts: [{ at, lead, mode: "new", step: first }],
     calls: [],
     created_at: at,
     updated_at: at,
@@ -67,8 +68,8 @@ export function newState(changeName: string, at: string, lead: string): DefineSt
   };
 }
 
-/** Reads a change's state file, or returns undefined when it has none. */
-export function readState(root: string, changeName: string): DefineState | undefined {
+/** Reads a change's state file, or returns undefined when it has none. Its step ids must be in the workflow. */
+export function readState(workflow: Workflow, root: string, changeName: string): DefineState | undefined {
   const path = statePath(root, changeName);
   if (!existsSync(path)) {
     return undefined;
@@ -80,12 +81,14 @@ export function readState(root: string, changeName: string): DefineState | undef
     throw new StateError(`${path} is not valid JSON: ${(error as Error).message}`);
   }
   const state = parsed as Partial<DefineState>;
-  const validStep = state.current_step === null || isStepId(state.current_step);
+  const validStep = state.current_step === null || isStepId(workflow, state.current_step);
+  const knownSteps = Object.keys(state.steps ?? {}).every((id) => isStepId(workflow, id));
   if (
     state.schema !== 1 ||
     state.change_name !== changeName ||
     (state.status !== "in_progress" && state.status !== "complete") ||
     !validStep ||
+    !knownSteps ||
     (state.status === "in_progress" && state.current_step === null)
   ) {
     throw new StateError(`${path} is not a define-openspec-change state file this version understands.`);
@@ -114,7 +117,7 @@ export function writeState(root: string, state: DefineState, at: string): void {
 }
 
 /** Names of changes under openspec/changes/ whose define is in progress. */
-export function inProgressChanges(root: string): string[] {
+export function inProgressChanges(workflow: Workflow, root: string): string[] {
   const changes = join(root, "openspec", "changes");
   if (!existsSync(changes)) {
     return [];
@@ -125,7 +128,7 @@ export function inProgressChanges(root: string): string[] {
       continue;
     }
     try {
-      const state = readState(root, entry.name);
+      const state = readState(workflow, root, entry.name);
       if (state?.status === "in_progress") {
         names.push(entry.name);
       }
@@ -136,6 +139,6 @@ export function inProgressChanges(root: string): string[] {
   return names.sort();
 }
 
-export function completedSteps(state: DefineState): StepId[] {
-  return STEP_IDS.filter((step) => state.steps[step]?.completed_at !== undefined);
+export function completedSteps(workflow: Workflow, state: DefineState): StepId[] {
+  return stepIds(workflow).filter((step) => state.steps[step]?.completed_at !== undefined);
 }

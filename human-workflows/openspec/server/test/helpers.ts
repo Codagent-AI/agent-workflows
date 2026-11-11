@@ -19,8 +19,9 @@ import { fileURLToPath } from "node:url";
 import { CallManager } from "../src/agentcall.js";
 import type { Context } from "../src/context.js";
 import { nextStep, type NextStepArgs } from "../src/define.js";
+import { loadWorkflow } from "../src/steps.js";
 
-/** The real plugin folder, so tests render the shipped step prompts. */
+/** The real plugin folder, so tests use the shipped workflow.yaml. */
 export const PLUGIN_ROOT = fileURLToPath(new URL("../../../plugin", import.meta.url));
 
 const FAKE_OPENSPEC = `#!/usr/bin/env node
@@ -240,6 +241,7 @@ export function makeContext(fixture: Fixture, overrides: Partial<Context> & { cl
     cwd: fixture.repo,
     env: { ...fixture.env, ...extraEnv },
     pluginRoot: PLUGIN_ROOT,
+    workflow: loadWorkflow(PLUGIN_ROOT),
     waitMs: 5_000,
     logBase: join(fixture.dir, "logs"),
     clientName: () => client ?? "claude-code",

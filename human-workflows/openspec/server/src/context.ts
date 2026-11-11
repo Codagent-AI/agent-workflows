@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { output, run } from "./proc.js";
+import type { Workflow } from "./steps.js";
 
 /** Everything the server needs from its surroundings, so tests can supply their own. */
 export interface Context {
   /** The session's working directory. Both CLIs start the server there. */
   cwd: string;
   env: NodeJS.ProcessEnv;
-  /** The installed plugin folder, which holds steps/ and skills/. */
+  /** The installed plugin folder, which holds workflow.yaml and skills/. */
   pluginRoot: string;
+  /** The steps, loaded from the plugin folder's workflow.yaml. */
+  workflow: Workflow;
   /** How long call_agent and get_agent_call wait before returning a running snapshot. */
   waitMs: number;
   /** Where logs and child output go. Never inside the working tree. */

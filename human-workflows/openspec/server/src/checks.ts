@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { output, run } from "./proc.js";
 import { changeDirFor, type StepId } from "./steps.js";
 
-/** Runner's validate-change-name.sh rule: lowercase letters, digits, and hyphens, not starting with a hyphen. */
+/** The change name rule: lowercase letters, digits, and hyphens, not starting with a hyphen. */
 export function isValidChangeName(name: string): boolean {
   return /^[a-z0-9][a-z0-9-]*$/.test(name);
 }
@@ -58,6 +58,33 @@ async function openspecStatuses(
   }
 }
 
+/** What a step's artifact needs. A step with no entry here has nothing to check. */
+interface StepCheck {
+  /** The OpenSpec artifact that must also report done. Absent when only the files are checked. */
+  openspecArtifact?: string;
+  missing: (root: string, changeDir: string) => string[];
+}
+
+function fileCheck(relative: string): StepCheck["missing"] {
+  return (root, changeDir) =>
+    nonEmptyFile(join(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
+}
+
+function specsCheck(root: string, changeDir: string): string[] {
+  return nonEmptySpecs(root, changeDir).length > 0
+    ? []
+    : [`at least one non-empty ${changeDir}/specs/<capability>/spec.md`];
+}
+
+/** The artifact checks, keyed by the step ids in workflow.yaml. A test pins those ids. */
+const STEP_CHECKS: Readonly<Record<string, StepCheck>> = {
+  proposal: { openspecArtifact: "proposal", missing: fileCheck("proposal.md") },
+  specs: { openspecArtifact: "specs", missing: specsCheck },
+  design: { openspecArtifact: "design", missing: fileCheck("design.md") },
+  // Not an OpenSpec artifact, so only the file check applies.
+  "test-plan": { missing: fileCheck("test-plan.md") },
+};
+
 /**
  * What a step still lacks before next_step may advance. Empty means the step's artifact is there.
  * OpenSpec counts any existing file as done, so each check also requires a non-empty file.
@@ -68,42 +95,22 @@ export async function missingForStep(
   step: StepId,
   env: NodeJS.ProcessEnv,
 ): Promise<string[]> {
-  const changeDir = changeDirFor(changeName);
-  const fileCheck = (relative: string): string[] =>
-    nonEmptyFile(join(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
-
-  let openspecId: string | undefined;
-  let missing: string[];
-  switch (step) {
-    case "proposal":
-      openspecId = "proposal";
-      missing = fileCheck("proposal.md");
-      break;
-    case "specs":
-      openspecId = "specs";
-      missing =
-        nonEmptySpecs(root, changeDir).length > 0
-          ? []
-          : [`at least one non-empty ${changeDir}/specs/<capability>/spec.md`];
-      break;
-    case "design":
-      openspecId = "design";
-      missing = fileCheck("design.md");
-      break;
-    case "test-plan":
-      // Not an OpenSpec artifact, so only the file check applies.
-      return fileCheck("test-plan.md");
-    case "approach-review":
-      return [];
+  const check = STEP_CHECKS[step];
+  if (!check) {
+    return [];
   }
-
+  const missing = check.missing(root, changeDirFor(changeName));
+  const artifact = check.openspecArtifact;
+  if (artifact === undefined) {
+    return missing;
+  }
   const statuses = await openspecStatuses(root, changeName, env);
   if (typeof statuses === "string") {
     return [...missing, statuses];
   }
-  const status = statuses.get(openspecId);
+  const status = statuses.get(artifact);
   if (status !== undefined && status !== "done" && missing.length === 0) {
-    missing.push(`OpenSpec to report the ${openspecId} artifact as done (it reports "${status}")`);
+    missing.push(`OpenSpec to report the ${artifact} artifact as done (it reports "${status}")`);
   }
   return missing;
 }

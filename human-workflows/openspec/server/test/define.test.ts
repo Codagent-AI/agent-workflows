@@ -4,12 +4,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
+import { allowsCallAgent, loadWorkflow, parseWorkflow, stepIds, WorkflowError } from "../src/steps.js";
 import {
   CHANGE,
   DEFAULT_CONFIG,
   fakeLog,
   makeContext,
   makeFixture,
+  PLUGIN_ROOT,
   pathWithout,
   session,
   writeArtifacts,
@@ -130,7 +132,7 @@ test("an early next_step is refused and names what is missing", async () => {
   assert.equal(JSON.parse(fixture.read(STATE)).current_step, "specs");
 });
 
-test("steps advance in Runner's order and each prompt arrives once", async () => {
+test("steps advance in workflow.yaml order and each prompt arrives once", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
   const seen: string[] = [];
@@ -253,4 +255,64 @@ test("the session directory is read from Codex tool-call metadata", async () => 
   assert.equal(sessionCwdFromMeta({ "codex/sandbox-state": { sandboxCwd: "/tmp/plain" } }), "/tmp/plain");
   assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/tmp/ws": { has_changes: false } } } }), "/tmp/ws");
   assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/a": {}, "/b": {} } } }), undefined);
+});
+
+test("the shipped workflow.yaml has the five steps the artifact checks are keyed by", () => {
+  const workflow = loadWorkflow(PLUGIN_ROOT);
+  assert.equal(workflow.name, "define-openspec-change");
+  assert.deepEqual(stepIds(workflow), ["proposal", "specs", "design", "test-plan", "approach-review"]);
+  assert.deepEqual(
+    stepIds(workflow).filter((id) => allowsCallAgent(workflow, id)),
+    ["proposal", "approach-review"],
+  );
+});
+
+const VALID = `name: demo
+description: A demo.
+steps:
+  - id: one
+    tools: [call_agent]
+    prompt: |
+      Do {{change_name}} with {{skills_dir}}.
+  - id: two
+    prompt: Finish.
+`;
+
+function malformed(text: string): string {
+  try {
+    parseWorkflow(text);
+  } catch (error) {
+    assert.ok(error instanceof WorkflowError);
+    return error.message;
+  }
+  return assert.fail("expected the workflow to be rejected");
+}
+
+test("a malformed workflow.yaml is rejected with a clear message", () => {
+  const workflow = parseWorkflow(VALID);
+  assert.deepEqual(stepIds(workflow), ["one", "two"]);
+  assert.equal(allowsCallAgent(workflow, "one"), true);
+  assert.equal(allowsCallAgent(workflow, "two"), false);
+
+  assert.match(malformed("steps: ["), /not valid YAML/);
+  assert.match(malformed("- just a list"), /must be a mapping/);
+  assert.match(malformed(VALID.replace("name: demo\n", "")), /needs a name/);
+  assert.match(malformed(VALID.replace("description: A demo.\n", "")), /needs a description/);
+  assert.match(malformed("name: demo\ndescription: d\nsteps: []\n"), /at least one step/);
+  assert.match(malformed(VALID.replace("id: two", "id: one")), /step id "one" is used twice/);
+  assert.match(malformed(VALID.replace("    prompt: Finish.\n", "")), /step "two" needs a prompt/);
+  assert.match(malformed(VALID.replace("[call_agent]", "[shell]")), /step "one" has tools that are not \[call_agent\]/);
+  assert.match(malformed(VALID.replace("{{skills_dir}}", "{{unknown}}")), /unknown placeholder \{\{unknown\}\}/);
+});
+
+test("a state file with a step the workflow does not have is refused", async () => {
+  const fixture = makeFixture();
+  const { next } = session(makeContext(fixture));
+  await next({ change_name: CHANGE, start: true });
+  const state = JSON.parse(fixture.read(STATE));
+  state.current_step = "tasks";
+  fixture.write(STATE, JSON.stringify(state));
+  const result = await next({ change_name: CHANGE });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /not a define-openspec-change state file this version understands/);
 });

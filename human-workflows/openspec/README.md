@@ -10,7 +10,7 @@ A Claude Code and Codex plugin that defines an OpenSpec change in your own sessi
 
 A second agent on the other vendor's CLI reviews the proposal and the finished approach. At the end the plugin validates the change and commits its documents.
 
-The steps and their prompts come from Agent Runner's define workflow. Runner moved the agent from step to step by stopping and resuming the CLI. Here a bundled tool server returns each step's instructions when the agent calls `next_step`, so the whole define runs in one conversation.
+The steps and their prompts are written in one file, [`plugin/workflow.yaml`](plugin/workflow.yaml). A bundled tool server reads it and returns each step's instructions when the agent calls `next_step`, so the whole define runs in one conversation.
 
 ## Requirements
 
@@ -75,6 +75,26 @@ Progress is saved in `openspec/changes/<name>/.define-openspec-change.json` and 
 - Claude Code asks before each call to the plugin's tools. To stop the prompts, allow them in your settings: `"permissions": { "allow": ["mcp__plugin_define-openspec-change_define"] }`.
 - Codex follows your own approval settings for the plugin's tools. The plugin doesn't pre-approve them.
 - The last `next_step` call commits, and on a branch it also pushes and opens a pull request.
+
+## The workflow file
+
+`plugin/workflow.yaml` holds the workflow's name, its description, and the steps in order. Each step has an `id` and a `prompt`. A step with `tools: [call_agent]` may start a crosscheck. The prompts can use `{{change_name}}` and `{{skills_dir}}`, which the server fills in.
+
+```yaml
+name: define-openspec-change
+description: Interactively define a structured change through proposal, specification, design, and testing strategy.
+
+steps:
+  - id: proposal
+    tools: [call_agent]
+    prompt: |
+      Help the user write the proposal for OpenSpec change "{{change_name}}". ...
+  - id: specs
+    prompt: |
+      ...
+```
+
+The server checks the file when it starts. It refuses to start, and says what is wrong, if the file has no name, description, or steps, repeats a step id, leaves out a prompt, lists a tool other than `call_agent`, or uses another placeholder. The check that a step's file exists before `next_step` moves on is in the server, keyed by step id (`proposal`, `specs`, `design`, and `test-plan`). A step with no check, such as `approach-review`, has nothing to check. A test pins the shipped step ids, so renaming a step cannot silently drop its check.
 
 ## The crosscheck
 
@@ -153,7 +173,7 @@ human-workflows/openspec/
     skills/define/             the entry point on both CLIs
     skills/setup/              writes ~/.agent-workflows/config.yaml with you
     skills/<copied skills>/    from Agent Skills, now the source of truth for define
-    steps/<five steps>.md      step prompts from Runner
+    workflow.yaml              the steps and their prompts
     PROVENANCE.md              source commits, and what changed in each copied file
   server/                      TypeScript source, tests, and the esbuild build
 ```

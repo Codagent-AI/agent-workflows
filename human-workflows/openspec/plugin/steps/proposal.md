@@ -1,9 +1,0 @@
-Help the user write the proposal for OpenSpec change "{{change_name}}". Treat what the user already said earlier in this conversation as context they have already provided, and do not ask them to repeat it. If they have not yet said what the change is about, first ask what the change is about and do not guess. That earlier conversation is prior factual context only: it is not approval of a direction, authorization to write, or a substitute for confirmation required by the define-openspec-change:propose skill. You MUST use the define-openspec-change:propose skill and write the proposal to `openspec/changes/{{change_name}}/proposal.md`.
-
-Keep every OpenSpec definition and planning artifact under the repository-local `openspec/changes/{{change_name}}/` directory.
-
-Once the proposal draft is complete, use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one adversarial review. Do not run that review yourself. The task-specific child instructions must require it to read and follow the proposal-review skill at `{{skills_dir}}/proposal-review/SKILL.md`, read the proposal under `openspec/changes/{{change_name}}/`, inspect relevant repository context, provide clear actionable feedback with recommended resolutions, and never modify files.
-
-Follow define-openspec-change:call-agent's verification and user-facing reporting rules. Discuss every consequential finding with the user. Do not modify the proposal or any other file in response to review feedback until you have presented your assessment and received the user's explicit confirmation about which changes to make. Apply only the changes the user confirms.
-
-Keep this phase interactive through the proposal review. Once the user approves the final proposal content or tells you to write it, complete the approved edits and continue to the next step without asking them to review the written artifact again.

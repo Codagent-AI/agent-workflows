@@ -10,6 +10,7 @@
 ## human-workflows/openspec
 
 - `plugin/` is the installable plugin root. Codex, and Claude Code for a Git marketplace, copy only that folder into the plugin cache, so nothing outside it is reachable at run time. Keep `node_modules` and sources out of it.
+- `plugin/workflow.yaml` holds the step order and the step prompts, so they are not hard-coded in the server. The artifact check for a step stays in `server/src/checks.ts`, keyed by step id. When you rename or add a step, update that table and the test that pins the step ids.
 - `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.
 - After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run lint` (Biome and jscpd) and `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.
 - Add tests to the existing suites in `server/test/`.

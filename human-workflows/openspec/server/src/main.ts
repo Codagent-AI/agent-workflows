@@ -6,10 +6,22 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { defaultLogBase, waitMsFromEnv } from "./context.js";
 import { createServer } from "./server.js";
+import { loadWorkflow, WorkflowError } from "./steps.js";
 
 // The bundle lives at <plugin root>/server.mjs.
 const pluginRoot = dirname(fileURLToPath(import.meta.url));
 const logBase = defaultLogBase();
+
+let workflow: ReturnType<typeof loadWorkflow>;
+try {
+  workflow = loadWorkflow(pluginRoot);
+} catch (error) {
+  if (error instanceof WorkflowError) {
+    process.stderr.write(`define-openspec-change: ${error.message}\n`);
+    process.exit(1);
+  }
+  throw error;
+}
 
 try {
   mkdirSync(logBase, { recursive: true });
@@ -25,6 +37,7 @@ const { server, calls } = createServer((mcp) => ({
   cwd: process.cwd(),
   env: process.env,
   pluginRoot,
+  workflow,
   waitMs: waitMsFromEnv(process.env),
   logBase,
   clientName: () => mcp.server.getClientVersion()?.name,

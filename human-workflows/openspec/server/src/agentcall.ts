@@ -8,7 +8,7 @@ import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
 import type { ToolText } from "./finish.js";
 import { inProgressChanges, readState, writeState } from "./state.js";
-import { CALL_STEPS, type StepId } from "./steps.js";
+import { allowsCallAgent, type StepId, type Workflow } from "./steps.js";
 import { compareFingerprints, workingTreeFingerprint } from "./worktree.js";
 
 export const CROSSCHECK_AGENT = "crosscheck";
@@ -21,10 +21,10 @@ interface CallOwner {
 }
 
 /** The in-progress define that is at a step where call_agent is available, if any. */
-function findCallOwner(root: string): CallOwner | undefined {
-  const states = inProgressChanges(root).map((name) => ({ name, state: readState(root, name) }));
+function findCallOwner(workflow: Workflow, root: string): CallOwner | undefined {
+  const states = inProgressChanges(workflow, root).map((name) => ({ name, state: readState(workflow, root, name) }));
   for (const { name, state } of states) {
-    if (state?.current_step && CALL_STEPS.includes(state.current_step)) {
+    if (state?.current_step && allowsCallAgent(workflow, state.current_step)) {
       return { changeName: name, step: state.current_step };
     }
   }
@@ -121,7 +121,7 @@ export class CallManager {
     } catch (error) {
       return errorText("call_agent_unavailable", (error as Error).message);
     }
-    const owner = findCallOwner(root);
+    const owner = findCallOwner(this.context.workflow, root);
     if (!owner) {
       return errorText(
         "call_agent_unavailable",
@@ -253,7 +253,7 @@ export class CallManager {
   /** Adds the finished call to the change's state file, after the working-tree check. */
   private record(call: Call): void {
     try {
-      const state = readState(call.root, call.changeName);
+      const state = readState(this.context.workflow, call.root, call.changeName);
       if (!(state && existsSync(call.root))) {
         return;
       }
