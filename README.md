@@ -1,6 +1,6 @@
 # agent-workflows
 
-Codagent workflows. Human workflows are plugins where you and an agent work together in your own session. Factory workflows run on a workflow engine without you.
+Codagent workflows. Human workflows are plugins where you and an agent work together in your own session. Factory workflows are workflows an agent runs without a person.
 
 ## Layout
 
