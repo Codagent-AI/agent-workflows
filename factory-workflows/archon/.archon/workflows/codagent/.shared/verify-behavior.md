@@ -1,10 +1,3 @@
----
-description: >-
-  Plans how to verify each behavior in a change's spec, then records evidence that each check
-  passed. Use when asked to plan or record verification of a change's behavior, or to invoke
-  codagent:verify-behavior.
----
-
 # Verify Behavior
 
 ## Writing the checklist

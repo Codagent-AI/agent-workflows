@@ -1,9 +1,3 @@
----
-description: >-
-  Implements an approved change in one continuous session, with tiered test runs. Use when asked
-  to implement a change from its approved definition, or to invoke codagent:implement-change.
----
-
 # Implement Change
 
 Implement the approved change (its proposal, specs, design, and test plan) in this session. Even if
