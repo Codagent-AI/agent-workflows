@@ -4,7 +4,7 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { artifactsDir } from '../../.shared/lib/check.ts';
-import { FILES } from '../../.shared/lib/acceptance.ts';
+import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 
-rmSync(join(artifactsDir(), FILES.retestReason), { force: true });
+rmSync(join(artifactsDir(), ARTIFACTS.retestReason), { force: true });
 process.stdout.write('cleared\n');

@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, posix } from 'node:path';
 
+import { nonEmptyFile } from './artifacts.ts';
 import { type CheckResult, fail, pass } from './check.ts';
 import type { Exec } from './exec.ts';
 import { changeNameProblems } from './params.ts';
@@ -12,8 +13,6 @@ export interface PlanningInput {
   changeKind: string;
   requireTasks: boolean;
 }
-
-const nonEmptyFile = (path: string): boolean => existsSync(path) && statSync(path).isFile() && statSync(path).size > 0;
 
 function sortedFiles(dir: string, pick: (name: string) => string | undefined): string[] {
   if (!(existsSync(dir) && statSync(dir).isDirectory())) return [];

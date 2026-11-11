@@ -6,25 +6,13 @@
 //   - acceptance-tested-revision.txt names <HEAD>, the revision the tester last explored;
 //   - exploration-log.md and acceptance-handoff.md exist and are non-empty;
 //   - no tracked file has uncommitted changes.
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ARTIFACTS, nonEmptyFile } from './artifacts.ts';
 import type { Exec } from './exec.ts';
 import { head, status } from './worktree.ts';
 
-export const FILES = {
-  roundStatus: 'acceptance-round-status.txt',
-  testedRevision: 'acceptance-tested-revision.txt',
-  explorationLog: 'exploration-log.md',
-  handoff: 'acceptance-handoff.md',
-  testerHandoff: 'acceptance-handoff-tester.md',
-  preparationStatus: 'acceptance-preparation-status.txt',
-  retestReason: 'acceptance-retest-reason.txt',
-  findings: 'acceptance-findings.md',
-  assumptions: 'acceptance-assumptions.md',
-} as const;
-
-const nonEmptyFile = (path: string): boolean => existsSync(path) && statSync(path).isFile() && statSync(path).size > 0;
 
 /** The last non-blank line of a file, without trailing whitespace, or '' if none. */
 export function lastLine(path: string): string {
@@ -40,15 +28,15 @@ export function convergenceReasons(exec: Exec, evidenceDir: string): string[] {
   const current = head(exec);
   if (!current) return ['local HEAD could not be resolved'];
   const reasons: string[] = [];
-  const roundStatus = lastLine(join(evidenceDir, FILES.roundStatus));
+  const roundStatus = lastLine(join(evidenceDir, ARTIFACTS.roundStatus));
   if (roundStatus === '') {
-    reasons.push(`the tester recorded no round status in ${FILES.roundStatus}`);
+    reasons.push(`the tester recorded no round status in ${ARTIFACTS.roundStatus}`);
   } else if (roundStatus !== `READY ${current}`) {
     reasons.push(`the tester's round status is '${roundStatus}', not 'READY ${current}'`);
   }
-  const tested = lastLine(join(evidenceDir, FILES.testedRevision));
-  if (tested !== current) reasons.push(`${FILES.testedRevision} names '${tested}', not '${current}'`);
-  for (const name of [FILES.explorationLog, FILES.handoff]) {
+  const tested = lastLine(join(evidenceDir, ARTIFACTS.testedRevision));
+  if (tested !== current) reasons.push(`${ARTIFACTS.testedRevision} names '${tested}', not '${current}'`);
+  for (const name of [ARTIFACTS.explorationLog, ARTIFACTS.handoff]) {
     if (!nonEmptyFile(join(evidenceDir, name))) reasons.push(`${name} is missing or empty`);
   }
   const changes = status(exec, ['--untracked-files=no']);
@@ -71,8 +59,8 @@ export interface Round {
  * acceptance-retest-reason.txt remains for this round's tester.
  */
 export function startRound(evidenceDir: string, previousRound: string, rounds: number): Round {
-  rmSync(join(evidenceDir, FILES.roundStatus), { force: true });
-  rmSync(join(evidenceDir, FILES.handoff), { force: true });
+  rmSync(join(evidenceDir, ARTIFACTS.roundStatus), { force: true });
+  rmSync(join(evidenceDir, ARTIFACTS.handoff), { force: true });
   // The first iteration has no previous output; anything that is not a round number means none.
   const previous = previousRound.trim();
   const round = /^[0-9]+$/.test(previous) ? Number(previous) + 1 : 0;
@@ -106,7 +94,7 @@ export interface Progress {
 export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean, stopUnchanged: boolean): Progress {
   if (!fix) return { progressed: true, push: false };
   if (!stopUnchanged) return { progressed: true, push: true };
-  const tested = lastLine(join(evidenceDir, FILES.testedRevision)).replace(/\s/g, '');
+  const tested = lastLine(join(evidenceDir, ARTIFACTS.testedRevision)).replace(/\s/g, '');
   const current = head(exec);
   const changes = status(exec, ['--untracked-files=no']);
   // A git failure must not read as progress, or the stop option would push and retest.
@@ -114,7 +102,7 @@ export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean, sto
     throw new Error('could not inspect the worktree to decide whether the acceptance fix made progress');
   }
   const progressed =
-    current !== tested || changes !== '' || nonEmptyFile(join(evidenceDir, FILES.retestReason));
+    current !== tested || changes !== '' || nonEmptyFile(join(evidenceDir, ARTIFACTS.retestReason));
   return { progressed, push: progressed };
 }
 
@@ -130,8 +118,8 @@ export interface Finalized {
 /** Reads the two files back, so a write that did not land fails the step that made it. */
 function readBack(evidenceDir: string, expected: Finalized['status']): void {
   const problems: string[] = [];
-  if (!nonEmptyFile(join(evidenceDir, FILES.handoff))) problems.push('acceptance handoff is missing or empty');
-  const written = lastLine(join(evidenceDir, FILES.preparationStatus));
+  if (!nonEmptyFile(join(evidenceDir, ARTIFACTS.handoff))) problems.push('acceptance handoff is missing or empty');
+  const written = lastLine(join(evidenceDir, ARTIFACTS.preparationStatus));
   if (written !== expected) problems.push(`acceptance preparation status is '${written}', not '${expected}'`);
   if (problems.length > 0) throw new Error(problems.join('\n'));
 }
@@ -145,7 +133,7 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
   const reasons = convergenceReasons(exec, evidenceDir);
   const current = head(exec);
   mkdirSync(evidenceDir, { recursive: true });
-  const statusFile = join(evidenceDir, FILES.preparationStatus);
+  const statusFile = join(evidenceDir, ARTIFACTS.preparationStatus);
   if (reasons.length === 0) {
     writeFileSync(statusFile, 'ACCEPTANCE_COMPLETE\n');
     readBack(evidenceDir, 'ACCEPTANCE_COMPLETE');
@@ -155,8 +143,8 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
       message: `acceptance preparation complete at ${current ?? ''}`,
     };
   }
-  const handoff = join(evidenceDir, FILES.handoff);
-  const testerHandoff = join(evidenceDir, FILES.testerHandoff);
+  const handoff = join(evidenceDir, ARTIFACTS.handoff);
+  const testerHandoff = join(evidenceDir, ARTIFACTS.testerHandoff);
   // A rerun must not move its own earlier handoff over the tester's, so only a handoff
   // without the generated heading is kept as the tester's.
   if (nonEmptyFile(handoff) && !(readFileSync(handoff, 'utf8').split('\n')[0] ?? '').startsWith(GENERATED_HEADING)) {
@@ -167,8 +155,8 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
     `${GENERATED_HEADING} ${rounds || 'the allowed'} rounds\n`,
     `Local HEAD: ${current ?? 'unknown'}\n`,
     `Reasons:\n\n${reasonLines}`,
-    `Open findings: ${join(evidenceDir, FILES.findings)}`,
-    `Unresolved assumptions: ${join(evidenceDir, FILES.assumptions)}`,
+    `Open findings: ${join(evidenceDir, ARTIFACTS.findings)}`,
+    `Unresolved assumptions: ${join(evidenceDir, ARTIFACTS.assumptions)}`,
   ];
   if (nonEmptyFile(testerHandoff)) lines.push(`Tester handoff: ${testerHandoff}`);
   writeFileSync(handoff, `${lines.join('\n')}\n`);

@@ -37,6 +37,8 @@ fixture:
   expect: completed
   authored: succeeded
   reached: [complete-evidence, evidence-recheck, audit]
+  resolved-text-contains:
+    complete-evidence: "`[complete-evidence]` prefix"
   inputs:
     change_name: greet-by-name
     change_dir: tests/data/changes/valid-change

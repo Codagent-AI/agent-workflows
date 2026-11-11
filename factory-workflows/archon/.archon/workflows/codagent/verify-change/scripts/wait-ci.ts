@@ -3,6 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { renderReport } from '../../.shared/lib/ci-report.ts';
 import { waitForCi } from '../../.shared/lib/ci.ts';
@@ -10,7 +11,7 @@ import { runCommand, sleep } from '../../.shared/lib/exec.ts';
 
 const round = required(process.env.INPUTS_ROUND, 'round');
 const result = waitForCi(runCommand, sleep, { maxMinutes: 15, intervalSeconds: 30 });
-const dir = join(artifactsDir(), 'ci');
+const dir = join(artifactsDir(), ARTIFACTS.ciDir);
 mkdirSync(dir, { recursive: true });
 const reportFile = join(dir, `round-${round}.md`);
 writeFileSync(reportFile, renderReport(result));

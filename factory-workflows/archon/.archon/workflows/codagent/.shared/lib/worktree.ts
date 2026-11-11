@@ -2,14 +2,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ARTIFACTS } from './artifacts.ts';
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, output } from './exec.ts';
 
-/** The record an agent writes when only the user can settle a question about the definition. */
-export const BLOCKED_RECORD = 'implementation-blocked.md';
-
 export function checkNotBlocked(artifactsDir: string): CheckResult {
-  const record = join(artifactsDir, BLOCKED_RECORD);
+  const record = join(artifactsDir, ARTIFACTS.blocked);
   if (!existsSync(record)) return pass();
   return fail([
     'the change cannot be implemented compliantly without a user decision:',

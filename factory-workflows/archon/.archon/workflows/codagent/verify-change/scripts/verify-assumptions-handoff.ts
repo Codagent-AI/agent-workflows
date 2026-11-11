@@ -3,9 +3,9 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { artifactsDir, fail, pass, runCheck } from '../../.shared/lib/check.ts';
-import { FILES } from '../../.shared/lib/acceptance.ts';
+import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 
 runCheck(() => {
-  const ledger = join(artifactsDir(), FILES.assumptions);
+  const ledger = join(artifactsDir(), ARTIFACTS.assumptions);
   return existsSync(ledger) && statSync(ledger).size > 0 ? pass() : fail(`${ledger} is missing or empty`);
 });

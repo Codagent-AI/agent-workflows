@@ -180,7 +180,12 @@ nodes:
           model: ['@implementor', large]
           context: { resume: implement }
           command: complete-evidence
-          with: *change
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            lead_in: The
+            commit_prefix: complete-evidence
           output_format: *repair
         - id: evidence-recheck
           depends_on: [complete-evidence]
@@ -244,8 +249,13 @@ nodes:
         - id: complete-evidence-after-review
           model: ['@implementor', large]
           context: { resume: resolve-findings }
-          command: complete-evidence-after-review
-          with: *change
+          command: complete-evidence
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            lead_in: After resolving the audit's findings, the
+            commit_prefix: complete-evidence-after-review
           output_format: *repair
         - id: evidence-recheck-after-review
           depends_on: [complete-evidence-after-review]

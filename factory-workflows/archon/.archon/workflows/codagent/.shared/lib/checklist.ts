@@ -1,18 +1,16 @@
 // The implementor's verification checklist: a Markdown table with an ID column, written
 // before implementation, committed, and filled in with Code, Evidence and Status as the
 // implementor works.
-import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { nonEmptyFile } from './artifacts.ts';
 import { type CheckResult, fail, pass } from './check.ts';
 import type { Exec } from './exec.ts';
 import type { CheckoutStart } from './checkout.ts';
 import { changedPaths, head, status } from './worktree.ts';
 
 export const checklistPath = (changeDir: string): string => join(changeDir, 'checklist.md');
-
-export const nonEmptyFile = (path: string): boolean =>
-  existsSync(path) && statSync(path).isFile() && statSync(path).size > 0;
 
 export const isTableLine = (line: string): boolean => line.trimStart().startsWith('|');
 export const isSeparatorRow = (line: string): boolean => /^[\s:|-]*$/.test(line);

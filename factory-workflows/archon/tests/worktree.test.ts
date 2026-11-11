@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
-  BLOCKED_RECORD,
   checkCommitsSince,
   checkNotBlocked,
   checkTrackedClean,
@@ -10,6 +9,7 @@ import {
   head,
   status,
 } from '../.archon/workflows/codagent/.shared/lib/worktree.ts';
+import { ARTIFACTS } from '../.archon/workflows/codagent/.shared/lib/artifacts.ts';
 import { type Sandbox, createSandbox } from './helpers.ts';
 
 let box: Sandbox;
@@ -24,7 +24,7 @@ describe('checkNotBlocked (check-not-blocked.sh)', () => {
   });
 
   test('fails with the record and the restart advice when one exists', () => {
-    box.write(BLOCKED_RECORD, 'Decision needed: which export format?\n');
+    box.write(ARTIFACTS.blocked, 'Decision needed: which export format?\n');
     const result = checkNotBlocked(box.dir);
     expect(result.ok).toBe(false);
     for (const want of ['without a user decision', 'Decision needed: which export format?', 'start a new run']) {

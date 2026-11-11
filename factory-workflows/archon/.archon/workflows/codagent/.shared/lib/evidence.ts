@@ -15,8 +15,9 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
+import { ARTIFACTS, nonEmptyFile } from './artifacts.ts';
 import { type CheckResult, artifactsDir, fail, pass, requireOk } from './check.ts';
-import { cells, checklistPath, isTableLine, nonEmptyFile, rawCells } from './checklist.ts';
+import { cells, checklistPath, isTableLine, rawCells } from './checklist.ts';
 import { planProblems } from './checklist-plan.ts';
 import { checkNotBlocked } from './worktree.ts';
 
@@ -170,9 +171,9 @@ export function checkEvidenceRun(changeDir: string, findings?: string): CheckRes
   if (!notBlocked.ok) requireOk(notBlocked, '');
   return checkEvidence({
     checklistFile: checklistPath(changeDir),
-    evidenceDir: join(dir, 'evidence'),
-    problemsFile: join(dir, 'evidence-problems.txt'),
-    planFile: join(dir, 'planned-checklist.md'),
+    evidenceDir: join(dir, ARTIFACTS.evidenceDir),
+    problemsFile: join(dir, ARTIFACTS.evidenceProblems),
+    planFile: join(dir, ARTIFACTS.plannedChecklist),
     ...(findings === undefined ? {} : { findings }),
   });
 }
