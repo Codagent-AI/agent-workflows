@@ -33,7 +33,7 @@ Every check is a TypeScript script node run by bun. Agents read the two `.shared
 
 ## Running
 
-Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change.
+Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change (tested with OpenSpec 1.17.0).
 
 ```sh
 archon workflow run codagent-implement-change \
@@ -112,6 +112,6 @@ bun run lint            # Biome and jscpd
 
 Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. The script tests cover the scripts' side of those paths.
 
-**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands; a test that calls the real ones fails.
+**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands (their output matches OpenSpec 1.17.0); a test that calls the real ones fails.
 
 **Lint.** Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more in the TypeScript or workflow YAML; fixtures are exempt. Fix the code rather than raising a limit or adding an ignore comment.

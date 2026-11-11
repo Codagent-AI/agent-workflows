@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.3/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
   "root": true,
   "vcs": {
     "enabled": true,
@@ -18,7 +18,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "complexity": {
         "noExcessiveCognitiveComplexity": {
           "level": "error",
@@ -34,6 +34,7 @@
         },
         "noExcessiveNestedTestSuites": "error",
         "noForEach": "error",
+        "noUselessReturn": "error",
         "useMaxParams": {
           "level": "error",
           "options": {
@@ -43,19 +44,6 @@
         "useSimplifiedLogicExpression": "error"
       },
       "style": {
-        "noNestedTernary": "error",
-        "noNegationElse": "error",
-        "noParameterAssign": "error",
-        "noShoutyConstants": "error",
-        "noUselessElse": "error",
-        "noYodaExpression": "error",
-        "useCollapsedElseIf": "error",
-        "useExplicitLengthCheck": "error"
-      },
-      "suspicious": {
-        "noImportCycles": "error"
-      },
-      "nursery": {
         "noExcessiveClassesPerFile": {
           "level": "error",
           "options": {
@@ -68,9 +56,19 @@
             "maxLines": 300
           }
         },
+        "noNegationElse": "error",
+        "noNestedTernary": "error",
+        "noParameterAssign": "error",
+        "noShoutyConstants": "error",
+        "noUselessElse": "error",
+        "noYodaExpression": "error",
+        "useCollapsedElseIf": "error",
+        "useExplicitLengthCheck": "error"
+      },
+      "suspicious": {
+        "noImportCycles": "error",
         "noNestedPromises": "error",
-        "noShadow": "error",
-        "noUselessReturn": "error"
+        "noShadow": "error"
       }
     }
   },
@@ -84,7 +82,7 @@
           "complexity": {
             "noExcessiveLinesPerFunction": "off"
           },
-          "nursery": {
+          "style": {
             "noExcessiveLinesPerFile": {
               "level": "error",
               "options": {
