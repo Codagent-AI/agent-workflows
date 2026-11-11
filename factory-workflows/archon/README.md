@@ -1,92 +1,125 @@
-# Archon factory workflows
+# Codagent workflows for Archon
 
-Codagent's factory workflows for the [Archon](https://github.com/coleam00/Archon) engine. This folder is the workflow source Archon reads: pass it to `--workflow-source`.
+The `codagent` workflow pack for the [Archon](https://github.com/coleam00/Archon) engine. It takes an approved change definition, has agents implement it against a checklist of how each spec behavior is verified, audits the result, opens a draft pull request, and runs acceptance-test rounds until the change is ready for a human to accept.
 
-The first workflow is a port of Agent Runner's `core:implement-change` (v2.0, agent-runner `8927934b`), built to test whether Codagent's workflow can run on Archon and keep a similar score and cost on the and-scene eval.
+This folder is the workflow source Archon reads: pass it to `--workflow-source`. `PROVENANCE.md` says where the workflows came from and how they differ from their source.
+
+## Workflows
+
+- `codagent-implement-change`, the entry point. It validates and commits the definition, has the implementor write a checklist, implement the change and record evidence, has the crosscheck audit the work and the implementor resolve the findings, checks that the work is committed and the worktree clean, saves the implementor's session report, and then runs `codagent-verify-change` with its own review steps turned off.
+- `codagent-verify-change`. It reviews the implementation's assumptions and simplifies it (unless the caller already did), opens a draft pull request, and runs the acceptance rounds: an independent tester explores the change, the round waits for CI, the tester hands off, and a gate decides whether the change has converged. A round that has not converged gets a fix from the lead, a push, and a retest.
+- `codagent-check-definition` and `codagent-commit-definition`, building blocks that `codagent-implement-change` includes.
 
 ## Layout
 
 Paths are relative to this folder, `factory-workflows/archon/`.
 
 ```
-.archon/workflows/codagent/          the codagent pack (Archon namespace)
-  implement-change/                  entry point: codagent-implement-change
-  verify-change/                     crosscheck audit, acceptance rounds, draft PR
-  check-definition/                  definition checks and repairs
-  commit-definition/                 commit the planned definition
-  .shared/core/                      Agent Runner's shell checks, copied unchanged
-  .shared/bin/                       small helpers the nodes share
-roles/baseline.yaml                  role bindings matching the eval baseline
-skills/                              the pack's own copies of the Codagent skills
-scripts/install-skills.sh            install skills/ into a target checkout
-scripts/codex-launcher.sh            start Codex threads at one reasoning effort
-tests/scenarios.py                   dry-run scenarios for the repair paths
-PROVENANCE.md                        where the skills came from
+.archon/workflows/codagent/          the codagent pack
+  implement-change/                  codagent-implement-change: the workflow, commands/, scripts/, fixtures/
+  verify-change/                     codagent-verify-change
+  check-definition/                  codagent-check-definition
+  commit-definition/                 codagent-commit-definition
+  .shared/lib/                       TypeScript modules the scripts share
+  .shared/implement-change.md        how the implementor works and tests
+  .shared/verify-behavior.md         how the checklist is written and evidenced
+tests/                               bun tests for .shared/lib
+tests/data/changes/                  sample change definitions the fixtures use
+PROVENANCE.md                        where the workflows came from
 ```
 
-Workflows compose with `include:`. Runs read the files through `--workflow-source`, so a caller pins them by the agent-workflows commit.
+Every check is a TypeScript script node run by bun. Agents read the two `.shared/*.md` documents through `$PACK_DIR`.
 
 ## Running
 
-Archon 0.14 or later, with Claude Code and Codex logged in.
+Requirements: Archon with `--workflow-source` and `$PACK_DIR` (checked against Archon 0.14.0 at `f7dfe364b`), the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change.
 
 ```sh
-# In the target checkout: install the skills the workflow names.
-/path/to/agent-workflows/factory-workflows/archon/scripts/install-skills.sh .
-
 archon workflow run codagent-implement-change \
-  --cwd . --no-worktree \
+  --cwd /path/to/target --no-worktree \
   --workflow-source /path/to/agent-workflows/factory-workflows/archon \
-  --config /path/to/agent-workflows/factory-workflows/archon/roles/baseline.yaml \
   --input change_name=<name> \
   --input change_dir=openspec/changes/<name> \
   --input change_label="OpenSpec change" \
   --input change_kind=openspec \
-  --input artifact_validation_instruction="Run openspec validate <name>." \
-  --input skip_validator=true \
-  --input session_dir=/absolute/path/for/session/files
+  --input artifact_validation_instruction="Run openspec validate <name>."
 ```
 
-The role aliases `@lead`, `@crosscheck`, `@implementor` and `@tester` must be bound, by `--config` or the target's `.archon/config.yaml`. Each node names its role alias; the binding picks the provider, model and effort.
+With `--no-worktree` the run works on the target checkout's current branch, which becomes the pull request's branch.
 
-Start Codex threads at the Codex roles' effort. Archon starts each Codex thread at the effort in `~/.codex/config.toml` and sets the role's effort on the turn. When the two differ, Codex records a mid-session effort change, and the acceptance tester ends its turn right after planning. Write a launcher and point Archon at it:
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `change_name` | required | Lowercase letters, digits and hyphens. |
+| `change_dir` | required | The change's folder, relative to the checkout. |
+| `change_label` | required | Human label for the change kind, such as `OpenSpec change`. |
+| `change_kind` | required | `openspec` (also checked with `openspec validate`, and committed by the workflow) or `spec-driven` (whose definition must already be committed). |
+| `artifact_validation_instruction` | required | One sentence telling agents how to validate a changed artifact. |
+| `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
+| `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the lead resolves in each acceptance fix. |
 
-```sh
-/path/to/agent-workflows/factory-workflows/archon/scripts/codex-launcher.sh "$(command -v codex)" medium /path/to/codex-launcher
-# Archon config (ARCHON_HOME/config.yaml):
-#   assistants:
-#     codex:
-#       codexBinaryPath: /path/to/codex-launcher
+`codagent-verify-change` run on its own takes the same inputs except `change_kind`, plus `skip_implementation_review` (default `false`; `true` skips the assumption review and simplification) and `stop_unchanged_acceptance` (default `false`; `true` ends the rounds when a fix changes nothing and asks for no retest). `codagent-implement-change` sets both to `true`.
+
+### Roles
+
+Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@crosscheck', large]`, `['@lead', large]`, and `['@tester', medium]`. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
+
+```yaml
+aliases:
+  '@lead': { provider: claude, model: <model>, effort: high }
+  '@crosscheck': { provider: codex, model: <model>, effort: high }
+  '@implementor': { provider: codex, model: <model>, effort: medium }
+  '@tester': { provider: codex, model: <model>, effort: medium }
 ```
 
-Archon takes one Codex binary per run, so pick the effort most Codex roles share. With `roles/baseline.yaml` that is `medium` (implementor and tester), and only the crosscheck (`high`) still changes effort on its first turn.
+Archon releases that do not start a Codex thread at its node's reasoning effort start it at the effort in `~/.codex/config.toml` and change effort on the first turn. A Codex tester that changes effort mid-session can end its turn right after planning, so on such a release keep the Codex roles' effort equal to `~/.codex/config.toml`.
 
-The skills install into the target's `.agents/skills/` (Codex) and `.claude/skills/` (Claude) and are listed in `.git/info/exclude`. Codex nodes invoke skills by name (`$codagent-implement-change`), because Archon turns off Codex's automatic skill catalog. The Claude (lead) nodes in this port name no skills, and run with `settingSources: [project]` so the host's user-level Claude settings stay out.
+### What a run writes
 
-The agent-evals and-scene suite runs this workflow with `run.sh --engine archon`.
+The checklist is `<change_dir>/checklist.md`, committed with the change. Agents and scripts share these files under the run's `$ARTIFACTS_DIR`:
+
+| File | Written by | Purpose |
+| --- | --- | --- |
+| `implementation-blocked.md` | any implementor step | The question only a human can answer. Its existence fails the next check. |
+| `acceptance-assumptions.md` | every agent | Rulings an agent made on questions a human might have decided. |
+| `implementor-decisions.md` | implementor | Ordinary decisions that could change behavior, scope or integration. |
+| `evidence/` | implementor, lead | Saved output each checklist row's evidence names. |
+| `pre-list-status.txt`, `planned-checklist.md`, `evidence-problems.txt` | scripts | The checklist checks' state and problem list. |
+| `nodes/audit.md`, `nodes/session-report.md` | Archon | The crosscheck's findings and the implementor's session report. |
+| `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
+| `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
+| `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
+| `acceptance-retest-reason.txt` | lead | Why a fix that changed nothing still needs a retest. |
+| `ci/round-<n>.md` | wait-ci script | Each round's CI result, failed-check logs and pull request comments. |
+
+### Checks, repairs and limits
+
+A failed check goes to one agent repair, then the same check runs again in strict mode and fails the run if the problem remains. A repair that cannot proceed without a human returns `blocked`, and the run fails with `REPAIR_BLOCKED: <reason>`. The evidence checks allow two repairs, and the definition check three.
+
+`acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head.
 
 ## Tests
 
-From this folder:
+Neither test layer makes model calls or contacts GitHub.
+
+**Dry-run fixtures.** Each workflow's `fixtures/*.stubs.yaml` stub the agent, git-push and GitHub nodes and run the other scripts for real. Archon finds `.archon/` only at a git repository's root, and executes scripts in a scratch worktree of `HEAD`, so run them from a committed copy of this folder:
 
 ```sh
-python3 tests/scenarios.py
+tmp=$(mktemp -d)
+rsync -a --exclude .git ./ "$tmp/"
+git -C "$tmp" init -q
+git -C "$tmp" add -A
+git -C "$tmp" -c user.name=test -c user.email=test@example.com commit -qm fixtures
+cd "$tmp"
+archon validate workflows
+archon workflow test .archon/workflows/codagent
 ```
 
-Each scenario runs `archon workflow run --dry-run --exec-code` with stubbed agent responses in a scratch repository, so the shell checks really run. They cover each repair passing at once, recovering after a fix, running out of fixes, and reporting itself blocked; the implementor's blocked paths; and the acceptance rounds.
+Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. The bun tests cover the scripts' side of those paths.
 
-## Differences from Agent Runner
+**Script tests.** From this folder:
 
-These are deliberate, and each can move an eval score or cost.
+```sh
+bun test tests/
+```
 
-1. **No `call_agent`.** Where Runner's agents escalate a question to the lead, the ported prompts tell the agent to decide, record the decision in `implementor-decisions.md`, and list questions it would have escalated in `acceptance-assumptions.md` as its own rulings. `check-lead-decisions` is not ported.
-2. **Repairs are unrolled.** Runner repeats a check-and-repair loop. Archon's `--dry-run` doesn't execute `until_bash`, so a `loop_group` repair couldn't be tested before a paid run. Each repair is instead a fixed chain: check, then for each allowed attempt a fix, a blocked check (failing the run on `REPAIR_BLOCKED`), and a re-check. Every fix is checked, and there are never more fixes than Runner allows.
-3. **A repair forks its role's session.** In Runner a fix continues the role's named session, and later steps see it. Here a fix resumes a fork, and the role's main line continues from before the fix.
-4. **No Agent Validator paths.** The workflow requires `skip_validator=true`.
-5. **No `audit.log`.** Runner writes one and the tester's prompt names it. Archon has no equivalent, so the reference is removed rather than faked.
-6. **Only the session report is saved as a response file.** Runner saves every agent's response under `session_dir/output/`. Here only `save-session-report` does, writing `output/session-report.out` for the acceptance tester. The files agents write themselves keep Runner's names, so the eval's evidence discovery and the ported prompts find them.
-7. **Host instead of sandbox.** Archon runs agents on the host. Runner's eval runs in Docker.
-8. **One starting effort for Codex threads.** Runner starts each Codex session at its role's effort. Archon starts them at one effort per run, set by `scripts/codex-launcher.sh`, and a role with a different effort switches on its first turn.
-9. **The tester stops its own servers.** Runner's `codex exec` ends a session's commands when the turn ends. Archon waits for every command a Codex turn started, so a preview server left running held the first scored rep's tester open until Archon's 30-minute idle timeout failed it, and the retry started the round over. The tester's prompt adds one instruction: stop every server and long-running command before the final message.
-
-Kept from Runner: the autonomy preamble ("You are running autonomously with no human in the loop..."). Runner puts it before every agent prompt that starts a session in an autonomous run, and the port does the same on every `context: fresh` node, through the `autonomy_preamble` input. Without it, the first paid trial's acceptance tester stopped after reading the spec and reported NOT_READY in every round.
+They run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands; a test that calls the real ones fails.
