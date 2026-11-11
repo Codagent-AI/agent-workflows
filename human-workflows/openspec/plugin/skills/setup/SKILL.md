@@ -5,18 +5,22 @@ description: Creates or changes ~/.agent-workflows/config.yaml, which sets the C
 
 # Set up the crosscheck agent
 
-define-openspec-change reads the crosscheck agent from `~/.agent-workflows/config.yaml`:
+define-openspec-change reads the crosscheck agent from the `human-workflows.crosscheck` list in `~/.agent-workflows/config.yaml`:
 
 ```yaml
-crosscheck:
-  - cli: codex
-    model: gpt-6-astra
-    effort: high
-  - cli: claude
-    model: opus
-    effort: high
+human-workflows:
+  crosscheck:
+    - cli: codex
+      model: gpt-6-astra
+      effort: high
+    - cli: claude
+      model: opus
+      effort: high
+factory-workflows: {}
 ```
 
+The file has one section per top-level folder of the repo. This plugin reads only
+`human-workflows.crosscheck`. `factory-workflows` is for the factory workflows and nothing reads it yet.
 There is one entry per CLI, and `cli` is `claude` or `codex`. When a crosscheck runs, the plugin uses
 the entry for the CLI that is not leading the session, if that CLI is listed and installed. Otherwise
 it uses the lead's own entry, so the review runs on the same CLI as the lead, in a separate read-only
@@ -25,8 +29,9 @@ session. `model` and `effort` are optional. Without them the child uses its CLI'
 
 1. Find which CLIs are installed. Run `command -v claude` and `command -v codex`. If neither is found,
    tell the user that define-openspec-change needs Claude Code or Codex on the PATH, and stop.
-2. If `~/.agent-workflows/config.yaml` exists, read it. Show the user its current `crosscheck` list,
-   and keep every other key in the file as it is.
+2. If `~/.agent-workflows/config.yaml` exists, read it. Show the user its current `human-workflows.crosscheck`
+   list. You will change only that list. Leave every other key as it is, including `factory-workflows`
+   and anything under `human-workflows` besides `crosscheck`.
 3. Recommend one entry per installed CLI:
 
    | CLI | Model | Effort |
@@ -41,7 +46,9 @@ session. `model` and `effort` are optional. Without them the child uses its CLI'
 4. Ask the user to confirm the entries or change a CLI's model or effort. Follow the
    define-openspec-change:ask-questions skill. Do not write the file until the user confirms.
 5. Create `~/.agent-workflows/` if it is missing, then write `config.yaml` with the confirmed
-   `crosscheck` list in the shape shown above. Put nothing else in the entries, and no secrets in the
-   file. Show the user what you wrote.
+   list under `human-workflows.crosscheck`, in the shape shown above. If the file already exists, edit
+   only that list and keep everything else in the file exactly as it was. If it does not, write the
+   example above, with `factory-workflows: {}` as shown. Do not invent settings for `factory-workflows`.
+   Put nothing else in the entries, and no secrets in the file. Show the user what you wrote.
 6. If you came here because `next_step` refused to start, call `next_step` again with the same
    `change_name` and `start: true`. If `call_agent` refused, call it again with the same prompt.

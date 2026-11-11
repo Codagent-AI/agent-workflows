@@ -97,7 +97,7 @@ test("a Codex lead gets a Claude child with no settings, no MCP servers, and rea
 });
 
 test("the other CLI's config entry sets the child's model and effort", async () => {
-  const config = "crosscheck:\n  - cli: claude\n    model: opus\n    effort: high\n  - cli: codex\n    model: gpt-6-astra\n    effort: xhigh\n";
+  const config = "human-workflows:\n  crosscheck:\n    - cli: claude\n      model: opus\n      effort: high\n    - cli: codex\n      model: gpt-6-astra\n      effort: xhigh\n";
   const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
   const body = parse(await calls.start("crosscheck", "Review."));
   assert.equal(body.cli, "codex");
@@ -108,7 +108,7 @@ test("the other CLI's config entry sets the child's model and effort", async () 
 });
 
 test("with only the lead's CLI in the config, the crosscheck runs on the lead's CLI", async () => {
-  const config = "crosscheck:\n  - cli: claude\n    model: sonnet\n    effort: medium\n";
+  const config = "human-workflows:\n  crosscheck:\n    - cli: claude\n      model: sonnet\n      effort: medium\n";
   const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
   const body = parse(await calls.start("crosscheck", "Review."));
   assert.equal(body.cli, "claude");
@@ -152,25 +152,33 @@ test("the config is checked: a crosscheck list of claude and codex entries with 
     writeConfig(fixture, text);
     return readConfig(fixture.env);
   };
-  const ok = read("crosscheck:\n  - cli: codex\n    model: gpt-6-astra\n  - cli: claude\n");
+  const ok = read("human-workflows:\n  crosscheck:\n    - cli: codex\n      model: gpt-6-astra\n    - cli: claude\n");
   assert.deepEqual(ok.ok && ok.crosscheck, [
     { cli: "codex", model: "gpt-6-astra", effort: "high" },
     { cli: "claude", effort: "high" },
   ]);
   const problems: Array<[string, RegExp]> = [
-    ["crosscheck: []\n", /needs a `crosscheck` list/],
-    ["crosscheck:\n  cli: codex\n", /needs a `crosscheck` list/],
-    ["crosscheck:\n  - cli: gemini\n", /cli: claude or cli: codex/],
-    ["crosscheck:\n  - cli: codex\n  - cli: codex\n", /more than one crosscheck entry has cli: codex/],
-    ["crosscheck:\n  - cli: codex\n    reasoning: high\n", /unknown keys: reasoning/],
-    ["crosscheck:\n  - cli: codex\n    model: ''\n", /non-empty text/],
-    ["crosscheck: [\n", /not valid/],
+    ["human-workflows:\n  crosscheck: []\n", /needs a `human-workflows.crosscheck` list/],
+    ["human-workflows:\n  crosscheck:\n    cli: codex\n", /needs a `human-workflows.crosscheck` list/],
+    ["human-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
+    ["factory-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
+    ["crosscheck:\n  - cli: codex\n", /goes under `human-workflows`/],
+    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /cli: claude or cli: codex/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /more than one `human-workflows.crosscheck` entry has cli: codex/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /unknown keys: reasoning/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", /non-empty text/],
+    ["human-workflows:\n  crosscheck: [\n", /not valid/],
   ];
   for (const [text, pattern] of problems) {
     const result = read(text);
     assert.equal(result.ok, false, text);
     assert.match(result.ok ? "" : result.message, pattern, text);
   }
+  const withFactory = read(
+    "human-workflows:\n  crosscheck:\n    - cli: codex\n" +
+      "factory-workflows:\n  anything: [1, {a: b}]\n  other:\n    nested: true\n",
+  );
+  assert.deepEqual(withFactory.ok && withFactory.crosscheck, [{ cli: "codex", effort: "high" }]);
   writeConfig(fixture, null);
   const missing = readConfig(fixture.env);
   assert.equal(!missing.ok && missing.reason, "missing");

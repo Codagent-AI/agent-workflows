@@ -93,7 +93,7 @@ test("start is refused until the crosscheck is configured, and nothing is create
 });
 
 test("start is refused when no configured CLI is installed", async () => {
-  const fixture = makeFixture({ config: "crosscheck:\n  - cli: codex\n" });
+  const fixture = makeFixture({ config: "human-workflows:\n  crosscheck:\n    - cli: codex\n" });
   const context = makeContext(fixture);
   const { next } = session({ ...context, env: { ...context.env, PATH: pathWithout(fixture, ["codex"]) } });
   const refused = await next({ change_name: CHANGE, start: true });

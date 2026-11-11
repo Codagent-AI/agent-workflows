@@ -29083,6 +29083,7 @@ import { delimiter, join as join2 } from "node:path";
 var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 var DEFAULT_EFFORT = "high";
 var CLIS = ["claude", "codex"];
+var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
 var ENTRY_KEYS = /* @__PURE__ */ new Set(["cli", "model", "effort"]);
 var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
 function configPath(env) {
@@ -29109,13 +29110,18 @@ function readConfig(env) {
   } catch (error2) {
     return invalid(path, error2.message);
   }
-  const list = doc?.crosscheck;
+  const root = doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {};
+  const section = root["human-workflows"];
+  const list = section && typeof section === "object" && !Array.isArray(section) ? section.crosscheck : void 0;
   if (!Array.isArray(list) || list.length === 0) {
-    return invalid(path, "it needs a `crosscheck` list with one entry per CLI.");
+    if (root.crosscheck !== void 0) {
+      return invalid(path, "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.");
+    }
+    return invalid(path, `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`);
   }
   const entries = [];
   for (const [index, raw] of list.entries()) {
-    const where = `crosscheck entry ${index + 1}`;
+    const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       return invalid(path, `${where} must be a mapping with cli, model, and effort.`);
     }
@@ -29129,7 +29135,7 @@ function readConfig(env) {
       return invalid(path, `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`);
     }
     if (entries.some((existing) => existing.cli === cli)) {
-      return invalid(path, `more than one crosscheck entry has cli: ${cli}.`);
+      return invalid(path, `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`);
     }
     const model = optionalString(entry, "model");
     const effort = optionalString(entry, "effort");

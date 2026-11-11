@@ -95,18 +95,21 @@ The child reads the review skill from the plugin folder by absolute path. Each c
 
 ## Configuration
 
-The crosscheck agent is set in `~/.agent-workflows/config.yaml`, with one entry per CLI:
+The crosscheck agent is set in `~/.agent-workflows/config.yaml`, with one entry per CLI under `human-workflows.crosscheck`:
 
 ```yaml
-crosscheck:
-  - cli: codex
-    model: gpt-6-astra
-    effort: high
-  - cli: claude
-    model: opus
-    effort: high
+human-workflows:
+  crosscheck:
+    - cli: codex
+      model: gpt-6-astra
+      effort: high
+    - cli: claude
+      model: opus
+      effort: high
+factory-workflows: {}
 ```
 
+- The file has one section per top-level folder of this repo. This plugin reads only `human-workflows.crosscheck`. `factory-workflows` is for the factory workflows and is not read yet. The plugin ignores it and anything else in the file.
 - `cli` is `claude` or `codex`, and each CLI appears at most once. `model` and `effort` are optional. Without them the child uses its CLI's default model and `high` effort. No other keys are allowed in an entry.
 - For each call, the server uses the entry for the CLI that is not leading, if that CLI is listed and on `PATH`. Otherwise it uses the lead's own entry, so the crosscheck runs on the same CLI as the lead. If the lead can't be told apart, it uses the first listed CLI that is on `PATH`.
 - If the file is missing or invalid, or no listed CLI is on `PATH`, `next_step` refuses to start and `call_agent` refuses to run. Either way, the agent then uses the `setup` skill (`/define-openspec-change:setup`, or `$setup` in Codex). That skill finds the CLIs you have, recommends an entry for each, and writes the file once you confirm. You can also run it at any time to change the config.
@@ -132,7 +135,7 @@ Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` or any other plugin-root var
 - **The child is read-only.** Runner told the reviewer not to write. Here the child runs in a read-only sandbox or with read-only tools.
 - **One crosscheck per call.** There are no `session` or `follow_up` targets. Each call starts a fresh child, and the lead puts follow-up questions in a new call.
 - **No agent switch between steps.** The lead you start with runs every step.
-- **Config.** Runner took the crosscheck from its `crosscheck` profile in `~/.agent-runner/config.yaml`. Here it comes from the `crosscheck` list in `~/.agent-workflows/config.yaml`, and the lead is whatever session you start.
+- **Config.** Runner took the crosscheck from its `crosscheck` profile in `~/.agent-runner/config.yaml`. Here it comes from the `human-workflows.crosscheck` list in `~/.agent-workflows/config.yaml`, and the lead is whatever session you start.
 - **No task steps.** Runner's plan-tasks and review-tasks steps are left out, because change v3 no longer uses them.
 - **Starting and resuming** both use `next_step` with `start: true`. A later call without `start` completes the current step, so a new session cannot skip a step by mistake.
 

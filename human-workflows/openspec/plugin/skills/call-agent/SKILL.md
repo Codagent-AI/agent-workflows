@@ -7,7 +7,7 @@ description: Runs one crosscheck child agent through the define-openspec-change 
 
 Use the define-openspec-change `call_agent` tool to run one bounded crosscheck child, and poll
 `get_agent_call` when the start does not already return the child's result. The child's CLI, model,
-and effort come from `~/.agent-workflows/config.yaml`: the other vendor's CLI when it is configured
+and effort come from `human-workflows.crosscheck` in `~/.agent-workflows/config.yaml`: the other vendor's CLI when it is configured
 and installed (Codex when the lead is Claude, Claude when the lead is Codex), otherwise the lead's
 own CLI. If `call_agent` refuses with `crosscheck_not_configured`, use the
 define-openspec-change:setup skill with the user, then call it again. Preserve the caller's task,

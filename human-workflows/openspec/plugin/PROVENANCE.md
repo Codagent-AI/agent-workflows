@@ -50,7 +50,7 @@ Not copied: plan-tasks and review-tasks. Runner's define has five steps and chan
 them.
 
 Written here, not copied: `skills/define/SKILL.md`, the entry point, and `skills/setup/SKILL.md`,
-which writes `~/.agent-workflows/config.yaml` with the user. Runner set the crosscheck in its own
+which writes the `human-workflows.crosscheck` list in `~/.agent-workflows/config.yaml` with the user. Runner set the crosscheck in its own
 `~/.agent-runner/config.yaml` profile, and the setup skill's recommended models come from that
 profile (Codex) and from Runner's `lead` profile (Claude).
 

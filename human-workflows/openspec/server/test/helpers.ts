@@ -102,7 +102,7 @@ export interface Fixture {
 }
 
 /** The crosscheck config every fixture gets unless it asks for another: both CLIs, no model, high effort. */
-export const DEFAULT_CONFIG = "crosscheck:\n  - cli: codex\n    effort: high\n  - cli: claude\n    effort: high\n";
+export const DEFAULT_CONFIG = "human-workflows:\n  crosscheck:\n    - cli: codex\n      effort: high\n    - cli: claude\n      effort: high\n";
 
 /** Writes (or with null, removes) the fixture's ~/.agent-workflows/config.yaml. */
 export function writeConfig(fixture: Fixture, text: string | null): void {

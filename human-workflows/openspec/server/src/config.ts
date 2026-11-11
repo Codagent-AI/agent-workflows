@@ -9,6 +9,7 @@ import type { Cli, CrosscheckChoice } from "./child.js";
 export const CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 export const DEFAULT_EFFORT = "high";
 const CLIS: readonly Cli[] = ["claude", "codex"];
+const CROSSCHECK_KEY = "`human-workflows.crosscheck`";
 const ENTRY_KEYS = new Set(["cli", "model", "effort"]);
 
 export const SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
@@ -34,7 +35,10 @@ function optionalString(entry: Record<string, unknown>, key: string): string | u
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
-/** Reads and checks the `crosscheck` list: one entry per CLI, each with a cli and an optional model and effort. */
+/**
+ * Reads and checks the `human-workflows.crosscheck` list: one entry per CLI, each with a cli and an optional
+ * model and effort. Other top-level keys, such as `factory-workflows`, are reserved for other workflows and ignored.
+ */
 export function readConfig(env: NodeJS.ProcessEnv): ConfigResult {
   const path = configPath(env);
   if (!existsSync(path)) {
@@ -46,13 +50,18 @@ export function readConfig(env: NodeJS.ProcessEnv): ConfigResult {
   } catch (error) {
     return invalid(path, (error as Error).message);
   }
-  const list = (doc as { crosscheck?: unknown } | null)?.crosscheck;
+  const root = (doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {}) as Record<string, unknown>;
+  const section = root["human-workflows"];
+  const list = section && typeof section === "object" && !Array.isArray(section) ? (section as Record<string, unknown>).crosscheck : undefined;
   if (!Array.isArray(list) || list.length === 0) {
-    return invalid(path, "it needs a `crosscheck` list with one entry per CLI.");
+    if (root.crosscheck !== undefined) {
+      return invalid(path, "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`.");
+    }
+    return invalid(path, `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`);
   }
   const entries: CrosscheckChoice[] = [];
   for (const [index, raw] of list.entries()) {
-    const where = `crosscheck entry ${index + 1}`;
+    const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       return invalid(path, `${where} must be a mapping with cli, model, and effort.`);
     }
@@ -66,7 +75,7 @@ export function readConfig(env: NodeJS.ProcessEnv): ConfigResult {
       return invalid(path, `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`);
     }
     if (entries.some((existing) => existing.cli === cli)) {
-      return invalid(path, `more than one crosscheck entry has cli: ${cli}.`);
+      return invalid(path, `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`);
     }
     const model = optionalString(entry, "model");
     const effort = optionalString(entry, "effort");
