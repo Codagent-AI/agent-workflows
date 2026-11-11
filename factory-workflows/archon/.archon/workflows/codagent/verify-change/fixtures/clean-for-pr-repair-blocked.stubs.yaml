@@ -8,6 +8,8 @@ fixture:
   expect: failed
   fail-node: recheck-clean-for-pr
   reached: [repair-clean-for-pr]
+  resolved-text-contains:
+    repair-clean-for-pr: "You are running autonomously with no human in the loop."
   inputs:
     change_name: greet-by-name
     change_dir: tests/data/changes/valid-change

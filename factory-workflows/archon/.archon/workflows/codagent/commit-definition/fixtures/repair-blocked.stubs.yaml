@@ -10,3 +10,5 @@ fixture:
     change_dir: tests/data/changes/valid-change
     change_kind: openspec
   reached: [repair-commit-definition]
+  resolved-text-contains:
+    repair-commit-definition: "You are running autonomously with no human in the loop."
