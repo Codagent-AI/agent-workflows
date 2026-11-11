@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Each folder's job runs only when a pull request changes that folder. A
+  # skipped job counts as passing, so branch protection can require them all.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      archon: ${{ steps.diff.outputs.archon }}
+      openspec: ${{ steps.diff.outputs.openspec }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE"...HEAD)
+          if grep -q '^factory-workflows/archon/' <<<"$changed"; then echo archon=true >> "$GITHUB_OUTPUT"; fi
+          if grep -q '^human-workflows/openspec/' <<<"$changed"; then echo openspec=true >> "$GITHUB_OUTPUT"; fi
+
+  archon:
+    name: archon
+    needs: changes
+    if: needs.changes.outputs.archon == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: factory-workflows/archon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # The dry-run fixtures run on Archon from source, pinned to the commit
+      # the pack is tested with.
+      - uses: actions/checkout@v4
+        with:
+          repository: Codagent-AI/Archon
+          ref: f7dfe364b09bd32cf7735d0cac5aca5de4336641
+          path: .ci/archon
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - run: git config --global user.name ci && git config --global user.email ci@localhost
+      - run: bun install --frozen-lockfile
+        working-directory: .ci/archon
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun test tests/
+      - run: bun run test:fixtures
+        env:
+          ARCHON: bun ${{ github.workspace }}/.ci/archon/packages/cli/src/cli.ts
+
+  openspec:
+    name: openspec
+    needs: changes
+    if: needs.changes.outputs.openspec == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: human-workflows/openspec/server
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: human-workflows/openspec/server/package-lock.json
+      - run: git config --global user.name ci && git config --global user.email ci@localhost
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run check
