@@ -35,7 +35,6 @@ acceptance-handoff: "Wrote the handoff; READY."
 acceptance-gate: { ready: true, fix: false, reasons: "" }
 check-acceptance-progress: { progressed: true, push: false }
 verify-change__write-acceptance-status: "acceptance preparation complete"
-verify-change__verify-acceptance-handoff: { ok: true, problems: "" }
 fixture:
   expect: completed
   reached: [complete-evidence-after-review, evidence-recheck-after-review, check-clean]

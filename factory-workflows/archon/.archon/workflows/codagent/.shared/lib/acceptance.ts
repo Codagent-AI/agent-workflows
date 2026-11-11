@@ -121,14 +121,25 @@ export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean, sto
 export const GENERATED_HEADING = '# Acceptance did not converge within';
 
 export interface Finalized {
+  /** Whether acceptance converged: the run's verdict. */
+  ready: boolean;
   status: 'ACCEPTANCE_COMPLETE' | 'ACCEPTANCE_FAILED';
   message: string;
+}
+
+/** Reads the two files back, so a write that did not land fails the step that made it. */
+function readBack(evidenceDir: string, expected: Finalized['status']): void {
+  const problems: string[] = [];
+  if (!nonEmptyFile(join(evidenceDir, FILES.handoff))) problems.push('acceptance handoff is missing or empty');
+  const written = lastLine(join(evidenceDir, FILES.preparationStatus));
+  if (written !== expected) problems.push(`acceptance preparation status is '${written}', not '${expected}'`);
+  if (problems.length > 0) throw new Error(problems.join('\n'));
 }
 
 /**
  * Writes acceptance-preparation-status.txt. On failure it also writes a short
  * acceptance-handoff.md, keeping any tester-written handoff as acceptance-handoff-tester.md.
- * Safe to rerun.
+ * Reads both files back and throws when either is wrong. Safe to rerun.
  */
 export function finalize(exec: Exec, evidenceDir: string, rounds: string): Finalized {
   const reasons = convergenceReasons(exec, evidenceDir);
@@ -137,7 +148,12 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
   const statusFile = join(evidenceDir, FILES.preparationStatus);
   if (reasons.length === 0) {
     writeFileSync(statusFile, 'ACCEPTANCE_COMPLETE\n');
-    return { status: 'ACCEPTANCE_COMPLETE', message: `acceptance preparation complete at ${current ?? ''}` };
+    readBack(evidenceDir, 'ACCEPTANCE_COMPLETE');
+    return {
+      ready: true,
+      status: 'ACCEPTANCE_COMPLETE',
+      message: `acceptance preparation complete at ${current ?? ''}`,
+    };
   }
   const handoff = join(evidenceDir, FILES.handoff);
   const testerHandoff = join(evidenceDir, FILES.testerHandoff);
@@ -157,16 +173,10 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
   if (nonEmptyFile(testerHandoff)) lines.push(`Tester handoff: ${testerHandoff}`);
   writeFileSync(handoff, `${lines.join('\n')}\n`);
   writeFileSync(statusFile, 'ACCEPTANCE_FAILED\n');
-  return { status: 'ACCEPTANCE_FAILED', message: `acceptance preparation failed; wrote ${handoff}\n${reasonLines}` };
-}
-
-/** The handoff exists and the preparation status is a final one. */
-export function handoffProblems(evidenceDir: string): string[] {
-  const problems: string[] = [];
-  if (!nonEmptyFile(join(evidenceDir, FILES.handoff))) problems.push('acceptance handoff is missing or empty');
-  const preparation = lastLine(join(evidenceDir, FILES.preparationStatus));
-  if (preparation !== 'ACCEPTANCE_COMPLETE' && preparation !== 'ACCEPTANCE_FAILED') {
-    problems.push(`invalid acceptance preparation status: ${preparation}`);
-  }
-  return problems;
+  readBack(evidenceDir, 'ACCEPTANCE_FAILED');
+  return {
+    ready: false,
+    status: 'ACCEPTANCE_FAILED',
+    message: `acceptance preparation failed; wrote ${handoff}\n${reasonLines}`,
+  };
 }

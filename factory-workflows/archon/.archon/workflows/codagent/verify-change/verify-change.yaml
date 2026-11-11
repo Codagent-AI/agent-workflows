@@ -373,34 +373,11 @@ nodes:
             reason: $repair-acceptance-pr.output.reason
           output_format: *pr-check
 
+  # Writes the status and the handoff and reads both back, failing the run when either
+  # is wrong.
   - id: write-acceptance-status
     depends_on: [acceptance-rounds]
     script: write-acceptance-status
     runtime: bun
     with:
       rounds: $validate-inputs.output.rounds
-
-  # write-acceptance-status writes both files just before this check, so a
-  # failed check reruns that step rather than letting an agent write or
-  # declare the outcome.
-  - id: verify-acceptance-handoff
-    depends_on: [write-acceptance-status]
-    script: verify-acceptance-handoff
-    runtime: bun
-    output_format: *check
-
-  - id: rewrite-acceptance-status
-    depends_on: [verify-acceptance-handoff]
-    when: "$verify-acceptance-handoff.output.ok == 'false'"
-    script: write-acceptance-status
-    runtime: bun
-    with:
-      rounds: $validate-inputs.output.rounds
-
-  - id: recheck-acceptance-handoff
-    depends_on: [rewrite-acceptance-status]
-    script: verify-acceptance-handoff
-    runtime: bun
-    with:
-      strict: true
-    output_format: *check

@@ -10,7 +10,7 @@ acceptance-handoff: "Wrote the handoff; READY."
 exec-code: true
 fixture:
   expect: completed
-  reached: [validate-inputs, reset-round-evidence, acceptance-gate, check-acceptance-progress, write-acceptance-status, verify-acceptance-handoff]
+  reached: [validate-inputs, reset-round-evidence, acceptance-gate, check-acceptance-progress, write-acceptance-status]
   inputs:
     change_name: greet-by-name
     change_dir: tests/data/changes/valid-change

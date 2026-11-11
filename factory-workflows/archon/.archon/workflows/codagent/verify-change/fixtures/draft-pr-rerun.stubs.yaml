@@ -13,7 +13,6 @@ acceptance-handoff: "Wrote the handoff; READY."
 acceptance-gate: { ready: true, fix: false, reasons: "" }
 check-acceptance-progress: { progressed: true, push: false }
 write-acceptance-status: "acceptance preparation complete"
-verify-acceptance-handoff: { ok: true, problems: "" }
 fixture:
   expect: completed
   reached: [reopen-draft-pr, recheck-draft-pr, acceptance-test]

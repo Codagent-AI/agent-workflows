@@ -15,7 +15,6 @@ check-acceptance-progress: { progressed: true, push: true }
 acceptance-push: { ok: true, problems: "" }
 verify-acceptance-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 write-acceptance-status: "acceptance preparation complete"
-verify-acceptance-handoff: { ok: true, problems: "" }
 fixture:
   expect: completed
   reached: [acceptance-fix, acceptance-push, verify-acceptance-pr]

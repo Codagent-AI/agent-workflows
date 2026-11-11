@@ -17,7 +17,6 @@ repair-acceptance-push: { blocked: false, reason: "" }
 recheck-acceptance-push: { ok: true, problems: "" }
 verify-acceptance-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 write-acceptance-status: "acceptance preparation complete"
-verify-acceptance-handoff: { ok: true, problems: "" }
 fixture:
   expect: completed
   reached: [repair-acceptance-push, recheck-acceptance-push, verify-acceptance-pr]

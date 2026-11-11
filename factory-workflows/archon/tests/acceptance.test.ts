@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rmSync } from 'node:fs';
+import { rmSync, symlinkSync } from 'node:fs';
 
 import {
   FILES,
@@ -7,7 +7,6 @@ import {
   checkProgress,
   convergenceReasons,
   finalize,
-  handoffProblems,
   lastLine,
   startRound,
 } from '../.archon/workflows/codagent/.shared/lib/acceptance.ts';
@@ -125,6 +124,20 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
     expect(read(FILES.handoff)).toContain('did not converge within 3 rounds');
   });
 
+  test('reports whether acceptance converged', () => {
+    converged();
+    expect(finalize(box.exec, evidence, '3').ready).toBe(true);
+    put(FILES.roundStatus, 'NOT_READY\n');
+    expect(finalize(box.exec, evidence, '3').ready).toBe(false);
+  });
+
+  test('fails when what it wrote cannot be read back', () => {
+    converged();
+    // A write to /dev/null succeeds and leaves nothing to read.
+    symlinkSync('/dev/null', box.path(`evidence/${FILES.preparationStatus}`));
+    expect(() => finalize(box.exec, evidence, '3')).toThrow("acceptance preparation status is '', not 'ACCEPTANCE_COMPLETE'");
+  });
+
   test('writes a handoff when the tester wrote nothing', () => {
     // The evidence directory does not exist yet.
     finalize(box.exec, evidence, '3');
@@ -214,33 +227,6 @@ describe('checkProgress (check-acceptance-progress)', () => {
     const broken: typeof box.exec = (command, args, options) =>
       command === 'git' && args[0] === 'status' ? { status: 128, stdout: '', stderr: 'fatal\n' } : box.exec(command, args, options);
     expect(() => checkProgress(broken, evidence, true, true)).toThrow('could not inspect the worktree');
-  });
-});
-
-describe('handoffProblems (verify-acceptance-handoff; failed testing is allowed for human review)', () => {
-  test.each(['ACCEPTANCE_COMPLETE', 'ACCEPTANCE_FAILED'])('%s passes', status => {
-    put(FILES.handoff, 'handoff\n');
-    put(FILES.preparationStatus, `${status}\n`);
-    expect(handoffProblems(evidence)).toEqual([]);
-  });
-
-  test('an invalid status fails', () => {
-    put(FILES.handoff, 'handoff\n');
-    put(FILES.preparationStatus, 'ACCEPTANCE_PENDING\n');
-    expect(handoffProblems(evidence)).toEqual(['invalid acceptance preparation status: ACCEPTANCE_PENDING']);
-  });
-
-  test('a missing handoff and status fail both ways', () => {
-    expect(handoffProblems(evidence)).toEqual([
-      'acceptance handoff is missing or empty',
-      'invalid acceptance preparation status: ',
-    ]);
-  });
-
-  test('blank lines around the status are ignored', () => {
-    put(FILES.handoff, 'handoff\n');
-    put(FILES.preparationStatus, '\nACCEPTANCE_COMPLETE\n\n');
-    expect(handoffProblems(evidence)).toEqual([]);
   });
 });
 
