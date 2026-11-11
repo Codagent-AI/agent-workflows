@@ -5,7 +5,7 @@
   "description": "Tool server for the define-openspec-change plugin. Bundled into ../plugin/server.mjs.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=26"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -17,13 +17,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "yaml": "2.9.1",
-    "zod": "3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.3",
-    "@types/node": "22.20.5",
-    "esbuild": "0.25.12",
-    "jscpd": "4.3.0",
-    "typescript": "5.9.3"
+    "@biomejs/biome": "2.6.6",
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "jscpd": "5.4.3",
+    "typescript": "7.0.2"
   }
 }

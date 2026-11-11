@@ -25,6 +25,15 @@ function parse(result: { text: string }) {
   return JSON.parse(result.text) as Record<string, unknown> & { error?: { code: string; message: string } };
 }
 
+/** Polls get_agent_call until the call is no longer running. */
+async function settled(calls: ReturnType<typeof session>["calls"], callId: unknown) {
+  let polled = parse(await calls.get(String(callId)));
+  for (let i = 0; i < 20 && polled.status === "running"; i++) {
+    polled = parse(await calls.get(String(callId)));
+  }
+  return polled;
+}
+
 async function atProposal(options: Parameters<typeof makeContext>[1] = {}, fixtureOptions: Parameters<typeof makeFixture>[0] = {}) {
   const fixture = makeFixture(fixtureOptions);
   const context = makeContext(fixture, options);
@@ -214,10 +223,7 @@ test("a slow child returns running, then get_agent_call returns the result", asy
   assert.equal(parse(busy).error?.code, "call_in_progress");
   assert.equal(parse(busy).call_id, started.call_id);
 
-  let polled = parse(await calls.get(String(started.call_id)));
-  for (let i = 0; i < 20 && polled.status === "running"; i++) {
-    polled = parse(await calls.get(String(started.call_id)));
-  }
+  const polled = await settled(calls, started.call_id);
   assert.equal(polled.status, "succeeded");
   assert.equal(polled.response, "codex review: no consequential findings.");
   assert.equal(fakeLog(fixture).filter((entry) => entry.bin === "codex").length, 1);
@@ -310,10 +316,7 @@ test("overlapping call_agent requests start only one child", async () => {
   const results = await Promise.all([calls.start("crosscheck", "One."), calls.start("crosscheck", "Two.")]);
   const codes = results.map((result) => parse(result).error?.code ?? parse(result).status).sort();
   assert.deepEqual(codes, ["call_in_progress", "running"]);
-  let polled = parse(await calls.get(String(parse(results.find((r) => !r.isError) ?? results[0]).call_id)));
-  for (let i = 0; i < 20 && polled.status === "running"; i++) {
-    polled = parse(await calls.get(String(polled.call_id)));
-  }
+  await settled(calls, parse(results.find((r) => !r.isError) ?? results[0]).call_id);
   assert.equal(fakeLog(fixture).filter((entry) => entry.bin === "codex").length, 1);
 });
 
@@ -340,10 +343,7 @@ test("killAll kills a child that ignores SIGTERM", async () => {
   const started = parse(await calls.start("crosscheck", "Review."));
   assert.equal(started.status, "running");
   await calls.killAll(200);
-  let polled = parse(await calls.get(String(started.call_id)));
-  for (let i = 0; i < 20 && polled.status === "running"; i++) {
-    polled = parse(await calls.get(String(started.call_id)));
-  }
+  const polled = await settled(calls, started.call_id);
   assert.equal(polled.status, "canceled");
 });
 
