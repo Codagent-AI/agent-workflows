@@ -4,7 +4,7 @@ Agent Workflows is an opinionated toolkit for spec-driven development. It has wh
 
 ## Deterministic workflows
 
-You and an agent write a spec by following a defined workflow, one step at a time. Then the factory implements and verifies the change through defined steps of its own. In neither phase does the model decide which steps to follow or which shortcuts to take. Code controls the workflow and enforces it.
+You and an agent write a spec by following a defined workflow, one step at a time. Then the factory implements and verifies the change through defined steps of its own. In neither phase does the model decide which steps to follow or which shortcuts to take. Code controls the order of the steps and checks that each step's documents exist before the next one starts. It does not check that the agent did the work inside a step, such as running a review.
 
 ## Opinions
 

@@ -31,7 +31,10 @@ session. `model` and `effort` are optional. Without them the child uses its CLI'
    tell the user that define-openspec-change needs Claude Code or Codex on the PATH, and stop.
 2. If `~/.agent-workflows/config.yaml` exists, read it. Show the user its current `human-workflows.crosscheck`
    list. You will change only that list. Leave every other key as it is, including `factory-workflows`
-   and anything under `human-workflows` besides `crosscheck`.
+   and anything under `human-workflows` besides `crosscheck`. If the file has a top-level `crosscheck`
+   list instead, that is the old place for it and the plugin refuses it. Show those entries as the
+   user's current settings, offer them as the starting point, and move them under
+   `human-workflows.crosscheck` once the user confirms, removing the top-level list.
 3. Recommend one entry per installed CLI:
 
    | CLI | Model | Effort |
@@ -47,8 +50,10 @@ session. `model` and `effort` are optional. Without them the child uses its CLI'
    define-openspec-change:ask-questions skill. Do not write the file until the user confirms.
 5. Create `~/.agent-workflows/` if it is missing, then write `config.yaml` with the confirmed
    list under `human-workflows.crosscheck`, in the shape shown above. If the file already exists, edit
-   only that list and keep everything else in the file exactly as it was. If it does not, write the
-   example above, with `factory-workflows: {}` as shown. Do not invent settings for `factory-workflows`.
+   only that list and keep everything else in the file exactly as it was. If it does not, use the
+   example above as the shape of the file, with only the confirmed entries and `factory-workflows: {}`
+   as shown. Do not invent settings for `factory-workflows`. If `human-workflows` exists but is not a
+   mapping, tell the user, and replace it only after they agree.
    Put nothing else in the entries, and no secrets in the file. Show the user what you wrote.
 6. If you came here because `next_step` refused to start, call `next_step` again with the same
    `change_name` and `start: true`. If `call_agent` refused, call it again with the same prompt.
