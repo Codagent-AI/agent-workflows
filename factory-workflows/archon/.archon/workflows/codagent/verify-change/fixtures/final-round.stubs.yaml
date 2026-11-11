@@ -4,6 +4,7 @@
 verify-assumptions-handoff: { ok: true, problems: "" }
 verify-clean-for-pr: { ok: true, problems: "" }
 open-draft-pr: { blocked: false, reason: "" }
+update-pr-body: { ok: true, problems: "" }
 verify-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 acceptance-test: { ci_ready: false, reason: "F-1 remains" }
 acceptance-handoff: "Wrote the handoff; READY."

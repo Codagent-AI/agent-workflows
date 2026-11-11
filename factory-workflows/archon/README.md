@@ -90,6 +90,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
 | `acceptance-retest-reason.txt` | lead | Why a fix that changed nothing still needs a retest. |
+| `pr-body.md` | open-draft-pr | The pull request description, without markers. The update-pr-body script adds the markers and puts it in the body. |
 | `ci/round-<n>.md` | wait-ci script | Each round's CI result, failed-check logs and pull request comments. |
 
 ### Checks, repairs and limits

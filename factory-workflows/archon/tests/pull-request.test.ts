@@ -5,7 +5,9 @@ import {
   BODY_START,
   acceptancePush,
   checkDraftPr,
+  markBlock,
   spliceBody,
+  updateGeneratedBody,
   updatePrBody,
 } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 import { type Sandbox, createSandbox, recordingSleep, reply, rule } from './helpers.ts';
@@ -262,5 +264,46 @@ describe('updatePrBody (update-pr-body.sh)', () => {
     const result = updatePrBody(box.exec, number, block);
     expect(result).toEqual({ ok: false, problems: 'pull request number must be a positive integer' });
     expect(box.calls('gh')).toEqual([]);
+  });
+});
+
+describe('updateGeneratedBody (update-pr-body)', () => {
+  const list = ['pr', 'list', '--head', 'feature', '--state', 'open', '--json', 'number', '--limit', '2'];
+  const view = ['pr', 'view', '7', '--json', 'body', '-q', '.body'];
+  const patch = ['api', '--method', 'PATCH', 'repos/{owner}/{repo}/pulls/7'];
+
+  test('markBlock wraps the description in the markers', () => {
+    expect(markBlock('Summary\n\n')).toBe(`${BODY_START}\nSummary\n${BODY_END}\n`);
+  });
+
+  test('finds the branch pull request and patches its body with the marked description', () => {
+    box.fake('gh', [rule(list, reply('[{"number":7}]')), rule(view, reply('Refs #1\n')), rule(patch, reply('{}'))]);
+    expect(updateGeneratedBody(box.exec, 'Summary\n')).toEqual({ ok: true, problems: '' });
+    expect(box.calls('gh')[2].files.body).toBe(`${markBlock('Summary')}\nRefs #1`);
+  });
+
+  test.each([
+    ['an empty description', '  \n', 'missing or empty'],
+    ['a description with a marker', `Summary ${BODY_START}`, 'must not contain the body markers'],
+  ])('fails on %s without calling gh', (_name, block, why) => {
+    box.fake('gh', [rule(list, reply('[{"number":7}]'))]);
+    expect(updateGeneratedBody(box.exec, block).problems).toContain(why);
+    expect(box.calls('gh')).toEqual([]);
+  });
+
+  test.each([
+    ['no open pull request', reply('[]'), 'found 0'],
+    ['two open pull requests', reply('[{"number":7},{"number":8}]'), 'found 2'],
+    ['a failed query', reply('', 1), 'could not query'],
+  ])('fails on %s', (_name, listed, why) => {
+    box.fake('gh', [rule(list, listed)]);
+    const result = updateGeneratedBody(box.exec, 'Summary');
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain(why);
+  });
+
+  test('fails on a detached HEAD', () => {
+    box.git('checkout', '-q', '--detach');
+    expect(updateGeneratedBody(box.exec, 'Summary').problems).toContain('HEAD is detached');
   });
 });

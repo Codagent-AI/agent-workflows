@@ -23,6 +23,7 @@ verify-change__validate-inputs: { rounds: 3, review: false, stop_unchanged: true
 verify-change__verify-assumptions-handoff: { ok: true, problems: "" }
 verify-change__verify-clean-for-pr: { ok: true, problems: "" }
 verify-change__open-draft-pr: { blocked: false, reason: "" }
+verify-change__update-pr-body: { ok: true, problems: "" }
 verify-change__verify-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 reset-round-evidence: { round: 0, last: false }
 acceptance-test: { ci_ready: true, reason: "" }

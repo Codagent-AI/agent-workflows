@@ -1,14 +1,18 @@
-// Run by the open-draft-pr agent: bun update-pr-body.ts <number> <marked-block-file>.
-// Replaces the generated block in the pull request's body, keeping human additions.
+// Puts the description open-draft-pr wrote to pr-body.md into the open pull request's body,
+// between the generated-body markers, keeping what a human added outside them.
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-import { requireOk } from '../../.shared/lib/check.ts';
+import { artifactsDir, fail, runCheck } from '../../.shared/lib/check.ts';
+import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
-import { updatePrBody } from '../../.shared/lib/pull-request.ts';
+import { updateGeneratedBody } from '../../.shared/lib/pull-request.ts';
 
-const [number, file] = process.argv.slice(2);
-if (number === undefined || file === undefined) {
-  process.stderr.write('usage: update-pr-body.ts <pr-number> <marked-block-file>\n');
-  process.exit(2);
-}
-requireOk(updatePrBody(runCommand, number, readFileSync(file, 'utf8')), `updated pull request ${number} body`);
+runCheck(() => {
+  const file = join(artifactsDir(), ARTIFACTS.prBody);
+  try {
+    return updateGeneratedBody(runCommand, readFileSync(file, 'utf8'));
+  } catch {
+    return fail(`${file} is missing`);
+  }
+});

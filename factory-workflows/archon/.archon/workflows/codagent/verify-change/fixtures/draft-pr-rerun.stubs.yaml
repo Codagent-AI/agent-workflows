@@ -3,8 +3,10 @@ validate-inputs: { rounds: 3, review: false, stop_unchanged: true }
 verify-assumptions-handoff: { ok: true, problems: "" }
 verify-clean-for-pr: { ok: true, problems: "" }
 open-draft-pr: { blocked: false, reason: "" }
+update-pr-body: { ok: true, problems: "" }
 verify-draft-pr: { ok: false, problems: "expected exactly one open pull request for branch 'greet', found 0", pr_url: "" }
 reopen-draft-pr: { blocked: false, reason: "" }
+update-reopened-pr-body: { ok: true, problems: "" }
 recheck-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 reset-round-evidence: { round: 0, last: false }
 acceptance-test: { ci_ready: true, reason: "" }
@@ -16,7 +18,7 @@ write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "a
 fixture:
   expect: completed
   authored: succeeded
-  reached: [reopen-draft-pr, recheck-draft-pr, acceptance-test]
+  reached: [reopen-draft-pr, update-reopened-pr-body, recheck-draft-pr, acceptance-test]
   inputs:
     change_name: greet-by-name
     change_dir: tests/data/changes/valid-change

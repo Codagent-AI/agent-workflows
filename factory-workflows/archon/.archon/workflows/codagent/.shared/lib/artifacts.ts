@@ -19,6 +19,7 @@ export const ARTIFACTS = {
   preparationStatus: 'acceptance-preparation-status.txt',
   retestReason: 'acceptance-retest-reason.txt',
   findings: 'acceptance-findings.md',
+  prBody: 'pr-body.md',
 } as const;
 
 /** A regular file with content. */

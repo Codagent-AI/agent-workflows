@@ -156,17 +156,29 @@ nodes:
     with: *change
     output_format: *repair
 
-  # A brief GitHub lag retries inside the check instead of rerunning
-  # open-draft-pr. A blocked open-draft-pr fails here.
-  - id: verify-draft-pr
+  # open-draft-pr writes the description to pr-body.md; this adds the generated-body
+  # markers and puts it into the pull request's body. A blocked open-draft-pr fails here.
+  - id: update-pr-body
     depends_on: [open-draft-pr]
+    script: update-pr-body
+    runtime: bun
+    with:
+      strict: true
+      blocked: $open-draft-pr.output.blocked
+      reason: $open-draft-pr.output.reason
+    output_format: *check
+
+  # A brief GitHub lag retries inside the check instead of rerunning
+  # open-draft-pr.
+  - id: verify-draft-pr
+    depends_on: [update-pr-body]
     script: check-draft-pr
     runtime: bun
     with:
       attempts: 3
-      blocked: $open-draft-pr.output.blocked
-      reason: $open-draft-pr.output.reason
       strict: false
+      blocked: false
+      reason: ""
     output_format: &pr-check
       type: object
       properties:
@@ -186,15 +198,25 @@ nodes:
     with: *change
     output_format: *repair
 
-  - id: recheck-draft-pr
+  - id: update-reopened-pr-body
     depends_on: [reopen-draft-pr]
+    script: update-pr-body
+    runtime: bun
+    with:
+      strict: true
+      blocked: $reopen-draft-pr.output.blocked
+      reason: $reopen-draft-pr.output.reason
+    output_format: *check
+
+  - id: recheck-draft-pr
+    depends_on: [update-reopened-pr-body]
     script: check-draft-pr
     runtime: bun
     with:
       attempts: 3
       strict: true
-      blocked: $reopen-draft-pr.output.blocked
-      reason: $reopen-draft-pr.output.reason
+      blocked: false
+      reason: ""
     output_format: *pr-check
 
   # Each round runs the independent tester, waits for CI, has the tester hand

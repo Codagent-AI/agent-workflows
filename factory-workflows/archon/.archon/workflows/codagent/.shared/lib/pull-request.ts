@@ -141,3 +141,26 @@ export function updatePrBody(exec: Exec, number: string, block: string): CheckRe
   }
   return pass();
 }
+
+/** The generated block, between the markers that let a later run replace only that block. */
+export const markBlock = (block: string): string => `${BODY_START}\n${block.trim()}\n${BODY_END}\n`;
+
+/**
+ * Puts the open-draft-pr agent's description, written without markers, into the body of
+ * the branch's one open pull request, keeping what a human added around it.
+ */
+export function updateGeneratedBody(exec: Exec, block: string): CheckResult {
+  if (block.trim() === '') return fail('the generated pull request description is missing or empty');
+  if (block.includes(BODY_START) || block.includes(BODY_END)) {
+    return fail('the generated pull request description must not contain the body markers; the workflow adds them');
+  }
+  const branch = output(exec, 'git', ['branch', '--show-current']);
+  if (!branch) return fail('HEAD is detached; check out the change branch before updating its pull request');
+  const listed = exec('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'number', '--limit', '2']);
+  if (listed.status !== 0) return fail(`could not query the open pull request for branch '${branch}'`);
+  const prs = JSON.parse(listed.stdout) as { number: number }[];
+  if (prs.length !== 1) {
+    return fail(`expected exactly one open pull request for branch '${branch}', found ${String(prs.length)}`);
+  }
+  return updatePrBody(exec, String(prs[0].number), markBlock(block));
+}

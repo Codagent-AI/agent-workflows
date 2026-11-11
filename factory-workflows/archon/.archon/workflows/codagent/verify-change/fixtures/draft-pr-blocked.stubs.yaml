@@ -1,4 +1,4 @@
-# open-draft-pr reports itself blocked, so the PR check fails before it queries GitHub.
+# open-draft-pr reports itself blocked, so updating the PR body fails before it queries GitHub.
 validate-inputs: { rounds: 3, review: false, stop_unchanged: true }
 verify-assumptions-handoff: { ok: true, problems: "" }
 verify-clean-for-pr: { ok: true, problems: "" }
@@ -6,7 +6,7 @@ open-draft-pr: { blocked: true, reason: "the GitHub token lacks the repo scope" 
 exec-code: true
 fixture:
   expect: failed
-  fail-node: verify-draft-pr
+  fail-node: update-pr-body
   reached: [open-draft-pr]
   inputs:
     change_name: greet-by-name
