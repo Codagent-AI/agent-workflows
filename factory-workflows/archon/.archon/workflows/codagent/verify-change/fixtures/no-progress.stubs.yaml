@@ -13,9 +13,10 @@ acceptance-gate: { ready: false, fix: true, reasons: "- the tester's round statu
 clear-retest-reason: "cleared"
 acceptance-fix: "Fixed F-1 and committed."
 check-acceptance-progress: { progressed: false, push: false }
-write-acceptance-status: "acceptance preparation complete"
+write-acceptance-status: { ready: false, status: ACCEPTANCE_FAILED, message: "acceptance preparation failed" }
 fixture:
   expect: completed
+  authored: failed
   reached: [acceptance-fix, check-acceptance-progress, write-acceptance-status]
   inputs:
     change_name: greet-by-name

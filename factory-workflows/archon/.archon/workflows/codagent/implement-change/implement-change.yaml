@@ -9,6 +9,10 @@ description: >-
 # .archon/config.yaml. Agents record rulings and the blocked record under
 # $ARTIFACTS_DIR, with the file names the README lists.
 
+# The run's verdict is verify-change's: whether acceptance converged.
+returns: verify-change
+outcome_field: ready
+
 inputs:
   change_name:
     required: true

@@ -24,6 +24,11 @@ inputs:
   acceptance_fix_scope:
     default: "Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems."
 
+# The run's verdict is whether acceptance converged. A run that did not converge still
+# completes, so the handoff reaches a human; its authored outcome is failed.
+returns: write-acceptance-status
+outcome_field: ready
+
 nodes:
   - id: validate-inputs
     script: validate-inputs
@@ -397,3 +402,11 @@ nodes:
     runtime: bun
     with:
       rounds: $validate-inputs.output.rounds
+    output_format:
+      type: object
+      properties:
+        ready: { type: boolean }
+        status: { type: string, enum: [ACCEPTANCE_COMPLETE, ACCEPTANCE_FAILED] }
+        message: { type: string }
+      required: [ready, status, message]
+      additionalProperties: false

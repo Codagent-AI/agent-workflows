@@ -12,9 +12,10 @@ wait-ci: { status: passed, had_checks: true, head_moved: false, report: "ci/roun
 acceptance-handoff: "Wrote the handoff; READY."
 acceptance-gate: { ready: true, fix: false, reasons: "" }
 check-acceptance-progress: { progressed: true, push: false }
-write-acceptance-status: "acceptance preparation complete"
+write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "acceptance preparation complete" }
 fixture:
   expect: completed
+  authored: succeeded
   reached: [review-assumptions, simplify, open-draft-pr]
   resolved-text-contains:
     review-assumptions: "You are running autonomously with no human in the loop."

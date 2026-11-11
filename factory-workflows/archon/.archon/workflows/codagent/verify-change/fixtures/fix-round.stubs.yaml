@@ -14,9 +14,10 @@ acceptance-fix: "Fixed F-1 and committed."
 check-acceptance-progress: { progressed: true, push: true }
 acceptance-push: { ok: true, problems: "" }
 verify-acceptance-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
-write-acceptance-status: "acceptance preparation complete"
+write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "acceptance preparation complete" }
 fixture:
   expect: completed
+  authored: succeeded
   reached: [acceptance-fix, acceptance-push, verify-acceptance-pr]
   resolved-text-contains:
     acceptance-handoff: "F-1 remains: the fallback greeting prints an empty name"

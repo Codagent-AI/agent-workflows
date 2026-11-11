@@ -16,9 +16,10 @@ acceptance-push: { ok: true, problems: "" }
 verify-acceptance-pr: { ok: false, problems: "open pull request does not match required draft state or local HEAD (state OPEN, draft false)", pr_url: "" }
 repair-acceptance-pr: { blocked: false, reason: "" }
 recheck-acceptance-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
-write-acceptance-status: "acceptance preparation complete"
+write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "acceptance preparation complete" }
 fixture:
   expect: completed
+  authored: succeeded
   reached: [repair-acceptance-pr, recheck-acceptance-pr]
   resolved-text-contains:
     repair-acceptance-pr: "draft false"

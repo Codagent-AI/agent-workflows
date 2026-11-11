@@ -33,9 +33,10 @@ wait-ci: { status: passed, had_checks: true, head_moved: false, report: "ci/roun
 acceptance-handoff: "Wrote the handoff; READY."
 acceptance-gate: { ready: true, fix: false, reasons: "" }
 check-acceptance-progress: { progressed: true, push: false }
-verify-change__write-acceptance-status: "acceptance preparation complete"
+verify-change__write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "acceptance preparation complete" }
 fixture:
   expect: completed
+  authored: succeeded
   reached: [repair-clean, recheck-clean, verify-implementation-commits]
   resolved-text-contains:
     repair-clean: "M src/greet.ts"

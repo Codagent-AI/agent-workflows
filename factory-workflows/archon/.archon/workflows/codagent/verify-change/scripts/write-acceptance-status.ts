@@ -11,4 +11,4 @@ try {
 } catch (error) {
   requireOk(fail((error as Error).message), '');
 }
-process.stdout.write(`${finalized?.message ?? ''}\n`);
+process.stdout.write(`${JSON.stringify(finalized)}\n`);

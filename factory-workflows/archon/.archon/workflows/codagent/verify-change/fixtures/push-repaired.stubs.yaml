@@ -16,9 +16,10 @@ acceptance-push: { ok: false, problems: "acceptance push: git push failed: rejec
 repair-acceptance-push: { blocked: false, reason: "" }
 recheck-acceptance-push: { ok: true, problems: "" }
 verify-acceptance-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
-write-acceptance-status: "acceptance preparation complete"
+write-acceptance-status: { ready: true, status: ACCEPTANCE_COMPLETE, message: "acceptance preparation complete" }
 fixture:
   expect: completed
+  authored: succeeded
   reached: [repair-acceptance-push, recheck-acceptance-push, verify-acceptance-pr]
   resolved-text-contains:
     repair-acceptance-push: "rejected (non-fast-forward)"
