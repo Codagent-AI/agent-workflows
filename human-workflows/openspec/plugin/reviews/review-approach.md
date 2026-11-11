@@ -1,8 +1,3 @@
----
-name: review-approach
-description: Performs the final review of a completed proposal, product specification, technical design, and test plan for cross-artifact consistency, consequential gaps, missing decisions, weak tradeoffs, failure modes, testing strategy, and better alternatives; use when asked to review an approach, challenge design or testing decisions, find gaps in completed definition artifacts, or provide a second opinion before task planning or implementation.
----
-
 # Review Approach
 
 Review the completed proposal, specifications, design, and test plan together before task planning.

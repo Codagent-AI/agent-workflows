@@ -3,14 +3,15 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { parse } from "yaml";
+import { z } from "zod";
 
 import type { Cli, CrosscheckChoice } from "./child.js";
+import { check } from "./schema.js";
 
 export const CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 export const DEFAULT_EFFORT = "high";
-const CLIS: readonly Cli[] = ["claude", "codex"];
+const CLIS = ["claude", "codex"] as const satisfies readonly Cli[];
 const CROSSCHECK_KEY = "`human-workflows.crosscheck`";
-const ENTRY_KEYS = new Set(["cli", "model", "effort"]);
 
 export const SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
 
@@ -27,68 +28,47 @@ function invalid(path: string, problem: string): ConfigResult {
   return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
 }
 
-function optionalString(entry: Record<string, unknown>, key: string): string | undefined | null {
-  const value = entry[key];
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
-}
+const NEEDS_LIST = `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
 
-function isMapping(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+/** Text for `model` and `effort`: absent or blank in the YAML means not given. */
+const optionalText = z
+  .string({ error: "must be non-empty text when given" })
+  .trim()
+  .min(1, "must be non-empty text when given")
+  .nullish()
+  .transform((value) => value ?? undefined);
 
-/** The raw `human-workflows.crosscheck` value, or a problem when it is absent or empty. */
-function crosscheckList(root: Record<string, unknown>): unknown[] | string {
-  if (root.crosscheck !== undefined) {
-    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`. Remove the top-level one.";
-  }
-  const section = root["human-workflows"];
-  const list = isMapping(section) ? section.crosscheck : undefined;
-  if (Array.isArray(list) && list.length > 0) {
-    return list;
-  }
-  return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
-}
+const entrySchema = z
+  .strictObject(
+    {
+      cli: z.enum(CLIS, { error: (issue) => `must be "claude" or "codex", not ${JSON.stringify(issue.input)}` }),
+      model: optionalText,
+      effort: optionalText,
+    },
+    {
+      error: (issue) =>
+        issue.code === "unrecognized_keys"
+          ? `has unknown keys: ${issue.keys.join(", ")}. Allowed: cli, model, effort.`
+          : "must be a mapping with cli, model, and effort.",
+    },
+  )
+  .transform(({ cli, model, effort }): CrosscheckChoice => (model === undefined ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT }));
 
-/** One checked list entry, or the problem with it. `earlier` is the entries accepted so far. */
-function parseEntry(raw: unknown, index: number, earlier: CrosscheckChoice[]): CrosscheckChoice | string {
-  const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
-  if (!isMapping(raw)) {
-    return `${where} must be a mapping with cli, model, and effort.`;
-  }
-  const unknown = Object.keys(raw).filter((key) => !ENTRY_KEYS.has(key));
-  if (unknown.length > 0) {
-    return `${where} has unknown keys: ${unknown.join(", ")}. Allowed: cli, model, effort.`;
-  }
-  const cli = raw.cli;
-  if (cli !== "claude" && cli !== "codex") {
-    return `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`;
-  }
-  if (earlier.some((existing) => existing.cli === cli)) {
-    return `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`;
-  }
-  const model = optionalString(raw, "model");
-  const effort = optionalString(raw, "effort");
-  if (model === null || effort === null) {
-    return `${where}: model and effort must be non-empty text when given.`;
-  }
-  return model === undefined ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT };
-}
-
-/** Every list entry checked, or the first problem. */
-function parseEntries(list: unknown[]): CrosscheckChoice[] | string {
-  const entries: CrosscheckChoice[] = [];
-  for (const [index, raw] of list.entries()) {
-    const entry = parseEntry(raw, index, entries);
-    if (typeof entry === "string") {
-      return entry;
+const crosscheckSchema = z.array(entrySchema, { error: NEEDS_LIST }).min(1, NEEDS_LIST).superRefine((entries, context) => {
+  const seen = new Set<Cli>();
+  for (const [index, entry] of entries.entries()) {
+    if (seen.has(entry.cli)) {
+      context.addIssue({ code: "custom", message: `more than one entry has cli: ${entry.cli}`, path: [index, "cli"] });
     }
-    entries.push(entry);
+    seen.add(entry.cli);
   }
-  return entries;
-}
+});
+
+/** Only `human-workflows.crosscheck` is read. Other keys, such as `factory-workflows`, are for other workflows and ignored. */
+const configSchema = z.looseObject(
+  { "human-workflows": z.looseObject({ crosscheck: crosscheckSchema }, { error: NEEDS_LIST }) },
+  { error: NEEDS_LIST },
+);
 
 /**
  * Reads and checks the `human-workflows.crosscheck` list: one entry per CLI, each with a cli and an optional
@@ -105,9 +85,8 @@ export function readConfig(env: NodeJS.ProcessEnv): ConfigResult {
   } catch (error) {
     return invalid(path, (error as Error).message);
   }
-  const list = crosscheckList(isMapping(doc) ? doc : {});
-  const entries = typeof list === "string" ? list : parseEntries(list);
-  return typeof entries === "string" ? invalid(path, entries) : { ok: true, path, crosscheck: entries };
+  const checked = check(configSchema, doc);
+  return "problem" in checked ? invalid(path, checked.problem) : { ok: true, path, crosscheck: checked.value["human-workflows"].crosscheck };
 }
 
 /** True when `command` is an executable file on the PATH in `env`. */

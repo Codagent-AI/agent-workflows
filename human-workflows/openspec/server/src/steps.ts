@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { parse } from "yaml";
+import { z } from "zod";
+
+import { check } from "./schema.js";
 
 export type StepId = string;
 
@@ -20,65 +23,62 @@ export interface Workflow {
 
 export class WorkflowError extends Error {}
 
-const PLACEHOLDERS = ["{{change_name}}", "{{skills_dir}}"];
+/** The placeholders a step prompt may use. Anything else in double braces is refused. */
+const PLACEHOLDERS = ["{{change_name}}", "{{reviews_dir}}"];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const required = (what: string) => z.string({ error: `needs ${what}` }).refine((value) => value.trim() !== "", { error: `needs ${what}` });
 
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim() !== "";
-}
-
-function parseStep(raw: unknown, index: number, seen: Set<string>): WorkflowStep {
-  const label = `step ${index + 1}`;
-  if (!isRecord(raw)) {
-    throw new WorkflowError(`${label} must be a mapping with an id and a prompt.`);
-  }
-  const { id, prompt, tools } = raw;
-  if (!nonEmptyString(id)) {
-    throw new WorkflowError(`${label} needs an id.`);
-  }
-  if (seen.has(id)) {
-    throw new WorkflowError(`step id "${id}" is used twice.`);
-  }
-  seen.add(id);
-  if (!nonEmptyString(prompt)) {
-    throw new WorkflowError(`step "${id}" needs a prompt.`);
-  }
+const promptSchema = required("a prompt").superRefine((prompt, context) => {
   const unknown = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
-  if (unknown) {
-    throw new WorkflowError(`step "${id}" has an unknown placeholder ${unknown}.`);
+  if (unknown !== undefined) {
+    context.addIssue({ code: "custom", message: `has an unknown placeholder ${unknown}` });
   }
-  if (tools !== undefined && (!Array.isArray(tools) || tools.some((tool) => tool !== "call_agent"))) {
-    throw new WorkflowError(`step "${id}" has tools that are not [call_agent]. Only call_agent is supported.`);
-  }
-  return { id, prompt, callAgent: Array.isArray(tools) && tools.length > 0 };
-}
+});
+
+const stepSchema = z
+  .object(
+    {
+      id: required("an id"),
+      prompt: promptSchema,
+      tools: z.array(z.literal("call_agent", { error: "is not a supported tool. Only [call_agent] is supported" })).optional(),
+    },
+    { error: "must be a mapping with an id and a prompt" },
+  )
+  .transform((step): WorkflowStep => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
+
+const workflowSchema = z
+  .object(
+    {
+      name: required("a name"),
+      description: required("a description"),
+      steps: z.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step"),
+    },
+    { error: "must be a mapping with name, description, and steps" },
+  )
+  .superRefine((workflow, context) => {
+    const seen = new Set<string>();
+    for (const [index, step] of workflow.steps.entries()) {
+      if (seen.has(step.id)) {
+        context.addIssue({ code: "custom", message: `step id "${step.id}" is used twice`, path: ["steps", index, "id"] });
+      }
+      seen.add(step.id);
+    }
+  })
+  .transform((workflow): Workflow => ({ name: workflow.name.trim(), description: workflow.description.trim(), steps: workflow.steps }));
 
 /** Checks the shape of a workflow.yaml text and returns it. Throws WorkflowError when it is malformed. */
-export function parseWorkflow(text: string): Workflow {
+export function parseWorkflow(source: string): Workflow {
   let raw: unknown;
   try {
-    raw = parse(text);
+    raw = parse(source);
   } catch (error) {
     throw new WorkflowError(`is not valid YAML: ${(error as Error).message}`);
   }
-  if (!isRecord(raw)) {
-    throw new WorkflowError("must be a mapping with name, description, and steps.");
+  const checked = check(workflowSchema, raw);
+  if ("problem" in checked) {
+    throw new WorkflowError(`is not a valid workflow: ${checked.problem}`);
   }
-  if (!nonEmptyString(raw.name)) {
-    throw new WorkflowError("needs a name.");
-  }
-  if (!nonEmptyString(raw.description)) {
-    throw new WorkflowError("needs a description.");
-  }
-  if (!Array.isArray(raw.steps) || raw.steps.length === 0) {
-    throw new WorkflowError("needs at least one step under steps.");
-  }
-  const seen = new Set<string>();
-  const steps = raw.steps.map((step, index) => parseStep(step, index, seen));
-  return { name: raw.name.trim(), description: raw.description.trim(), steps };
+  return checked.value;
 }
 
 /** Reads `workflow.yaml` from the plugin folder. The message says what is wrong with it. */
@@ -104,16 +104,27 @@ export function stepIds(workflow: Workflow): StepId[] {
   return workflow.steps.map((step) => step.id);
 }
 
-export function isStepId(workflow: Workflow, value: unknown): value is StepId {
-  return typeof value === "string" && stepIds(workflow).includes(value);
-}
-
 export function firstStepId(workflow: Workflow): StepId {
   return workflow.steps[0]?.id ?? "";
 }
 
 export function lastStepId(workflow: Workflow): StepId {
   return workflow.steps[workflow.steps.length - 1]?.id ?? "";
+}
+
+/** The steps where call_agent may be used, in order. */
+export function callAgentSteps(workflow: Workflow): StepId[] {
+  return workflow.steps.filter((step) => step.callAgent).map((step) => step.id);
+}
+
+/** "the proposal and approach-review steps", for a message that says where call_agent works. */
+export function callAgentStepsText(workflow: Workflow): string {
+  const ids = callAgentSteps(workflow);
+  const last = ids.pop();
+  if (last === undefined) {
+    return "no steps";
+  }
+  return ids.length === 0 ? `the ${last} step` : `the ${ids.join(", ")} and ${last} steps`;
 }
 
 /** True when call_agent may be used at this step. */
@@ -149,7 +160,7 @@ function stepBody(workflow: Workflow, pluginRoot: string, step: StepId, changeNa
   const prompt = workflow.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
   return prompt
     .replaceAll("{{change_name}}", changeName)
-    .replaceAll("{{skills_dir}}", join(pluginRoot, "skills"))
+    .replaceAll("{{reviews_dir}}", join(pluginRoot, "reviews"))
     .trim();
 }
 

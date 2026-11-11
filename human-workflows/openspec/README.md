@@ -63,7 +63,7 @@ The change name uses lowercase letters, digits, and hyphens, for example `add-da
    - test-plan: `test-plan.md`
 3. During the proposal and approach-review steps, the agent runs a crosscheck with `call_agent`, then checks each finding itself before it brings it to you.
 4. After approach-review, `next_step` finishes the define:
-   1. It runs `openspec validate --type change <name>` and the planning-artifact check. If either fails, it refuses and commits nothing.
+   1. It runs `openspec validate --type change <name>` and every step's artifact check. If either fails, it refuses and commits nothing.
    2. It commits only `openspec/changes/<name>/`, as `chore: add change documents for <name>`. Other staged or unstaged work is left as it was, and the result lists it.
    3. On the default branch it stops there, and you push when ready.
    4. On any other branch it pushes the branch and opens a pull request against the default branch. If the push or the pull request fails, it reports that once and does not retry.
@@ -80,7 +80,7 @@ Progress is saved in `openspec/changes/<name>/.define-openspec-change.json` and 
 
 ## The workflow file
 
-`plugin/workflow.yaml` holds the workflow's name, its description, and the steps in order. Each step has an `id` and a `prompt`. A step with `tools: [call_agent]` may start a crosscheck. The prompts can use `{{change_name}}` and `{{skills_dir}}`, which the server fills in.
+`plugin/workflow.yaml` holds the workflow's name, its description, and the steps in order. Each step has an `id` and a `prompt`. A step with `tools: [call_agent]` may start a crosscheck. The prompts can use `{{change_name}}` and `{{reviews_dir}}`, which the server fills in.
 
 ```yaml
 name: define-openspec-change
@@ -177,6 +177,7 @@ human-workflows/openspec/
     skills/define/             the entry point on both CLIs
     skills/setup/              writes ~/.agent-workflows/config.yaml with you
     skills/<other skills>/     the skills the steps use
+    reviews/                   review instructions that only the crosscheck child reads
     workflow.yaml              the steps and their prompts
     PROVENANCE.md              where the skills and the workflow came from
   server/                      TypeScript source, tests, and the esbuild build

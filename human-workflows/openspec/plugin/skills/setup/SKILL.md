@@ -31,10 +31,7 @@ session. `model` and `effort` are optional. Without them the child uses its CLI'
    tell the user that define-openspec-change needs Claude Code or Codex on the PATH, and stop.
 2. If `~/.agent-workflows/config.yaml` exists, read it. Show the user its current `human-workflows.crosscheck`
    list. You will change only that list. Leave every other key as it is, including `factory-workflows`
-   and anything under `human-workflows` besides `crosscheck`. If the file has a top-level `crosscheck`
-   list instead, that is the old place for it and the plugin refuses it. Show those entries as the
-   user's current settings, offer them as the starting point, and move them under
-   `human-workflows.crosscheck` once the user confirms, removing the top-level list.
+   and anything under `human-workflows` besides `crosscheck`.
 3. Recommend one entry per installed CLI:
 
    | CLI | Model | Effort |

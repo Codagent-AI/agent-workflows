@@ -8,6 +8,7 @@ import type { Context } from "./context.js";
 import { nextStep } from "./define.js";
 import type { ToolText } from "./finish.js";
 import { CODEX_SANDBOX_META_CAPABILITY, sessionCwdFromMeta } from "./session.js";
+import { callAgentStepsText } from "./steps.js";
 
 export const SERVER_NAME = "define";
 export const SERVER_VERSION = "0.1.0";
@@ -76,7 +77,7 @@ function registerCallAgent({ server, context, calls, cwdFor }: ToolDeps): void {
         'Starts one crosscheck review on the other vendor\'s CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". ' +
         "The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to " + waitText(context) + ": " +
         "returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status " +
-        "is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.",
+        `is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
       inputSchema: {
         agent: z.string().describe('Must be "crosscheck".'),
         prompt: z.string().describe("The complete, standalone task for the child."),

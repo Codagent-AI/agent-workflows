@@ -18,23 +18,23 @@ commit that touched the skill.
 | File | Last source commit | Changes |
 | --- | --- | --- |
 | `skills/propose/SKILL.md` | `d9c5059` | `codagent:ask-questions` renamed to `define-openspec-change:ask-questions`. |
-| `skills/proposal-review/SKILL.md` | `d9c5059` | None. |
+| `reviews/proposal-review.md` | `d9c5059` | Moved out of `skills/` and the front matter removed. Only the crosscheck child reads it, by absolute path. |
 | `skills/spec/SKILL.md` | `e9b4dfa` | `codagent:ask-questions` renamed. |
 | `skills/design/SKILL.md` | `d9c5059` | `codagent:ask-questions` renamed. |
 | `skills/test-plan/SKILL.md` | `8605d33` | `codagent:ask-questions` renamed. Added `name: test-plan` to the front matter. |
-| `skills/review-approach/SKILL.md` | `4b0a362` | Added `name: review-approach` to the front matter. |
-| `skills/ask-questions/SKILL.md` | `d9c5059` | None. |
+| `reviews/review-approach.md` | `4b0a362` | Moved out of `skills/` and the front matter removed. Only the crosscheck child reads it, by absolute path. |
+| `skills/ask-questions/SKILL.md` | `d9c5059` | Added `user-invocable: false` to the front matter. |
 | `skills/call-agent/SKILL.md` | `6442600` | Rewritten for this plugin's tools. See below. |
 
 `skills/call-agent/SKILL.md` changes:
 
-- Added `name: call-agent`, and the description now names this plugin's tool instead of the
+- Added `name: call-agent` and `user-invocable: false`, and the description now names this plugin's tool instead of the
   Runner-owned one.
 - The only target is `agent: "crosscheck"`. The `session` target and the Runner profile wording are
   gone.
 - Says the child runs on the CLI that `~/.agent-workflows/config.yaml` picks (the other vendor's when
   it is configured and installed), is read-only, and has none of this plugin's skills or tools, so
-  the prompt must name the skill by its absolute `SKILL.md` path. A `crosscheck_not_configured`
+  the prompt must name the review instructions by their absolute path. A `crosscheck_not_configured`
   refusal sends the lead to the setup skill.
 - Collection: `call_agent` and each `get_agent_call` wait about 50 seconds on the server, so the lead
   polls straight away instead of the 5 to 60 second backoff. The 60-minute bound, the cancel then
@@ -68,14 +68,14 @@ Every prompt renames `codagent:<skill>` to `define-openspec-change:<skill>`. Oth
 
 | Step | Changes |
 | --- | --- |
-| `proposal` | The intake sentence now refers to the conversation so far instead of intake context supplied above. The child must read and follow the proposal-review skill at `{{skills_dir}}/proposal-review/SKILL.md` instead of using `codagent:proposal-review`, because the child does not load this plugin. |
+| `proposal` | The intake sentence now refers to the conversation so far instead of intake context supplied above. The child must read and follow the review instructions at `{{reviews_dir}}/proposal-review.md` instead of using `codagent:proposal-review`, because the child does not load this plugin. |
 | `specs` | Rename only. |
 | `design` | Rename only. |
 | `test-plan` | Rename only. |
-| `approach-review` | The child must read and follow the review-approach skill at `{{skills_dir}}/review-approach/SKILL.md` instead of using `codagent:review-approach`. |
+| `approach-review` | The child must read and follow the review instructions at `{{reviews_dir}}/review-approach.md` instead of using `codagent:review-approach`. |
 
 The server loads and checks `workflow.yaml` when it starts, and fills `{{change_name}}` and
-`{{skills_dir}}` (the absolute path of this plugin's `skills/` folder) when it returns a step.
+`{{reviews_dir}}` (the absolute path of this plugin's `reviews/` folder) when it returns a step.
 
 The server also adds the text Runner added around each step, from `internal/exec/agent.go` at
 `0151294`: the step prefix from `buildStepPrefix` ("You are running in the ... workflow", "Continuing
@@ -85,8 +85,8 @@ this step."), and a completion instruction adapted from `completionInstruction` 
 
 ## Checks
 
-The finish check is a TypeScript port of `validate-planning-artifacts.sh` (Agent Runner
+The finish check began as a TypeScript port of `validate-planning-artifacts.sh` (Agent Runner
 `workflows/core/validate-planning-artifacts.sh` at `0151294`, the same file the Archon pack uses) for
-`change_kind=openspec` and `require_tasks=false`. The change-name rule is from
+`change_kind=openspec` and `require_tasks=false`. It now runs each step's own artifact check from one table. The change-name rule is from
 `workflows/openspec/validate-change-name.sh`. The existing-change refusal and `openspec new change`
 are from `workflows/openspec/create-change.sh`, without its agent-validator checks.

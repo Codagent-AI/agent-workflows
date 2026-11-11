@@ -173,12 +173,13 @@ test("the config is checked: a crosscheck list of claude and codex entries with 
     ["human-workflows:\n  crosscheck:\n    cli: codex\n", /needs a `human-workflows.crosscheck` list/],
     ["human-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
     ["factory-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
-    ["crosscheck:\n  - cli: codex\n", /goes under `human-workflows`/],
-    ["crosscheck:\n  - cli: claude\nhuman-workflows:\n  crosscheck:\n    - cli: codex\n", /goes under `human-workflows`/],
-    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /cli: claude or cli: codex/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /more than one `human-workflows.crosscheck` entry has cli: codex/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /unknown keys: reasoning/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", /non-empty text/],
+    ["crosscheck:\n  - cli: codex\n", /needs a `human-workflows.crosscheck` list/],
+    ["", /needs a `human-workflows.crosscheck` list/],
+    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /human-workflows\.crosscheck\[0\]\.cli: must be "claude" or "codex", not "gemini"/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /crosscheck\[1\]\.cli: more than one entry has cli: codex/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /crosscheck\[0\]: has unknown keys: reasoning/],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", /crosscheck\[0\]\.model: must be non-empty text/],
+    ["human-workflows:\n  crosscheck:\n    - just-text\n", /crosscheck\[0\]: must be a mapping/],
     ["human-workflows:\n  crosscheck: [\n", /not valid/],
   ];
   for (const [text, pattern] of problems) {
@@ -311,6 +312,7 @@ test("call_agent is refused outside the proposal and approach-review steps", asy
   const atSpecs = await calls.start("crosscheck", "Review.");
   assert.equal(atSpecs.isError, true);
   assert.equal(parse(atSpecs).error?.code, "call_agent_unavailable");
+  assert.match(parse(atSpecs).error?.message ?? "", /only available during the proposal and approach-review steps of a define/);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
 });
 

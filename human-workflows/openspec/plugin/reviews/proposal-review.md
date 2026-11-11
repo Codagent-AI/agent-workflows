@@ -1,11 +1,3 @@
----
-name: proposal-review
-description: >
-  Adversarial review of a proposal — challenges the why, what, and how, and suggests concrete
-  alternatives. Use when asked to review a proposal, challenge an idea, stress-test an approach,
-  or provide a devil's advocate perspective before specs or design are written.
----
-
 # Proposal Review
 
 Give a constructive adversarial review of a completed proposal before specifications and design.

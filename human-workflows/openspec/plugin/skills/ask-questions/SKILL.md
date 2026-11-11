@@ -1,5 +1,6 @@
 ---
 name: ask-questions
+user-invocable: false
 description: >
   How to ask users questions interactively: which tool to use, how to batch questions, and
   when to ask serially. Follow this skill when asking clarifying questions, requesting

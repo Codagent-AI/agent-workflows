@@ -1,8 +1,8 @@
-import { nonEmptySpecs, planningArtifactFailures } from "./checks.js";
+import { artifactFiles, missingForSteps } from "./checks.js";
 import { type Context, logEvent } from "./context.js";
 import { output, type RunResult, run, tail } from "./proc.js";
 import { readStateText, type DefineState, writeState, writeStateText } from "./state.js";
-import { lastStepId } from "./steps.js";
+import { lastStepId, stepIds } from "./steps.js";
 
 export interface ToolText {
   text: string;
@@ -69,8 +69,7 @@ export async function defaultBranch(root: string, env: NodeJS.ProcessEnv): Promi
 }
 
 function prBody(state: DefineState, root: string): string {
-  const dir = state.change_dir;
-  const files = [`${dir}/proposal.md`, ...nonEmptySpecs(root, dir), `${dir}/design.md`, `${dir}/test-plan.md`];
+  const files = artifactFiles(root, state.change_name);
   return [
     `Change documents for OpenSpec change \`${state.change_name}\`, written with the define-openspec-change plugin.`,
     "",
@@ -80,24 +79,24 @@ function prBody(state: DefineState, root: string): string {
   ].join("\n");
 }
 
-/** The refusal to return when the change fails openspec validation or the planning-artifact check. */
+/** The refusal to return when the change fails openspec validation or lacks any step's artifact. */
 async function validationRefusal(context: Context, root: string, state: DefineState): Promise<ToolText | undefined> {
   const name = state.change_name;
   const validation = await run("openspec", ["validate", "--type", "change", name, "--no-interactive"], {
     cwd: root,
     env: context.env,
   });
-  const planning = planningArtifactFailures(root, state.change_dir);
-  if (validation.code === 0 && planning.length === 0) {
+  const lacking = await missingForSteps(root, name, stepIds(context.workflow), context.env);
+  if (validation.code === 0 && lacking.length === 0) {
     return undefined;
   }
-  logEvent(context, root, "finish_refused", { change: name, validation: validation.code, planning });
+  logEvent(context, root, "finish_refused", { change: name, validation: validation.code, missing: lacking });
   const lines = [`Refused: OpenSpec change "${name}" failed validation, so nothing was committed.`];
   if (validation.code !== 0) {
     lines.push("", `openspec validate --type change ${name}:`, tail(output(validation), 4000));
   }
-  if (planning.length > 0) {
-    lines.push("", "Planning artifacts:", ...planning.map((failure) => `- ${failure}`));
+  if (lacking.length > 0) {
+    lines.push("", "Missing artifacts:", ...lacking.map((failure) => `- ${failure}`));
   }
   lines.push("", "Fix these with the user, then call next_step again.");
   return { text: lines.join("\n"), isError: true };
@@ -230,7 +229,7 @@ export async function finishDefine(context: Context, root: string, state: Define
 
   const lines = [
     `OpenSpec change "${name}" is defined.`,
-    "Validation passed: openspec validate and the planning-artifact check.",
+    "Validation passed: openspec validate and every step's artifact check.",
     `Committed ${sha} "${commitMessage(name)}" with only ${state.change_dir}/.`,
     ...(await leftoverLines(git)),
   ];

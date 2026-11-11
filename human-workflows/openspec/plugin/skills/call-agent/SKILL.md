@@ -1,5 +1,6 @@
 ---
 name: call-agent
+user-invocable: false
 description: Runs one crosscheck child agent through the define-openspec-change call_agent tool with a complete standalone prompt, collects its result, independently verifies its findings, and reports results without hiding failures or disagreements. Use when a define-openspec-change step asks for define-openspec-change:call-agent, a crosscheck review, or an independent agent review.
 ---
 
@@ -25,7 +26,7 @@ Give it a self-contained prompt with:
 
 - the objective, and that it must not modify files;
 - repository, working directory, and applicable instructions;
-- the skill it must follow, given as the absolute `SKILL.md` path from the step, with an instruction
+- the review instructions it must follow, given as the absolute file path from the step, with an instruction
   to read that file first and follow it;
 - source-of-truth artifacts and exact paths;
 - scope and exclusions;

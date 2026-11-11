@@ -1,7 +1,7 @@
 import { errorText } from "./call.js";
 import type { ToolText } from "./finish.js";
 import { inProgressChanges, readState } from "./state.js";
-import { allowsCallAgent, type StepId, type Workflow } from "./steps.js";
+import { allowsCallAgent, callAgentStepsText, type StepId, type Workflow } from "./steps.js";
 
 /** The define a call runs for: the change in progress and the step it is at. */
 export interface CallOwner {
@@ -40,7 +40,7 @@ export function chooseCallOwner(workflow: Workflow, root: string, changeName: st
   }
   return errorText(
     "call_agent_unavailable",
-    "call_agent is only available during the proposal and approach-review steps of a define that is in progress" +
+    `call_agent is only available during ${callAgentStepsText(workflow)} of a define that is in progress` +
       (wanted === "" ? "." : `, and "${wanted}" is not at one of them.`),
   );
 }

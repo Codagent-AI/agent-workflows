@@ -1,7 +1,7 @@
 name: define-openspec-change
 description: Interactively define a structured change through proposal, specification, design, and testing strategy.
 
-# Placeholders: {{change_name}} is the change's name, {{skills_dir}} is this plugin's skills folder.
+# Placeholders: {{change_name}} is the change's name, {{reviews_dir}} is this plugin's reviews folder, which holds the instructions the crosscheck child reads.
 # A step with tools: [call_agent] may run a crosscheck review with the call_agent tool.
 
 steps:
@@ -12,7 +12,7 @@ steps:
 
       Keep every OpenSpec definition and planning artifact under the repository-local `openspec/changes/{{change_name}}/` directory.
 
-      Once the proposal draft is complete, use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one adversarial review. Do not run that review yourself. The task-specific child instructions must require it to read and follow the proposal-review skill at `{{skills_dir}}/proposal-review/SKILL.md`, read the proposal under `openspec/changes/{{change_name}}/`, inspect relevant repository context, provide clear actionable feedback with recommended resolutions, and never modify files.
+      Once the proposal draft is complete, use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one adversarial review. Do not run that review yourself. The task-specific child instructions must require it to read and follow the review instructions at `{{reviews_dir}}/proposal-review.md`, read the proposal under `openspec/changes/{{change_name}}/`, inspect relevant repository context, provide clear actionable feedback with recommended resolutions, and never modify files.
 
       Follow define-openspec-change:call-agent's verification and user-facing reporting rules. Discuss every consequential finding with the user. Do not modify the proposal or any other file in response to review feedback until you have presented your assessment and received the user's explicit confirmation about which changes to make. Apply only the changes the user confirms.
 
@@ -41,7 +41,7 @@ steps:
     prompt: |
       You MUST use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one independent definition review for OpenSpec change "{{change_name}}". Do not perform that review yourself.
 
-      The task-specific child instructions must require the child to read and follow the review-approach skill at `{{skills_dir}}/review-approach/SKILL.md` and independently review the proposal, every specification, the design, and `test-plan.md` under `openspec/changes/{{change_name}}/` together.
+      The task-specific child instructions must require the child to read and follow the review instructions at `{{reviews_dir}}/review-approach.md` and independently review the proposal, every specification, the design, and `test-plan.md` under `openspec/changes/{{change_name}}/` together.
 
       Require the child to check cross-artifact consistency and testability; find consequential behavioral, architectural, or testing-strategy gaps, missing decisions, weak tradeoffs, failure modes, and better alternatives; inspect relevant repository patterns; avoid reviewing implementation tasks; and never modify files.
 

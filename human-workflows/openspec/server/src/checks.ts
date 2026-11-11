@@ -23,7 +23,7 @@ function nonEmptyFile(path: string): boolean {
 }
 
 /** Relative paths of non-empty `specs/<capability>/spec.md` files, sorted. */
-export function nonEmptySpecs(root: string, changeDir: string): string[] {
+function nonEmptySpecs(root: string, changeDir: string): string[] {
   const specsDir = join(root, changeDir, "specs");
   if (!existsSync(specsDir)) {
     return [];
@@ -59,75 +59,76 @@ async function openspecStatuses(
 }
 
 /** What a step's artifact needs. A step with no entry here has nothing to check. */
-interface StepCheck {
+interface StepArtifact {
   /** The OpenSpec artifact that must also report done. Absent when only the files are checked. */
   openspecArtifact?: string;
-  missing: (root: string, changeDir: string) => string[];
+  /** The step's non-empty files, as repository-relative paths. */
+  found: (root: string, changeDir: string) => string[];
+  /** What is missing when `found` is empty. */
+  need: (changeDir: string) => string;
 }
 
-function fileCheck(relative: string): StepCheck["missing"] {
-  return (root, changeDir) =>
-    nonEmptyFile(join(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
+function fileArtifact(relative: string, openspecArtifact?: string): StepArtifact {
+  return {
+    ...(openspecArtifact === undefined ? {} : { openspecArtifact }),
+    found: (root, changeDir) => (nonEmptyFile(join(root, changeDir, relative)) ? [`${changeDir}/${relative}`] : []),
+    need: (changeDir) => `a non-empty ${changeDir}/${relative}`,
+  };
 }
-
-function specsCheck(root: string, changeDir: string): string[] {
-  return nonEmptySpecs(root, changeDir).length > 0
-    ? []
-    : [`at least one non-empty ${changeDir}/specs/<capability>/spec.md`];
-}
-
-/** The artifact checks, keyed by the step ids in workflow.yaml. A test pins those ids. */
-const STEP_CHECKS: Readonly<Record<string, StepCheck>> = {
-  proposal: { openspecArtifact: "proposal", missing: fileCheck("proposal.md") },
-  specs: { openspecArtifact: "specs", missing: specsCheck },
-  design: { openspecArtifact: "design", missing: fileCheck("design.md") },
-  // Not an OpenSpec artifact, so only the file check applies.
-  "test-plan": { missing: fileCheck("test-plan.md") },
-};
 
 /**
- * What a step still lacks before next_step may advance. Empty means the step's artifact is there.
- * OpenSpec counts any existing file as done, so each check also requires a non-empty file.
+ * The one list of what each step writes, keyed by the step ids in workflow.yaml and in the order the
+ * steps run. Each step's check, the finish check, and the pull request's file list all come from it.
+ * A test pins the step ids.
  */
-export async function missingForStep(
-  root: string,
-  changeName: string,
-  step: StepId,
-  env: NodeJS.ProcessEnv,
-): Promise<string[]> {
-  const check = STEP_CHECKS[step];
-  if (!check) {
-    return [];
+const STEP_ARTIFACTS: Readonly<Record<string, StepArtifact>> = {
+  proposal: fileArtifact("proposal.md", "proposal"),
+  specs: {
+    openspecArtifact: "specs",
+    found: nonEmptySpecs,
+    need: (changeDir) => `at least one non-empty ${changeDir}/specs/<capability>/spec.md`,
+  },
+  design: fileArtifact("design.md", "design"),
+  // Not an OpenSpec artifact, so only the file check applies.
+  "test-plan": fileArtifact("test-plan.md"),
+};
+
+/** Every file the steps wrote, in step order. The pull request lists them. */
+export function artifactFiles(root: string, changeName: string): string[] {
+  const changeDir = changeDirFor(changeName);
+  return Object.values(STEP_ARTIFACTS).flatMap((artifact) => artifact.found(root, changeDir));
+}
+
+/** The steps' missing files, and the OpenSpec artifact ids of the steps whose files are there. */
+function filesMissing(root: string, changeDir: string, steps: readonly StepId[]): { missing: string[]; present: string[] } {
+  const missing: string[] = [];
+  const present: string[] = [];
+  for (const artifact of steps.map((step) => STEP_ARTIFACTS[step])) {
+    if (artifact === undefined) {
+      continue;
+    }
+    if (artifact.found(root, changeDir).length === 0) {
+      missing.push(artifact.need(changeDir));
+    } else if (artifact.openspecArtifact !== undefined) {
+      present.push(artifact.openspecArtifact);
+    }
   }
-  const missing = check.missing(root, changeDirFor(changeName));
-  const artifact = check.openspecArtifact;
-  if (artifact === undefined) {
+  return { missing, present };
+}
+
+/**
+ * What the given steps still lack. Empty means their artifacts are there. OpenSpec counts any existing
+ * file as done, so each check also requires a non-empty file.
+ */
+export async function missingForSteps(root: string, changeName: string, steps: readonly StepId[], env: NodeJS.ProcessEnv): Promise<string[]> {
+  const { missing, present } = filesMissing(root, changeDirFor(changeName), steps);
+  if (present.length === 0) {
     return missing;
   }
   const statuses = await openspecStatuses(root, changeName, env);
   if (typeof statuses === "string") {
     return [...missing, statuses];
   }
-  const status = statuses.get(artifact);
-  if (status !== undefined && status !== "done" && missing.length === 0) {
-    missing.push(`OpenSpec to report the ${artifact} artifact as done (it reports "${status}")`);
-  }
-  return missing;
-}
-
-/**
- * A port of validate-planning-artifacts.sh for change_kind=openspec and require_tasks=false.
- * Messages match the script's, without its prefix.
- */
-export function planningArtifactFailures(root: string, changeDir: string): string[] {
-  const failures: string[] = [];
-  for (const required of ["proposal.md", "design.md", "test-plan.md"]) {
-    if (!nonEmptyFile(join(root, changeDir, required))) {
-      failures.push(`missing or empty ${changeDir}/${required}`);
-    }
-  }
-  if (nonEmptySpecs(root, changeDir).length === 0) {
-    failures.push(`no non-empty specification under ${changeDir}/specs/`);
-  }
-  return failures;
+  const notDone = present.filter((id) => statuses.has(id) && statuses.get(id) !== "done");
+  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (it reports "${statuses.get(id)}")`)];
 }

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CallManager } from "./agentcall.js";
-import { isValidChangeName, missingForStep, nameRuleMessage } from "./checks.js";
+import { isValidChangeName, missingForSteps, nameRuleMessage } from "./checks.js";
 import { detectLead } from "./child.js";
 import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
@@ -173,7 +173,7 @@ async function completeStep(context: Context, root: string, name: string, state:
       text: `OpenSpec change "${name}" is already defined (completed ${state.completed_at}). The define workflow is finished; do not call next_step again.`,
     };
   }
-  const missing = await missingForStep(root, name, step, context.env);
+  const missing = await missingForSteps(root, name, [step], context.env);
   if (missing.length > 0) {
     return refuse(
       `step "${step}" of OpenSpec change "${name}" is not complete. Missing: ${missing.join("; ")}. Finish the step, then call next_step again.`,

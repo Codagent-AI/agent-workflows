@@ -6692,8 +6692,8 @@ var require_discriminator = __commonJS({
           if (!tagRequired)
             throw new Error(`discriminator: "${tagName}" must be required`);
           return oneOfMapping;
-          function hasRequired({ required: required2 }) {
-            return Array.isArray(required2) && required2.includes(tagName);
+          function hasRequired({ required: required3 }) {
+            return Array.isArray(required3) && required3.includes(tagName);
           }
           function addMappings(sch, i) {
             if (sch.const) {
@@ -19676,7 +19676,7 @@ function isRecursive(inst, stack, resolve) {
     return PROVEN;
   stack.add(inst);
   let result = NONE;
-  const check2 = (child) => {
+  const check3 = (child) => {
     if (result !== PROVEN && child?._zod) {
       const answer = isRecursive(child, stack, resolve);
       if (answer > result)
@@ -19705,32 +19705,32 @@ function isRecursive(inst, stack, resolve) {
     case "object": {
       const raw = rawShape(def);
       merge2(raw ? shape(raw, true) : ASSUMED);
-      check2(def.catchall);
+      check3(def.catchall);
       break;
     }
     case "array":
-      check2(def.element);
+      check3(def.element);
       break;
     case "tuple":
       for (const el of def.items)
-        check2(el);
-      check2(def.rest);
+        check3(el);
+      check3(def.rest);
       break;
     case "record":
     case "map":
-      check2(def.keyType);
-      check2(def.valueType);
+      check3(def.keyType);
+      check3(def.valueType);
       break;
     case "set":
-      check2(def.valueType);
+      check3(def.valueType);
       break;
     case "union":
       for (const el of def.options)
-        check2(el);
+        check3(el);
       break;
     case "intersection":
-      check2(def.left);
-      check2(def.right);
+      check3(def.left);
+      check3(def.right);
       break;
     case "optional":
     case "nullable":
@@ -19741,15 +19741,15 @@ function isRecursive(inst, stack, resolve) {
     case "nonoptional":
     case "promise":
     case "success":
-      check2(def.innerType);
+      check3(def.innerType);
       break;
     case "pipe":
-      check2(def.in);
-      check2(def.out);
+      check3(def.in);
+      check3(def.out);
       break;
     case "function":
-      check2(def.input);
-      check2(def.output);
+      check3(def.input);
+      check3(def.output);
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
@@ -19790,10 +19790,10 @@ function isRecursive(inst, stack, resolve) {
         if (!value || typeof value !== "object")
           continue;
         if (value._zod)
-          check2(value);
+          check3(value);
         else if (Array.isArray(value))
           for (const el of value)
-            check2(el);
+            check3(el);
       }
     }
   }
@@ -27739,8 +27739,8 @@ function generateChecks(doc, ctx, schema, accessor) {
   if (!schemaChecks || schemaChecks.length === 0)
     return accessor;
   let currentAccessor = accessor;
-  for (const check2 of schemaChecks) {
-    const def = check2._zod.def;
+  for (const check3 of schemaChecks) {
+    const def = check3._zod.def;
     if (def.when && !WHEN_DEFAULTED_CHECKS.has(def.check)) {
       throw new ZodCompileUnsupportedError(`check with a custom "when" condition`);
     }
@@ -27788,7 +27788,7 @@ function generateChecks(doc, ctx, schema, accessor) {
         currentAccessor = generateStringFormatCheck(doc, ctx, def, currentAccessor);
         break;
       case "custom":
-        currentAccessor = generateCustomRefineCheck(doc, ctx, check2, currentAccessor);
+        currentAccessor = generateCustomRefineCheck(doc, ctx, check3, currentAccessor);
         break;
       case "bigint_format":
         generateBigIntFormatCheck(doc, def, currentAccessor);
@@ -27804,7 +27804,7 @@ function generateChecks(doc, ctx, schema, accessor) {
         break;
       case "overwrite": {
         const newAccessor = newVar(ctx);
-        generateOverwriteCheck(doc, ctx, check2, currentAccessor, newAccessor);
+        generateOverwriteCheck(doc, ctx, check3, currentAccessor, newAccessor);
         currentAccessor = newAccessor;
         break;
       }
@@ -27927,8 +27927,8 @@ function generatePropertyCheck(doc, ctx, def, accessor) {
   const propAccessor = `${accessor}[${JSON.stringify(def.property)}]`;
   generateCheck(doc, ctx, def.schema, propAccessor);
 }
-function generateOverwriteCheck(doc, ctx, check2, currentAccessor, newAccessor) {
-  const tx = check2._zod.def.tx;
+function generateOverwriteCheck(doc, ctx, check3, currentAccessor, newAccessor) {
+  const tx = check3._zod.def.tx;
   if (!tx) {
     throw new ZodCompileUnsupportedError("overwrite check without a transform function");
   }
@@ -27944,8 +27944,8 @@ function throwAsync() {
 function pushIssue(issue2) {
   this.issues.push(issue2);
 }
-function generateCustomRefineCheck(doc, ctx, check2, accessor) {
-  const def = check2._zod.def;
+function generateCustomRefineCheck(doc, ctx, check3, accessor) {
+  const def = check3._zod.def;
   if (def.fn) {
     if (isAsyncFunction(def.fn)) {
       throw new ZodCompileAsyncError("z.compile: async .refine() predicates are not supported");
@@ -27958,11 +27958,11 @@ function generateCustomRefineCheck(doc, ctx, check2, accessor) {
     doc.write(`if (!${resVar}) return INVALID;`);
     return accessor;
   }
-  if (check2._zod.check) {
-    if (isAsyncFunction(check2._zod.check)) {
+  if (check3._zod.check) {
+    if (isAsyncFunction(check3._zod.check)) {
       throw new ZodCompileAsyncError("z.compile: async .superRefine() / check functions are not supported");
     }
-    const checkFn = check2._zod.check;
+    const checkFn = check3._zod.check;
     const helperFn = (value) => {
       const fakePayload = { value, issues: [], addIssue: pushIssue };
       const result = checkFn(fakePayload);
@@ -28584,8 +28584,8 @@ function generateNullableCheck(doc, ctx, schema, accessor, buildsValue = true) {
   return outputVar;
 }
 function generateSizeGate(doc, schema, size) {
-  for (const [max, check2] of sizeCaps(schema._zod.def.checks)) {
-    doc.write(`if (${size} > ${numericOperand(max, check2._zod.def.check)}) return INVALID;`);
+  for (const [max, check3] of sizeCaps(schema._zod.def.checks)) {
+    doc.write(`if (${size} > ${numericOperand(max, check3._zod.def.check)}) return INVALID;`);
   }
 }
 function generateArrayCheck(doc, ctx, schema, accessor, buildsValue = true) {
@@ -30452,7 +30452,7 @@ function foldObjects(members2) {
     objects.push(member);
   }
   const properties = {};
-  const required2 = /* @__PURE__ */ new Set();
+  const required3 = /* @__PURE__ */ new Set();
   for (const object3 of objects) {
     for (const key in object3.properties) {
       if (Object.prototype.hasOwnProperty.call(properties, key))
@@ -30469,11 +30469,11 @@ function foldObjects(members2) {
       assignProp(properties, key, merged);
     }
     for (const key of object3.required ?? [])
-      required2.add(key);
+      required3.add(key);
   }
   const folded = { type: "object", properties };
-  if (required2.size)
-    folded.required = [...required2];
+  if (required3.size)
+    folded.required = [...required3];
   if (objects.every((object3) => object3.additionalProperties === false)) {
     folded.additionalProperties = false;
   } else {
@@ -31885,8 +31885,8 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
     reg.add(this, meta3);
     return this;
   },
-  refine(check2, params) {
-    return this.check(refine(check2, params));
+  refine(check3, params) {
+    return this.check(refine(check3, params));
   },
   superRefine(refinement, params) {
     return this.check(superRefine(refinement, params));
@@ -36721,7 +36721,7 @@ var ZodType2 = class {
     const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
     return handleResult(ctx, result);
   }
-  refine(check2, message) {
+  refine(check3, message) {
     const getIssueProperties = (val) => {
       if (typeof message === "string" || typeof message === "undefined") {
         return { message };
@@ -36732,7 +36732,7 @@ var ZodType2 = class {
       }
     };
     return this._refinement((val, ctx) => {
-      const result = check2(val);
+      const result = check3(val);
       const setError = () => ctx.addIssue({
         code: ZodIssueCode2.custom,
         ...getIssueProperties(val)
@@ -36755,9 +36755,9 @@ var ZodType2 = class {
       }
     });
   }
-  refinement(check2, refinementData) {
+  refinement(check3, refinementData) {
     return this._refinement((val, ctx) => {
-      if (!check2(val)) {
+      if (!check3(val)) {
         ctx.addIssue(typeof refinementData === "function" ? refinementData(val, ctx) : refinementData);
         return false;
       } else {
@@ -36979,70 +36979,70 @@ var ZodString2 = class _ZodString2 extends ZodType2 {
     }
     const status = new ParseStatus();
     let ctx = void 0;
-    for (const check2 of this._def.checks) {
-      if (check2.kind === "min") {
-        if (input2.data.length < check2.value) {
+    for (const check3 of this._def.checks) {
+      if (check3.kind === "min") {
+        if (input2.data.length < check3.value) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_small,
-            minimum: check2.value,
+            minimum: check3.value,
             type: "string",
             inclusive: true,
             exact: false,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "max") {
-        if (input2.data.length > check2.value) {
+      } else if (check3.kind === "max") {
+        if (input2.data.length > check3.value) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_big,
-            maximum: check2.value,
+            maximum: check3.value,
             type: "string",
             inclusive: true,
             exact: false,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "length") {
-        const tooBig = input2.data.length > check2.value;
-        const tooSmall = input2.data.length < check2.value;
+      } else if (check3.kind === "length") {
+        const tooBig = input2.data.length > check3.value;
+        const tooSmall = input2.data.length < check3.value;
         if (tooBig || tooSmall) {
           ctx = this._getOrReturnCtx(input2, ctx);
           if (tooBig) {
             addIssueToContext(ctx, {
               code: ZodIssueCode2.too_big,
-              maximum: check2.value,
+              maximum: check3.value,
               type: "string",
               inclusive: true,
               exact: true,
-              message: check2.message
+              message: check3.message
             });
           } else if (tooSmall) {
             addIssueToContext(ctx, {
               code: ZodIssueCode2.too_small,
-              minimum: check2.value,
+              minimum: check3.value,
               type: "string",
               inclusive: true,
               exact: true,
-              message: check2.message
+              message: check3.message
             });
           }
           status.dirty();
         }
-      } else if (check2.kind === "email") {
+      } else if (check3.kind === "email") {
         if (!emailRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "email",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "emoji") {
+      } else if (check3.kind === "emoji") {
         if (!emojiRegex) {
           emojiRegex = new RegExp(_emojiRegex, "u");
         }
@@ -37051,61 +37051,61 @@ var ZodString2 = class _ZodString2 extends ZodType2 {
           addIssueToContext(ctx, {
             validation: "emoji",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "uuid") {
+      } else if (check3.kind === "uuid") {
         if (!uuidRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "uuid",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "nanoid") {
+      } else if (check3.kind === "nanoid") {
         if (!nanoidRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "nanoid",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "cuid") {
+      } else if (check3.kind === "cuid") {
         if (!cuidRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "cuid",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "cuid2") {
+      } else if (check3.kind === "cuid2") {
         if (!cuid2Regex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "cuid2",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "ulid") {
+      } else if (check3.kind === "ulid") {
         if (!ulidRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "ulid",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "url") {
+      } else if (check3.kind === "url") {
         try {
           new URL(input2.data);
         } catch {
@@ -37113,153 +37113,153 @@ var ZodString2 = class _ZodString2 extends ZodType2 {
           addIssueToContext(ctx, {
             validation: "url",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "regex") {
-        check2.regex.lastIndex = 0;
-        const testResult = check2.regex.test(input2.data);
+      } else if (check3.kind === "regex") {
+        check3.regex.lastIndex = 0;
+        const testResult = check3.regex.test(input2.data);
         if (!testResult) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "regex",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "trim") {
+      } else if (check3.kind === "trim") {
         input2.data = input2.data.trim();
-      } else if (check2.kind === "includes") {
-        if (!input2.data.includes(check2.value, check2.position)) {
+      } else if (check3.kind === "includes") {
+        if (!input2.data.includes(check3.value, check3.position)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
-            validation: { includes: check2.value, position: check2.position },
-            message: check2.message
+            validation: { includes: check3.value, position: check3.position },
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "toLowerCase") {
+      } else if (check3.kind === "toLowerCase") {
         input2.data = input2.data.toLowerCase();
-      } else if (check2.kind === "toUpperCase") {
+      } else if (check3.kind === "toUpperCase") {
         input2.data = input2.data.toUpperCase();
-      } else if (check2.kind === "startsWith") {
-        if (!input2.data.startsWith(check2.value)) {
+      } else if (check3.kind === "startsWith") {
+        if (!input2.data.startsWith(check3.value)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
-            validation: { startsWith: check2.value },
-            message: check2.message
+            validation: { startsWith: check3.value },
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "endsWith") {
-        if (!input2.data.endsWith(check2.value)) {
+      } else if (check3.kind === "endsWith") {
+        if (!input2.data.endsWith(check3.value)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
-            validation: { endsWith: check2.value },
-            message: check2.message
+            validation: { endsWith: check3.value },
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "datetime") {
-        const regex = datetimeRegex(check2);
+      } else if (check3.kind === "datetime") {
+        const regex = datetimeRegex(check3);
         if (!regex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
             validation: "datetime",
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "date") {
+      } else if (check3.kind === "date") {
         const regex = dateRegex;
         if (!regex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
             validation: "date",
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "time") {
-        const regex = timeRegex(check2);
+      } else if (check3.kind === "time") {
+        const regex = timeRegex(check3);
         if (!regex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_string,
             validation: "time",
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "duration") {
+      } else if (check3.kind === "duration") {
         if (!durationRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "duration",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "ip") {
-        if (!isValidIP(input2.data, check2.version)) {
+      } else if (check3.kind === "ip") {
+        if (!isValidIP(input2.data, check3.version)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "ip",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "jwt") {
-        if (!isValidJWT2(input2.data, check2.alg)) {
+      } else if (check3.kind === "jwt") {
+        if (!isValidJWT2(input2.data, check3.alg)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "jwt",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "cidr") {
-        if (!isValidCidr(input2.data, check2.version)) {
+      } else if (check3.kind === "cidr") {
+        if (!isValidCidr(input2.data, check3.version)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "cidr",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "base64") {
+      } else if (check3.kind === "base64") {
         if (!base64Regex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "base64",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "base64url") {
+      } else if (check3.kind === "base64url") {
         if (!base64urlRegex.test(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             validation: "base64url",
             code: ZodIssueCode2.invalid_string,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
       } else {
-        util.assertNever(check2);
+        util.assertNever(check3);
       }
     }
     return { status: status.value, value: input2.data };
@@ -37271,10 +37271,10 @@ var ZodString2 = class _ZodString2 extends ZodType2 {
       ...errorUtil.errToObj(message)
     });
   }
-  _addCheck(check2) {
+  _addCheck(check3) {
     return new _ZodString2({
       ...this._def,
-      checks: [...this._def.checks, check2]
+      checks: [...this._def.checks, check3]
     });
   }
   email(message) {
@@ -37539,67 +37539,67 @@ var ZodNumber2 = class _ZodNumber extends ZodType2 {
     }
     let ctx = void 0;
     const status = new ParseStatus();
-    for (const check2 of this._def.checks) {
-      if (check2.kind === "int") {
+    for (const check3 of this._def.checks) {
+      if (check3.kind === "int") {
         if (!util.isInteger(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.invalid_type,
             expected: "integer",
             received: "float",
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "min") {
-        const tooSmall = check2.inclusive ? input2.data < check2.value : input2.data <= check2.value;
+      } else if (check3.kind === "min") {
+        const tooSmall = check3.inclusive ? input2.data < check3.value : input2.data <= check3.value;
         if (tooSmall) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_small,
-            minimum: check2.value,
+            minimum: check3.value,
             type: "number",
-            inclusive: check2.inclusive,
+            inclusive: check3.inclusive,
             exact: false,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "max") {
-        const tooBig = check2.inclusive ? input2.data > check2.value : input2.data >= check2.value;
+      } else if (check3.kind === "max") {
+        const tooBig = check3.inclusive ? input2.data > check3.value : input2.data >= check3.value;
         if (tooBig) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_big,
-            maximum: check2.value,
+            maximum: check3.value,
             type: "number",
-            inclusive: check2.inclusive,
+            inclusive: check3.inclusive,
             exact: false,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "multipleOf") {
-        if (floatSafeRemainder2(input2.data, check2.value) !== 0) {
+      } else if (check3.kind === "multipleOf") {
+        if (floatSafeRemainder2(input2.data, check3.value) !== 0) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.not_multiple_of,
-            multipleOf: check2.value,
-            message: check2.message
+            multipleOf: check3.value,
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "finite") {
+      } else if (check3.kind === "finite") {
         if (!Number.isFinite(input2.data)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.not_finite,
-            message: check2.message
+            message: check3.message
           });
           status.dirty();
         }
       } else {
-        util.assertNever(check2);
+        util.assertNever(check3);
       }
     }
     return { status: status.value, value: input2.data };
@@ -37630,10 +37630,10 @@ var ZodNumber2 = class _ZodNumber extends ZodType2 {
       ]
     });
   }
-  _addCheck(check2) {
+  _addCheck(check3) {
     return new _ZodNumber({
       ...this._def,
-      checks: [...this._def.checks, check2]
+      checks: [...this._def.checks, check3]
     });
   }
   int(message) {
@@ -37768,45 +37768,45 @@ var ZodBigInt2 = class _ZodBigInt extends ZodType2 {
     }
     let ctx = void 0;
     const status = new ParseStatus();
-    for (const check2 of this._def.checks) {
-      if (check2.kind === "min") {
-        const tooSmall = check2.inclusive ? input2.data < check2.value : input2.data <= check2.value;
+    for (const check3 of this._def.checks) {
+      if (check3.kind === "min") {
+        const tooSmall = check3.inclusive ? input2.data < check3.value : input2.data <= check3.value;
         if (tooSmall) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_small,
             type: "bigint",
-            minimum: check2.value,
-            inclusive: check2.inclusive,
-            message: check2.message
+            minimum: check3.value,
+            inclusive: check3.inclusive,
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "max") {
-        const tooBig = check2.inclusive ? input2.data > check2.value : input2.data >= check2.value;
+      } else if (check3.kind === "max") {
+        const tooBig = check3.inclusive ? input2.data > check3.value : input2.data >= check3.value;
         if (tooBig) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_big,
             type: "bigint",
-            maximum: check2.value,
-            inclusive: check2.inclusive,
-            message: check2.message
+            maximum: check3.value,
+            inclusive: check3.inclusive,
+            message: check3.message
           });
           status.dirty();
         }
-      } else if (check2.kind === "multipleOf") {
-        if (input2.data % check2.value !== BigInt(0)) {
+      } else if (check3.kind === "multipleOf") {
+        if (input2.data % check3.value !== BigInt(0)) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.not_multiple_of,
-            multipleOf: check2.value,
-            message: check2.message
+            multipleOf: check3.value,
+            message: check3.message
           });
           status.dirty();
         }
       } else {
-        util.assertNever(check2);
+        util.assertNever(check3);
       }
     }
     return { status: status.value, value: input2.data };
@@ -37846,10 +37846,10 @@ var ZodBigInt2 = class _ZodBigInt extends ZodType2 {
       ]
     });
   }
-  _addCheck(check2) {
+  _addCheck(check3) {
     return new _ZodBigInt({
       ...this._def,
-      checks: [...this._def.checks, check2]
+      checks: [...this._def.checks, check3]
     });
   }
   positive(message) {
@@ -37969,35 +37969,35 @@ var ZodDate2 = class _ZodDate extends ZodType2 {
     }
     const status = new ParseStatus();
     let ctx = void 0;
-    for (const check2 of this._def.checks) {
-      if (check2.kind === "min") {
-        if (input2.data.getTime() < check2.value) {
+    for (const check3 of this._def.checks) {
+      if (check3.kind === "min") {
+        if (input2.data.getTime() < check3.value) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_small,
-            message: check2.message,
+            message: check3.message,
             inclusive: true,
             exact: false,
-            minimum: check2.value,
+            minimum: check3.value,
             type: "date"
           });
           status.dirty();
         }
-      } else if (check2.kind === "max") {
-        if (input2.data.getTime() > check2.value) {
+      } else if (check3.kind === "max") {
+        if (input2.data.getTime() > check3.value) {
           ctx = this._getOrReturnCtx(input2, ctx);
           addIssueToContext(ctx, {
             code: ZodIssueCode2.too_big,
-            message: check2.message,
+            message: check3.message,
             inclusive: true,
             exact: false,
-            maximum: check2.value,
+            maximum: check3.value,
             type: "date"
           });
           status.dirty();
         }
       } else {
-        util.assertNever(check2);
+        util.assertNever(check3);
       }
     }
     return {
@@ -38005,10 +38005,10 @@ var ZodDate2 = class _ZodDate extends ZodType2 {
       value: new Date(input2.data.getTime())
     };
   }
-  _addCheck(check2) {
+  _addCheck(check3) {
     return new _ZodDate({
       ...this._def,
-      checks: [...this._def.checks, check2]
+      checks: [...this._def.checks, check3]
     });
   }
   min(minDate, message) {
@@ -40304,38 +40304,38 @@ function parseBigintDef(def, refs) {
   };
   if (!def.checks)
     return res;
-  for (const check2 of def.checks) {
-    switch (check2.kind) {
+  for (const check3 of def.checks) {
+    switch (check3.kind) {
       case "min":
         if (refs.target === "jsonSchema7") {
-          if (check2.inclusive) {
-            setResponseValueAndErrors(res, "minimum", check2.value, check2.message, refs);
+          if (check3.inclusive) {
+            setResponseValueAndErrors(res, "minimum", check3.value, check3.message, refs);
           } else {
-            setResponseValueAndErrors(res, "exclusiveMinimum", check2.value, check2.message, refs);
+            setResponseValueAndErrors(res, "exclusiveMinimum", check3.value, check3.message, refs);
           }
         } else {
-          if (!check2.inclusive) {
+          if (!check3.inclusive) {
             res.exclusiveMinimum = true;
           }
-          setResponseValueAndErrors(res, "minimum", check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "minimum", check3.value, check3.message, refs);
         }
         break;
       case "max":
         if (refs.target === "jsonSchema7") {
-          if (check2.inclusive) {
-            setResponseValueAndErrors(res, "maximum", check2.value, check2.message, refs);
+          if (check3.inclusive) {
+            setResponseValueAndErrors(res, "maximum", check3.value, check3.message, refs);
           } else {
-            setResponseValueAndErrors(res, "exclusiveMaximum", check2.value, check2.message, refs);
+            setResponseValueAndErrors(res, "exclusiveMaximum", check3.value, check3.message, refs);
           }
         } else {
-          if (!check2.inclusive) {
+          if (!check3.inclusive) {
             res.exclusiveMaximum = true;
           }
-          setResponseValueAndErrors(res, "maximum", check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "maximum", check3.value, check3.message, refs);
         }
         break;
       case "multipleOf":
-        setResponseValueAndErrors(res, "multipleOf", check2.value, check2.message, refs);
+        setResponseValueAndErrors(res, "multipleOf", check3.value, check3.message, refs);
         break;
     }
   }
@@ -40391,15 +40391,15 @@ var integerDateParser = (def, refs) => {
   if (refs.target === "openApi3") {
     return res;
   }
-  for (const check2 of def.checks) {
-    switch (check2.kind) {
+  for (const check3 of def.checks) {
+    switch (check3.kind) {
       case "min":
         setResponseValueAndErrors(
           res,
           "minimum",
-          check2.value,
+          check3.value,
           // This is in milliseconds
-          check2.message,
+          check3.message,
           refs
         );
         break;
@@ -40407,9 +40407,9 @@ var integerDateParser = (def, refs) => {
         setResponseValueAndErrors(
           res,
           "maximum",
-          check2.value,
+          check3.value,
           // This is in milliseconds
-          check2.message,
+          check3.message,
           refs
         );
         break;
@@ -40555,118 +40555,118 @@ function parseStringDef(def, refs) {
     type: "string"
   };
   if (def.checks) {
-    for (const check2 of def.checks) {
-      switch (check2.kind) {
+    for (const check3 of def.checks) {
+      switch (check3.kind) {
         case "min":
-          setResponseValueAndErrors(res, "minLength", typeof res.minLength === "number" ? Math.max(res.minLength, check2.value) : check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "minLength", typeof res.minLength === "number" ? Math.max(res.minLength, check3.value) : check3.value, check3.message, refs);
           break;
         case "max":
-          setResponseValueAndErrors(res, "maxLength", typeof res.maxLength === "number" ? Math.min(res.maxLength, check2.value) : check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "maxLength", typeof res.maxLength === "number" ? Math.min(res.maxLength, check3.value) : check3.value, check3.message, refs);
           break;
         case "email":
           switch (refs.emailStrategy) {
             case "format:email":
-              addFormat(res, "email", check2.message, refs);
+              addFormat(res, "email", check3.message, refs);
               break;
             case "format:idn-email":
-              addFormat(res, "idn-email", check2.message, refs);
+              addFormat(res, "idn-email", check3.message, refs);
               break;
             case "pattern:zod":
-              addPattern2(res, zodPatterns.email, check2.message, refs);
+              addPattern2(res, zodPatterns.email, check3.message, refs);
               break;
           }
           break;
         case "url":
-          addFormat(res, "uri", check2.message, refs);
+          addFormat(res, "uri", check3.message, refs);
           break;
         case "uuid":
-          addFormat(res, "uuid", check2.message, refs);
+          addFormat(res, "uuid", check3.message, refs);
           break;
         case "regex":
-          addPattern2(res, check2.regex, check2.message, refs);
+          addPattern2(res, check3.regex, check3.message, refs);
           break;
         case "cuid":
-          addPattern2(res, zodPatterns.cuid, check2.message, refs);
+          addPattern2(res, zodPatterns.cuid, check3.message, refs);
           break;
         case "cuid2":
-          addPattern2(res, zodPatterns.cuid2, check2.message, refs);
+          addPattern2(res, zodPatterns.cuid2, check3.message, refs);
           break;
         case "startsWith":
-          addPattern2(res, RegExp(`^${escapeLiteralCheckValue(check2.value, refs)}`), check2.message, refs);
+          addPattern2(res, RegExp(`^${escapeLiteralCheckValue(check3.value, refs)}`), check3.message, refs);
           break;
         case "endsWith":
-          addPattern2(res, RegExp(`${escapeLiteralCheckValue(check2.value, refs)}$`), check2.message, refs);
+          addPattern2(res, RegExp(`${escapeLiteralCheckValue(check3.value, refs)}$`), check3.message, refs);
           break;
         case "datetime":
-          addFormat(res, "date-time", check2.message, refs);
+          addFormat(res, "date-time", check3.message, refs);
           break;
         case "date":
-          addFormat(res, "date", check2.message, refs);
+          addFormat(res, "date", check3.message, refs);
           break;
         case "time":
-          addFormat(res, "time", check2.message, refs);
+          addFormat(res, "time", check3.message, refs);
           break;
         case "duration":
-          addFormat(res, "duration", check2.message, refs);
+          addFormat(res, "duration", check3.message, refs);
           break;
         case "length":
-          setResponseValueAndErrors(res, "minLength", typeof res.minLength === "number" ? Math.max(res.minLength, check2.value) : check2.value, check2.message, refs);
-          setResponseValueAndErrors(res, "maxLength", typeof res.maxLength === "number" ? Math.min(res.maxLength, check2.value) : check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "minLength", typeof res.minLength === "number" ? Math.max(res.minLength, check3.value) : check3.value, check3.message, refs);
+          setResponseValueAndErrors(res, "maxLength", typeof res.maxLength === "number" ? Math.min(res.maxLength, check3.value) : check3.value, check3.message, refs);
           break;
         case "includes": {
-          addPattern2(res, RegExp(escapeLiteralCheckValue(check2.value, refs)), check2.message, refs);
+          addPattern2(res, RegExp(escapeLiteralCheckValue(check3.value, refs)), check3.message, refs);
           break;
         }
         case "ip": {
-          if (check2.version !== "v6") {
-            addFormat(res, "ipv4", check2.message, refs);
+          if (check3.version !== "v6") {
+            addFormat(res, "ipv4", check3.message, refs);
           }
-          if (check2.version !== "v4") {
-            addFormat(res, "ipv6", check2.message, refs);
+          if (check3.version !== "v4") {
+            addFormat(res, "ipv6", check3.message, refs);
           }
           break;
         }
         case "base64url":
-          addPattern2(res, zodPatterns.base64url, check2.message, refs);
+          addPattern2(res, zodPatterns.base64url, check3.message, refs);
           break;
         case "jwt":
-          addPattern2(res, zodPatterns.jwt, check2.message, refs);
+          addPattern2(res, zodPatterns.jwt, check3.message, refs);
           break;
         case "cidr": {
-          if (check2.version !== "v6") {
-            addPattern2(res, zodPatterns.ipv4Cidr, check2.message, refs);
+          if (check3.version !== "v6") {
+            addPattern2(res, zodPatterns.ipv4Cidr, check3.message, refs);
           }
-          if (check2.version !== "v4") {
-            addPattern2(res, zodPatterns.ipv6Cidr, check2.message, refs);
+          if (check3.version !== "v4") {
+            addPattern2(res, zodPatterns.ipv6Cidr, check3.message, refs);
           }
           break;
         }
         case "emoji":
-          addPattern2(res, zodPatterns.emoji(), check2.message, refs);
+          addPattern2(res, zodPatterns.emoji(), check3.message, refs);
           break;
         case "ulid": {
-          addPattern2(res, zodPatterns.ulid, check2.message, refs);
+          addPattern2(res, zodPatterns.ulid, check3.message, refs);
           break;
         }
         case "base64": {
           switch (refs.base64Strategy) {
             case "format:binary": {
-              addFormat(res, "binary", check2.message, refs);
+              addFormat(res, "binary", check3.message, refs);
               break;
             }
             case "contentEncoding:base64": {
-              setResponseValueAndErrors(res, "contentEncoding", "base64", check2.message, refs);
+              setResponseValueAndErrors(res, "contentEncoding", "base64", check3.message, refs);
               break;
             }
             case "pattern:zod": {
-              addPattern2(res, zodPatterns.base64, check2.message, refs);
+              addPattern2(res, zodPatterns.base64, check3.message, refs);
               break;
             }
           }
           break;
         }
         case "nanoid": {
-          addPattern2(res, zodPatterns.nanoid, check2.message, refs);
+          addPattern2(res, zodPatterns.nanoid, check3.message, refs);
         }
         case "toLowerCase":
         case "toUpperCase":
@@ -40674,7 +40674,7 @@ function parseStringDef(def, refs) {
           break;
         default:
           /* @__PURE__ */ ((_) => {
-          })(check2);
+          })(check3);
       }
     }
   }
@@ -41044,42 +41044,42 @@ function parseNumberDef(def, refs) {
   };
   if (!def.checks)
     return res;
-  for (const check2 of def.checks) {
-    switch (check2.kind) {
+  for (const check3 of def.checks) {
+    switch (check3.kind) {
       case "int":
         res.type = "integer";
-        addErrorMessage(res, "type", check2.message, refs);
+        addErrorMessage(res, "type", check3.message, refs);
         break;
       case "min":
         if (refs.target === "jsonSchema7") {
-          if (check2.inclusive) {
-            setResponseValueAndErrors(res, "minimum", check2.value, check2.message, refs);
+          if (check3.inclusive) {
+            setResponseValueAndErrors(res, "minimum", check3.value, check3.message, refs);
           } else {
-            setResponseValueAndErrors(res, "exclusiveMinimum", check2.value, check2.message, refs);
+            setResponseValueAndErrors(res, "exclusiveMinimum", check3.value, check3.message, refs);
           }
         } else {
-          if (!check2.inclusive) {
+          if (!check3.inclusive) {
             res.exclusiveMinimum = true;
           }
-          setResponseValueAndErrors(res, "minimum", check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "minimum", check3.value, check3.message, refs);
         }
         break;
       case "max":
         if (refs.target === "jsonSchema7") {
-          if (check2.inclusive) {
-            setResponseValueAndErrors(res, "maximum", check2.value, check2.message, refs);
+          if (check3.inclusive) {
+            setResponseValueAndErrors(res, "maximum", check3.value, check3.message, refs);
           } else {
-            setResponseValueAndErrors(res, "exclusiveMaximum", check2.value, check2.message, refs);
+            setResponseValueAndErrors(res, "exclusiveMaximum", check3.value, check3.message, refs);
           }
         } else {
-          if (!check2.inclusive) {
+          if (!check3.inclusive) {
             res.exclusiveMaximum = true;
           }
-          setResponseValueAndErrors(res, "maximum", check2.value, check2.message, refs);
+          setResponseValueAndErrors(res, "maximum", check3.value, check3.message, refs);
         }
         break;
       case "multipleOf":
-        setResponseValueAndErrors(res, "multipleOf", check2.value, check2.message, refs);
+        setResponseValueAndErrors(res, "multipleOf", check3.value, check3.message, refs);
         break;
     }
   }
@@ -41093,7 +41093,7 @@ function parseObjectDef(def, refs) {
     type: "object",
     properties: {}
   };
-  const required2 = [];
+  const required3 = [];
   const shape = def.shape();
   for (const propName in shape) {
     let propDef = shape[propName];
@@ -41120,11 +41120,11 @@ function parseObjectDef(def, refs) {
     }
     result.properties[propName] = parsedDef;
     if (!propOptional) {
-      required2.push(propName);
+      required3.push(propName);
     }
   }
-  if (required2.length) {
-    result.required = required2;
+  if (required3.length) {
+    result.required = required3;
   }
   const additionalProperties = decideAdditionalProperties(def, refs);
   if (additionalProperties !== void 0) {
@@ -44133,66 +44133,75 @@ function snapshotOf(call, now) {
 import { existsSync, readdirSync, readFileSync as readFileSync2, renameSync, writeFileSync } from "node:fs";
 import { join as join3 } from "node:path";
 
+// src/schema.ts
+function locate(path) {
+  let text = "";
+  for (const part of path) {
+    text += typeof part === "number" ? `[${part}]` : `${text === "" ? "" : "."}${String(part)}`;
+  }
+  return text;
+}
+function describeIssues(error62) {
+  return error62.issues.map((issue2) => {
+    const where = locate(issue2.path);
+    return where === "" ? issue2.message : `${where}: ${issue2.message}`;
+  }).join("; ");
+}
+function check2(schema, value) {
+  const result = schema.safeParse(value);
+  return result.success ? { value: result.data } : { problem: describeIssues(result.error) };
+}
+
 // src/steps.ts
 var import_yaml = __toESM(require_dist2(), 1);
 import { readFileSync } from "node:fs";
 import { join as join2 } from "node:path";
 var WorkflowError = class extends Error {
 };
-var PLACEHOLDERS = ["{{change_name}}", "{{skills_dir}}"];
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function nonEmptyString(value) {
-  return typeof value === "string" && value.trim() !== "";
-}
-function parseStep(raw, index, seen) {
-  const label = `step ${index + 1}`;
-  if (!isRecord(raw)) {
-    throw new WorkflowError(`${label} must be a mapping with an id and a prompt.`);
-  }
-  const { id, prompt, tools } = raw;
-  if (!nonEmptyString(id)) {
-    throw new WorkflowError(`${label} needs an id.`);
-  }
-  if (seen.has(id)) {
-    throw new WorkflowError(`step id "${id}" is used twice.`);
-  }
-  seen.add(id);
-  if (!nonEmptyString(prompt)) {
-    throw new WorkflowError(`step "${id}" needs a prompt.`);
-  }
+var PLACEHOLDERS = ["{{change_name}}", "{{reviews_dir}}"];
+var required2 = (what) => external_exports.string({ error: `needs ${what}` }).refine((value) => value.trim() !== "", { error: `needs ${what}` });
+var promptSchema = required2("a prompt").superRefine((prompt, context) => {
   const unknown2 = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
-  if (unknown2) {
-    throw new WorkflowError(`step "${id}" has an unknown placeholder ${unknown2}.`);
+  if (unknown2 !== void 0) {
+    context.addIssue({ code: "custom", message: `has an unknown placeholder ${unknown2}` });
   }
-  if (tools !== void 0 && (!Array.isArray(tools) || tools.some((tool) => tool !== "call_agent"))) {
-    throw new WorkflowError(`step "${id}" has tools that are not [call_agent]. Only call_agent is supported.`);
+});
+var stepSchema = external_exports.object(
+  {
+    id: required2("an id"),
+    prompt: promptSchema,
+    tools: external_exports.array(external_exports.literal("call_agent", { error: "is not a supported tool. Only [call_agent] is supported" })).optional()
+  },
+  { error: "must be a mapping with an id and a prompt" }
+).transform((step) => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
+var workflowSchema = external_exports.object(
+  {
+    name: required2("a name"),
+    description: required2("a description"),
+    steps: external_exports.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step")
+  },
+  { error: "must be a mapping with name, description, and steps" }
+).superRefine((workflow2, context) => {
+  const seen = /* @__PURE__ */ new Set();
+  for (const [index, step] of workflow2.steps.entries()) {
+    if (seen.has(step.id)) {
+      context.addIssue({ code: "custom", message: `step id "${step.id}" is used twice`, path: ["steps", index, "id"] });
+    }
+    seen.add(step.id);
   }
-  return { id, prompt, callAgent: Array.isArray(tools) && tools.length > 0 };
-}
-function parseWorkflow(text) {
+}).transform((workflow2) => ({ name: workflow2.name.trim(), description: workflow2.description.trim(), steps: workflow2.steps }));
+function parseWorkflow(source) {
   let raw;
   try {
-    raw = (0, import_yaml.parse)(text);
+    raw = (0, import_yaml.parse)(source);
   } catch (error62) {
     throw new WorkflowError(`is not valid YAML: ${error62.message}`);
   }
-  if (!isRecord(raw)) {
-    throw new WorkflowError("must be a mapping with name, description, and steps.");
+  const checked = check2(workflowSchema, raw);
+  if ("problem" in checked) {
+    throw new WorkflowError(`is not a valid workflow: ${checked.problem}`);
   }
-  if (!nonEmptyString(raw.name)) {
-    throw new WorkflowError("needs a name.");
-  }
-  if (!nonEmptyString(raw.description)) {
-    throw new WorkflowError("needs a description.");
-  }
-  if (!Array.isArray(raw.steps) || raw.steps.length === 0) {
-    throw new WorkflowError("needs at least one step under steps.");
-  }
-  const seen = /* @__PURE__ */ new Set();
-  const steps = raw.steps.map((step, index) => parseStep(step, index, seen));
-  return { name: raw.name.trim(), description: raw.description.trim(), steps };
+  return checked.value;
 }
 function loadWorkflow(pluginRoot2) {
   const path = join2(pluginRoot2, "workflow.yaml");
@@ -44214,14 +44223,22 @@ function loadWorkflow(pluginRoot2) {
 function stepIds(workflow2) {
   return workflow2.steps.map((step) => step.id);
 }
-function isStepId(workflow2, value) {
-  return typeof value === "string" && stepIds(workflow2).includes(value);
-}
 function firstStepId(workflow2) {
   return workflow2.steps[0]?.id ?? "";
 }
 function lastStepId(workflow2) {
   return workflow2.steps[workflow2.steps.length - 1]?.id ?? "";
+}
+function callAgentSteps(workflow2) {
+  return workflow2.steps.filter((step) => step.callAgent).map((step) => step.id);
+}
+function callAgentStepsText(workflow2) {
+  const ids = callAgentSteps(workflow2);
+  const last = ids.pop();
+  if (last === void 0) {
+    return "no steps";
+  }
+  return ids.length === 0 ? `the ${last} step` : `the ${ids.join(", ")} and ${last} steps`;
 }
 function allowsCallAgent(workflow2, step) {
   return workflow2.steps.some((candidate) => candidate.id === step && candidate.callAgent);
@@ -44237,7 +44254,7 @@ function changeDirFor(changeName) {
 }
 function stepBody(workflow2, pluginRoot2, step, changeName) {
   const prompt = workflow2.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
-  return prompt.replaceAll("{{change_name}}", changeName).replaceAll("{{skills_dir}}", join2(pluginRoot2, "skills")).trim();
+  return prompt.replaceAll("{{change_name}}", changeName).replaceAll("{{reviews_dir}}", join2(pluginRoot2, "reviews")).trim();
 }
 function renderStep(input2) {
   const { workflow: workflow2, changeName, step, mode } = input2;
@@ -44284,7 +44301,7 @@ function newState(workflow2, changeName, at, lead) {
   const first = firstStepId(workflow2);
   return {
     schema: 1,
-    workflow: "define-openspec-change",
+    workflow: workflow2.name,
     change_name: changeName,
     change_dir: changeDirFor(changeName),
     status: "in_progress",
@@ -44297,6 +44314,41 @@ function newState(workflow2, changeName, at, lead) {
     completed_at: null
   };
 }
+function stateSchema(workflow2, changeName) {
+  const ids = stepIds(workflow2);
+  const step = external_exports.string().refine((id) => ids.includes(id), { error: `must be one of ${ids.join(", ")}` });
+  const text = external_exports.string();
+  const times = external_exports.object({ started_at: text, completed_at: text.optional() });
+  const start = external_exports.object({ at: text, lead: text, mode: external_exports.enum(["new", "resume"]), step });
+  const call = external_exports.object({
+    call_id: text,
+    step,
+    cli: text,
+    model: text.optional(),
+    effort: text,
+    status: text,
+    working_tree: text.optional(),
+    started_at: text,
+    ended_at: text
+  });
+  return external_exports.object({
+    schema: external_exports.literal(1),
+    workflow: external_exports.literal(workflow2.name),
+    change_name: external_exports.literal(changeName),
+    change_dir: text,
+    status: external_exports.enum(["in_progress", "complete"]),
+    current_step: step.nullable(),
+    steps: external_exports.record(step, times),
+    starts: external_exports.array(start),
+    calls: external_exports.array(call),
+    created_at: text,
+    updated_at: text,
+    completed_at: text.nullable()
+  }).refine((state) => state.status !== "in_progress" || state.current_step !== null, {
+    error: "an in-progress define needs a current_step",
+    path: ["current_step"]
+  });
+}
 function readState(workflow2, root, changeName) {
   const path = statePath(root, changeName);
   if (!existsSync(path)) {
@@ -44308,16 +44360,11 @@ function readState(workflow2, root, changeName) {
   } catch (error62) {
     throw new StateError(`${path} is not valid JSON: ${error62.message}`);
   }
-  const state = parsed;
-  const validStep = state.current_step === null || isStepId(workflow2, state.current_step);
-  const knownSteps = Object.keys(state.steps ?? {}).every((id) => isStepId(workflow2, id));
-  if (state.schema !== 1 || state.change_name !== changeName || state.status !== "in_progress" && state.status !== "complete" || !validStep || !knownSteps || state.status === "in_progress" && state.current_step === null) {
-    throw new StateError(`${path} is not a define-openspec-change state file this version understands.`);
+  const checked = check2(stateSchema(workflow2, changeName), parsed);
+  if ("problem" in checked) {
+    throw new StateError(`${path} is not a define-openspec-change state file this version understands: ${checked.problem}`);
   }
-  state.steps ??= {};
-  state.starts ??= [];
-  state.calls ??= [];
-  return state;
+  return checked.value;
 }
 function readStateText(root, changeName) {
   const path = statePath(root, changeName);
@@ -44384,7 +44431,7 @@ function chooseCallOwner(workflow2, root, changeName) {
   }
   return errorText(
     "call_agent_unavailable",
-    "call_agent is only available during the proposal and approach-review steps of a define that is in progress" + (wanted === "" ? "." : `, and "${wanted}" is not at one of them.`)
+    `call_agent is only available during ${callAgentStepsText(workflow2)} of a define that is in progress` + (wanted === "" ? "." : `, and "${wanted}" is not at one of them.`)
   );
 }
 
@@ -44631,7 +44678,6 @@ var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 var DEFAULT_EFFORT = "high";
 var CLIS = ["claude", "codex"];
 var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
-var ENTRY_KEYS = /* @__PURE__ */ new Set(["cli", "model", "effort"]);
 var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
 function configPath(env) {
   return join6(env.HOME || homedir(), ".agent-workflows", "config.yaml");
@@ -44639,61 +44685,31 @@ function configPath(env) {
 function invalid(path, problem) {
   return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
 }
-function optionalString(entry, key) {
-  const value = entry[key];
-  if (value === void 0 || value === null) {
-    return void 0;
+var NEEDS_LIST = `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
+var optionalText = external_exports.string({ error: "must be non-empty text when given" }).trim().min(1, "must be non-empty text when given").nullish().transform((value) => value ?? void 0);
+var entrySchema = external_exports.strictObject(
+  {
+    cli: external_exports.enum(CLIS, { error: (issue2) => `must be "claude" or "codex", not ${JSON.stringify(issue2.input)}` }),
+    model: optionalText,
+    effort: optionalText
+  },
+  {
+    error: (issue2) => issue2.code === "unrecognized_keys" ? `has unknown keys: ${issue2.keys.join(", ")}. Allowed: cli, model, effort.` : "must be a mapping with cli, model, and effort."
   }
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
-}
-function isMapping(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-function crosscheckList(root) {
-  if (root.crosscheck !== void 0) {
-    return "the `crosscheck` list now goes under `human-workflows`, as `human-workflows.crosscheck`. Remove the top-level one.";
-  }
-  const section = root["human-workflows"];
-  const list = isMapping(section) ? section.crosscheck : void 0;
-  if (Array.isArray(list) && list.length > 0) {
-    return list;
-  }
-  return `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
-}
-function parseEntry(raw, index, earlier) {
-  const where = `${CROSSCHECK_KEY} entry ${index + 1}`;
-  if (!isMapping(raw)) {
-    return `${where} must be a mapping with cli, model, and effort.`;
-  }
-  const unknown2 = Object.keys(raw).filter((key) => !ENTRY_KEYS.has(key));
-  if (unknown2.length > 0) {
-    return `${where} has unknown keys: ${unknown2.join(", ")}. Allowed: cli, model, effort.`;
-  }
-  const cli = raw.cli;
-  if (cli !== "claude" && cli !== "codex") {
-    return `${where} needs cli: claude or cli: codex, not ${JSON.stringify(cli)}.`;
-  }
-  if (earlier.some((existing) => existing.cli === cli)) {
-    return `more than one ${CROSSCHECK_KEY} entry has cli: ${cli}.`;
-  }
-  const model = optionalString(raw, "model");
-  const effort = optionalString(raw, "effort");
-  if (model === null || effort === null) {
-    return `${where}: model and effort must be non-empty text when given.`;
-  }
-  return model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT };
-}
-function parseEntries(list) {
-  const entries = [];
-  for (const [index, raw] of list.entries()) {
-    const entry = parseEntry(raw, index, entries);
-    if (typeof entry === "string") {
-      return entry;
+).transform(({ cli, model, effort }) => model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT });
+var crosscheckSchema = external_exports.array(entrySchema, { error: NEEDS_LIST }).min(1, NEEDS_LIST).superRefine((entries, context) => {
+  const seen = /* @__PURE__ */ new Set();
+  for (const [index, entry] of entries.entries()) {
+    if (seen.has(entry.cli)) {
+      context.addIssue({ code: "custom", message: `more than one entry has cli: ${entry.cli}`, path: [index, "cli"] });
     }
-    entries.push(entry);
+    seen.add(entry.cli);
   }
-  return entries;
-}
+});
+var configSchema = external_exports.looseObject(
+  { "human-workflows": external_exports.looseObject({ crosscheck: crosscheckSchema }, { error: NEEDS_LIST }) },
+  { error: NEEDS_LIST }
+);
 function readConfig(env) {
   const path = configPath(env);
   if (!existsSync3(path)) {
@@ -44705,9 +44721,8 @@ function readConfig(env) {
   } catch (error62) {
     return invalid(path, error62.message);
   }
-  const list = crosscheckList(isMapping(doc) ? doc : {});
-  const entries = typeof list === "string" ? list : parseEntries(list);
-  return typeof entries === "string" ? invalid(path, entries) : { ok: true, path, crosscheck: entries };
+  const checked = check2(configSchema, doc);
+  return "problem" in checked ? invalid(path, checked.problem) : { ok: true, path, crosscheck: checked.value["human-workflows"].crosscheck };
 }
 function onPath(command, env) {
   for (const dir of (env.PATH ?? "").split(delimiter)) {
@@ -45082,50 +45097,54 @@ async function openspecStatuses(root, changeName, env) {
     return `openspec status --change ${changeName} --json did not print JSON: ${output2(result)}`;
   }
 }
-function fileCheck(relative) {
-  return (root, changeDir) => nonEmptyFile(join8(root, changeDir, relative)) ? [] : [`a non-empty ${changeDir}/${relative}`];
+function fileArtifact(relative, openspecArtifact) {
+  return {
+    ...openspecArtifact === void 0 ? {} : { openspecArtifact },
+    found: (root, changeDir) => nonEmptyFile(join8(root, changeDir, relative)) ? [`${changeDir}/${relative}`] : [],
+    need: (changeDir) => `a non-empty ${changeDir}/${relative}`
+  };
 }
-function specsCheck(root, changeDir) {
-  return nonEmptySpecs(root, changeDir).length > 0 ? [] : [`at least one non-empty ${changeDir}/specs/<capability>/spec.md`];
-}
-var STEP_CHECKS = {
-  proposal: { openspecArtifact: "proposal", missing: fileCheck("proposal.md") },
-  specs: { openspecArtifact: "specs", missing: specsCheck },
-  design: { openspecArtifact: "design", missing: fileCheck("design.md") },
+var STEP_ARTIFACTS = {
+  proposal: fileArtifact("proposal.md", "proposal"),
+  specs: {
+    openspecArtifact: "specs",
+    found: nonEmptySpecs,
+    need: (changeDir) => `at least one non-empty ${changeDir}/specs/<capability>/spec.md`
+  },
+  design: fileArtifact("design.md", "design"),
   // Not an OpenSpec artifact, so only the file check applies.
-  "test-plan": { missing: fileCheck("test-plan.md") }
+  "test-plan": fileArtifact("test-plan.md")
 };
-async function missingForStep(root, changeName, step, env) {
-  const check2 = STEP_CHECKS[step];
-  if (!check2) {
-    return [];
+function artifactFiles(root, changeName) {
+  const changeDir = changeDirFor(changeName);
+  return Object.values(STEP_ARTIFACTS).flatMap((artifact) => artifact.found(root, changeDir));
+}
+function filesMissing(root, changeDir, steps) {
+  const missing = [];
+  const present = [];
+  for (const artifact of steps.map((step) => STEP_ARTIFACTS[step])) {
+    if (artifact === void 0) {
+      continue;
+    }
+    if (artifact.found(root, changeDir).length === 0) {
+      missing.push(artifact.need(changeDir));
+    } else if (artifact.openspecArtifact !== void 0) {
+      present.push(artifact.openspecArtifact);
+    }
   }
-  const missing = check2.missing(root, changeDirFor(changeName));
-  const artifact = check2.openspecArtifact;
-  if (artifact === void 0) {
+  return { missing, present };
+}
+async function missingForSteps(root, changeName, steps, env) {
+  const { missing, present } = filesMissing(root, changeDirFor(changeName), steps);
+  if (present.length === 0) {
     return missing;
   }
   const statuses = await openspecStatuses(root, changeName, env);
   if (typeof statuses === "string") {
     return [...missing, statuses];
   }
-  const status = statuses.get(artifact);
-  if (status !== void 0 && status !== "done" && missing.length === 0) {
-    missing.push(`OpenSpec to report the ${artifact} artifact as done (it reports "${status}")`);
-  }
-  return missing;
-}
-function planningArtifactFailures(root, changeDir) {
-  const failures = [];
-  for (const required2 of ["proposal.md", "design.md", "test-plan.md"]) {
-    if (!nonEmptyFile(join8(root, changeDir, required2))) {
-      failures.push(`missing or empty ${changeDir}/${required2}`);
-    }
-  }
-  if (nonEmptySpecs(root, changeDir).length === 0) {
-    failures.push(`no non-empty specification under ${changeDir}/specs/`);
-  }
-  return failures;
+  const notDone = present.filter((id) => statuses.has(id) && statuses.get(id) !== "done");
+  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (it reports "${statuses.get(id)}")`)];
 }
 
 // src/finish.ts
@@ -45175,8 +45194,7 @@ async function defaultBranch(root, env) {
   return void 0;
 }
 function prBody(state, root) {
-  const dir = state.change_dir;
-  const files = [`${dir}/proposal.md`, ...nonEmptySpecs(root, dir), `${dir}/design.md`, `${dir}/test-plan.md`];
+  const files = artifactFiles(root, state.change_name);
   return [
     `Change documents for OpenSpec change \`${state.change_name}\`, written with the define-openspec-change plugin.`,
     "",
@@ -45191,17 +45209,17 @@ async function validationRefusal(context, root, state) {
     cwd: root,
     env: context.env
   });
-  const planning = planningArtifactFailures(root, state.change_dir);
-  if (validation.code === 0 && planning.length === 0) {
+  const lacking = await missingForSteps(root, name, stepIds(context.workflow), context.env);
+  if (validation.code === 0 && lacking.length === 0) {
     return void 0;
   }
-  logEvent(context, root, "finish_refused", { change: name, validation: validation.code, planning });
+  logEvent(context, root, "finish_refused", { change: name, validation: validation.code, missing: lacking });
   const lines = [`Refused: OpenSpec change "${name}" failed validation, so nothing was committed.`];
   if (validation.code !== 0) {
     lines.push("", `openspec validate --type change ${name}:`, tail(output2(validation), 4e3));
   }
-  if (planning.length > 0) {
-    lines.push("", "Planning artifacts:", ...planning.map((failure2) => `- ${failure2}`));
+  if (lacking.length > 0) {
+    lines.push("", "Missing artifacts:", ...lacking.map((failure2) => `- ${failure2}`));
   }
   lines.push("", "Fix these with the user, then call next_step again.");
   return { text: lines.join("\n"), isError: true };
@@ -45303,7 +45321,7 @@ async function finishDefine(context, root, state) {
   const { sha } = committed;
   const lines = [
     `OpenSpec change "${name}" is defined.`,
-    "Validation passed: openspec validate and the planning-artifact check.",
+    "Validation passed: openspec validate and every step's artifact check.",
     `Committed ${sha} "${commitMessage(name)}" with only ${state.change_dir}/.`,
     ...await leftoverLines(git)
   ];
@@ -45448,7 +45466,7 @@ async function completeStep(context, root, name, state) {
       text: `OpenSpec change "${name}" is already defined (completed ${state.completed_at}). The define workflow is finished; do not call next_step again.`
     };
   }
-  const missing = await missingForStep(root, name, step, context.env);
+  const missing = await missingForSteps(root, name, [step], context.env);
   if (missing.length > 0) {
     return refuse(
       `step "${step}" of OpenSpec change "${name}" is not complete. Missing: ${missing.join("; ")}. Finish the step, then call next_step again.`
@@ -45532,7 +45550,7 @@ function registerCallAgent({ server: server2, context, calls: calls2, cwdFor }) 
     "call_agent",
     {
       title: "Start a crosscheck",
-      description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to ` + waitText(context) + ": returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.",
+      description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to ` + waitText(context) + `: returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
       inputSchema: {
         agent: external_exports.string().describe('Must be "crosscheck".'),
         prompt: external_exports.string().describe("The complete, standalone task for the child."),

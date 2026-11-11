@@ -48,7 +48,7 @@ test("the step prompt names the review skill by absolute path inside the plugin"
   const context = makeContext(fixture);
   const { next } = session(context);
   const result = await next({ change_name: CHANGE, start: true });
-  assert.ok(result.text.includes(`${context.pluginRoot}/skills/proposal-review/SKILL.md`));
+  assert.ok(result.text.includes(`${context.pluginRoot}/reviews/proposal-review.md`));
 });
 
 test("invalid change names are refused before anything is created", async () => {
@@ -162,7 +162,7 @@ test("the last step's prompt says next_step validates and commits", async () => 
   let last = { text: "" };
   for (let i = 0; i < 4; i++) last = await next({ change_name: CHANGE });
   assert.match(last.text, /This is the last step: that call validates the change and commits its documents\./);
-  assert.match(last.text, /review-approach\/SKILL\.md/);
+  assert.match(last.text, /reviews\/review-approach\.md/);
 });
 
 test("a new session resumes the current step from the state file without advancing", async () => {
@@ -273,7 +273,7 @@ steps:
   - id: one
     tools: [call_agent]
     prompt: |
-      Do {{change_name}} with {{skills_dir}}.
+      Do {{change_name}} with {{reviews_dir}}.
   - id: two
     prompt: Finish.
 `;
@@ -296,23 +296,36 @@ test("a malformed workflow.yaml is rejected with a clear message", () => {
 
   assert.match(malformed("steps: ["), /not valid YAML/);
   assert.match(malformed("- just a list"), /must be a mapping/);
-  assert.match(malformed(VALID.replace("name: demo\n", "")), /needs a name/);
-  assert.match(malformed(VALID.replace("description: A demo.\n", "")), /needs a description/);
-  assert.match(malformed("name: demo\ndescription: d\nsteps: []\n"), /at least one step/);
-  assert.match(malformed(VALID.replace("id: two", "id: one")), /step id "one" is used twice/);
-  assert.match(malformed(VALID.replace("    prompt: Finish.\n", "")), /step "two" needs a prompt/);
-  assert.match(malformed(VALID.replace("[call_agent]", "[shell]")), /step "one" has tools that are not \[call_agent\]/);
-  assert.match(malformed(VALID.replace("{{skills_dir}}", "{{unknown}}")), /unknown placeholder \{\{unknown\}\}/);
+  assert.match(malformed(VALID.replace("name: demo\n", "")), /name: needs a name/);
+  assert.match(malformed(VALID.replace("description: A demo.\n", "")), /description: needs a description/);
+  assert.match(malformed("name: demo\ndescription: d\nsteps: []\n"), /steps: needs at least one step/);
+  assert.match(malformed(VALID.replace("id: two", "id: one")), /steps\[1\]\.id: step id "one" is used twice/);
+  assert.match(malformed(VALID.replace("    prompt: Finish.\n", "")), /steps\[1\]\.prompt: needs a prompt/);
+  assert.match(malformed(VALID.replace("[call_agent]", "[shell]")), /steps\[0\]\.tools\[0\]: is not a supported tool\. Only \[call_agent\]/);
+  assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{unknown}}")), /has an unknown placeholder \{\{unknown\}\}/);
+  assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{skills_dir}}")), /unknown placeholder \{\{skills_dir\}\}/);
 });
 
-test("a state file with a step the workflow does not have is refused", async () => {
+test("a state file is checked whole: its workflow name, starts, and calls", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
   await next({ change_name: CHANGE, start: true });
   const state = JSON.parse(fixture.read(STATE));
-  state.current_step = "tasks";
-  fixture.write(STATE, JSON.stringify(state));
-  const result = await next({ change_name: CHANGE });
-  assert.equal(result.isError, true);
-  assert.match(result.text, /not a define-openspec-change state file this version understands/);
+  assert.equal(state.workflow, "define-openspec-change");
+  const broken: Array<[(copy: Record<string, unknown>) => void, RegExp]> = [
+    [(copy) => (copy.workflow = "another-workflow"), /workflow:/],
+    [(copy) => (copy.starts = [{ at: "x", lead: "claude", mode: "later", step: "proposal" }]), /starts\[0\]\.mode/],
+    [(copy) => (copy.calls = [{ call_id: 1 }]), /calls\[0\]\.call_id/],
+    [(copy) => (copy.starts = "none"), /starts:/],
+    [(copy) => (copy.current_step = "tasks"), /current_step: must be one of proposal, specs/],
+  ];
+  for (const [damage, pattern] of broken) {
+    const copy = structuredClone(state);
+    damage(copy);
+    fixture.write(STATE, JSON.stringify(copy));
+    const result = await next({ change_name: CHANGE });
+    assert.equal(result.isError, true);
+    assert.match(result.text, pattern);
+    assert.match(result.text, /\.define-openspec-change\.json is not a define-openspec-change state file this version understands/);
+  }
 });
