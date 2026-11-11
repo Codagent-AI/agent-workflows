@@ -1,6 +1,6 @@
 // Deterministic validation of an approved change definition.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, posix } from 'node:path';
+import { join } from 'node:path';
 
 import { nonEmptyFile } from './artifacts.ts';
 import { type CheckResult, fail, pass } from './check.ts';
@@ -11,7 +11,6 @@ export interface PlanningInput {
   changeName: string;
   changeDir: string;
   changeKind: string;
-  requireTasks: boolean;
 }
 
 function sortedFiles(dir: string, pick: (name: string) => string | undefined): string[] {
@@ -76,51 +75,8 @@ function specDrivenProblems(paths: readonly string[]): string[] {
   return problems;
 }
 
-function decodePath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
-
-/** The normalized targets of the Markdown links in the task index. */
-function linkedDestinations(indexText: string): Set<string> {
-  const destinations = new Set<string>();
-  for (const match of indexText.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/g)) {
-    const destination = match[1].trim().replace(/^[<>]+|[<>]+$/g, '').split('#')[0].split('?')[0];
-    destinations.add(posix.normalize(decodePath(destination)));
-  }
-  return destinations;
-}
-
-/** Problems for each task file the index does not link to. */
-function unlinkedTaskProblems(index: string, tasksDir: string, tasks: readonly string[]): string[] {
-  const destinations = linkedDestinations(readFileSync(index, 'utf8'));
-  return tasks
-    .map(task => posix.join('tasks', task.slice(tasksDir.length + 1)))
-    .filter(relative => !destinations.has(relative))
-    .map(relative => `${index} does not link to ${relative}`);
-}
-
-function taskProblems(changeDir: string): string[] {
-  const problems: string[] = [];
-  const index = join(changeDir, 'tasks.md');
-  if (!nonEmptyFile(index)) problems.push(`missing or empty ${index}`);
-  const tasksDir = join(changeDir, 'tasks');
-  const tasks = sortedFiles(tasksDir, name => (name.endsWith('.md') ? join(tasksDir, name) : undefined)).filter(
-    nonEmptyFile
-  );
-  if (tasks.length === 0) {
-    problems.push(`no non-empty task file under ${changeDir}/tasks/`);
-  } else if (existsSync(index)) {
-    problems.push(...unlinkedTaskProblems(index, tasksDir, tasks));
-  }
-  return problems;
-}
-
 /** Problems with the change name, kind and directory themselves. */
-function inputProblems(input: PlanningInput): string[] {
+function identityProblems(input: PlanningInput): string[] {
   const nameProblems = changeNameProblems(input.changeName);
   if (nameProblems.length > 0) return nameProblems;
   if (input.changeKind !== 'openspec' && input.changeKind !== 'spec-driven') {
@@ -144,14 +100,13 @@ function fileProblems(input: PlanningInput): string[] {
   const specs = specPaths(input.changeDir);
   if (specs.length === 0) problems.push(`no non-empty specification under ${input.changeDir}/specs/`);
   if (input.changeKind === 'spec-driven') problems.push(...specDrivenProblems(specs));
-  if (input.requireTasks) problems.push(...taskProblems(input.changeDir));
   return problems;
 }
 
 /** Validates the definition; the problems include any `openspec validate` output. */
 export function validatePlanningArtifacts(exec: Exec, input: PlanningInput): CheckResult {
   const prefix = (problem: string): string => `validate-planning-artifacts: ${problem}`;
-  const inputFailures = inputProblems(input);
+  const inputFailures = identityProblems(input);
   if (inputFailures.length > 0) return fail(inputFailures.map(prefix));
 
   if (input.changeKind === 'openspec') {

@@ -34,7 +34,6 @@ const validate = (input: Partial<PlanningInput> = {}) =>
     changeName: 'demo',
     changeDir: 'openspec/changes/demo',
     changeKind: 'openspec',
-    requireTasks: false,
     ...input,
   });
 
@@ -67,31 +66,6 @@ describe('validatePlanningArtifacts (definition checks)', () => {
     const result = validate();
     expect(result.ok).toBe(false);
     expect(result.problems).toContain('missing or empty openspec/changes/demo/test-plan.md');
-  });
-
-  test('task-plan validation fails without a task file', () => {
-    writeOpenSpecChange();
-    const result = validate({ requireTasks: true });
-    expect(result.ok).toBe(false);
-    expect(result.problems).toContain('no non-empty task file under openspec/changes/demo/tasks/');
-  });
-
-  test('task-plan validation passes with a task file linked from the index', () => {
-    writeOpenSpecChange();
-    box.write('openspec/changes/demo/tasks/one.md', '# Task one\n');
-    box.write('openspec/changes/demo/tasks.md', '- [Task one](tasks/one.md)\n');
-    expect(validate({ requireTasks: true })).toEqual({ ok: true, problems: '' });
-  });
-
-  test('a task file the index does not link fails', () => {
-    writeOpenSpecChange();
-    box.write('openspec/changes/demo/tasks/one.md', '# Task one\n');
-    box.write('openspec/changes/demo/tasks/two.md', '# Task two\n');
-    box.write('openspec/changes/demo/tasks.md', '- [Task one](tasks/one.md)\n');
-    const result = validate({ requireTasks: true });
-    expect(result.ok).toBe(false);
-    expect(result.problems).toContain('does not link to tasks/two.md');
-    expect(result.problems).not.toContain('tasks/one.md');
   });
 
   test('a failing openspec validate reports its output', () => {

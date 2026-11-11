@@ -1,4 +1,4 @@
-// The CI report in the wait-ci skill's output format.
+// The CI report the wait-ci node writes for the tester's handoff.
 import type { Comment, Thread } from './ci-comments.ts';
 import { type Check, type CiResult, failedRunIds } from './ci.ts';
 
@@ -8,7 +8,7 @@ const threadLine = (thread: Thread): string =>
   `- **${thread.author}** on \`${thread.file}\` line ${String(thread.line ?? '?')}: ${thread.body}`;
 const commentLine = (comment: Comment, kind = ''): string => `- **${comment.author}**${kind}: ${comment.body}`;
 
-/** The report in the wait-ci skill's output format. */
+/** The report as Markdown, for the tester to read. */
 export function renderReport(result: CiResult): string {
   const lines = [`## CI Status: ${result.status}`, '', `**PR:** ${result.prUrl || 'unknown'}`];
   lines.push(`**Head:** ${result.headSha || 'unknown'}${result.headMoved ? ' (local HEAD or the PR head has since moved)' : ''}`);

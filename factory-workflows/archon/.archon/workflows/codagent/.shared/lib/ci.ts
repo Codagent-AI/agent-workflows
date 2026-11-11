@@ -1,6 +1,5 @@
-// Waits for current-head CI on the branch's pull request and reports the result. Port of
-// the wait-ci skill's check-ci.sh and get-pr-comments.sh, run as one bounded node instead
-// of an agent calling the scripts in a loop.
+// Waits for current-head CI on the branch's pull request and reports the result, as one
+// bounded script node instead of an agent calling scripts in a loop.
 //
 // Judging comment meaning stays with the agent: a review bot's "still reviewing" notice is
 // listed under informational bot comments, and the tester's handoff decides whether it
@@ -78,7 +77,7 @@ export function failedRunIds(checks: readonly Check[]): string[] {
 }
 
 
-/** The final status, by the wait-ci skill's precedence. */
+/** The final status, by this precedence. */
 export function finalStatus(result: Pick<CiResult, 'failedChecks' | 'blockingReviews' | 'mergeable' | 'pendingChecks'>, comments: PrComments | undefined): CiStatus {
   if (result.failedChecks.length > 0 || result.blockingReviews.length > 0 || result.mergeable === 'CONFLICTING') {
     return 'failed';
