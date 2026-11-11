@@ -105,15 +105,15 @@ The server checks the file when it starts. It refuses to start, and says what is
 The child's CLI, model, and effort come from `~/.agent-workflows/config.yaml` (see [Configuration](#configuration)). It has no access to the lead's conversation and runs read-only:
 
 - **Codex child**:
-  - runs `codex exec --json --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort="<effort>" [-m <model>]`;
-  - has this plugin turned off;
+  - runs `codex exec --json --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort="<effort>" [-m <model>] -o <file> -`;
+  - gets the environment variable `DEFINE_OPENSPEC_CHANGE_CHILD=1`, which makes this plugin's server register no tools, so the child cannot reach `next_step` or `call_agent`;
   - still loads your own Codex configuration, including its MCP servers, plugins, and hooks. The read-only sandbox covers shell commands and file edits, not those tools.
 - **Claude child**:
   - runs `claude -p --setting-sources "" --strict-mcp-config --no-session-persistence --effort <effort> [--model <model>]`;
   - can use only Read, Grep, Glob, and WebSearch;
   - loads no settings, plugins, or MCP servers.
 
-The child reads the review skill from the plugin folder by absolute path. Each call reports whether the working tree changed while the child ran.
+Both children read their prompt from stdin, so it does not show in the process list and has no size limit from the command line. The child reads the review instructions from the plugin folder by absolute path. Each call reports whether the working tree changed while the child ran.
 
 ## Configuration
 

@@ -1,7 +1,11 @@
 export type Cli = "claude" | "codex";
 
-export const PLUGIN_NAME = "define-openspec-change";
-export const DEFAULT_MARKETPLACE = "agent-workflows";
+/**
+ * Set in the crosscheck child's environment. The server registers no tools when it sees it, so the
+ * child cannot reach next_step or call_agent, whichever way the CLI loads this plugin. The Codex
+ * manifest lists it in `env_vars` so Codex passes it on to the server.
+ */
+export const CHILD_ENV_VAR = "DEFINE_OPENSPEC_CHANGE_CHILD";
 
 /**
  * Variables that tie a process to the lead's Claude Code session. A child must not inherit them:
@@ -45,19 +49,11 @@ export interface CrosscheckChoice {
   effort: string;
 }
 
-/** Marketplace names this plugin may be installed under: the default, and the one in our own cache path. */
-export function marketplaceNames(pluginRoot: string): string[] {
-  const names = [DEFAULT_MARKETPLACE];
-  const match = pluginRoot.match(new RegExp(`/plugins/cache/([^/]+)/${PLUGIN_NAME}(?:/|$)`));
-  if (match?.[1] && !names.includes(match[1])) {
-    names.push(match[1]);
-  }
-  return names;
-}
-
 export interface ChildCommand {
   command: string;
   args: string[];
+  /** Written to the child's stdin, so it is not in the process list and has no argument size limit. */
+  prompt: string;
 }
 
 export interface ChildInput extends CrosscheckChoice {
@@ -70,7 +66,9 @@ export interface ChildInput extends CrosscheckChoice {
 /**
  * The read-only crosscheck command line. Neither child can reach this plugin's tools: the Claude
  * child loads no settings, plugins, or MCP servers and only read-only built-in tools; the Codex child
- * is sandboxed read-only and has this plugin turned off. Both read skills by absolute path.
+ * is sandboxed read-only, and the server registers no tools when it sees CHILD_ENV_VAR. Both read
+ * review instructions by absolute path. Both read the prompt from stdin: `claude -p` does when it is
+ * given no prompt argument, and `codex exec` does for a prompt of `-`.
  */
 export function childCommand(input: ChildInput): ChildCommand {
   if (input.cli === "codex") {
@@ -79,16 +77,8 @@ export function childCommand(input: ChildInput): ChildCommand {
     if (input.model) {
       args.push("-m", input.model);
     }
-    // Codex 0.166 splits -c keys on dots and keeps quotes as part of the key, so the quoted TOML
-    // form `plugins."name@market"` is silently ignored. The unquoted key works; a marketplace name
-    // with a dot in it cannot be written this way.
-    for (const marketplace of marketplaceNames(input.pluginRoot)) {
-      if (!marketplace.includes(".")) {
-        args.push("-c", `plugins.${PLUGIN_NAME}@${marketplace}.enabled=false`);
-      }
-    }
-    args.push("-o", input.lastMessageFile, "--", input.prompt);
-    return { command: "codex", args };
+    args.push("-o", input.lastMessageFile, "-");
+    return { command: "codex", args, prompt: input.prompt };
   }
   const tools = ["Read", "Grep", "Glob", "WebSearch"];
   const args = [
@@ -111,12 +101,11 @@ export function childCommand(input: ChildInput): ChildCommand {
   if (input.model) {
     args.push("--model", input.model);
   }
-  args.push("--", input.prompt);
-  return { command: "claude", args };
+  return { command: "claude", args, prompt: input.prompt };
 }
 
 export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const clean: NodeJS.ProcessEnv = { ...env };
+  const clean: NodeJS.ProcessEnv = { ...env, [CHILD_ENV_VAR]: "1" };
   for (const name of SESSION_ENV_VARS) {
     delete clean[name];
   }

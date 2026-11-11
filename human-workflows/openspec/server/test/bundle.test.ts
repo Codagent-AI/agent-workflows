@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -102,4 +103,16 @@ test("on Claude Code the session directory is CLAUDE_PROJECT_DIR, not where the 
   } finally {
     await client.close();
   }
+});
+
+test("in the crosscheck child the server registers no tools, and the Codex manifest passes the marker on", async () => {
+  const fixture = makeFixture();
+  const client = await connect(fixture, "codex-mcp-client", fixture.repo, { DEFINE_OPENSPEC_CHANGE_CHILD: "1" });
+  try {
+    assert.deepEqual((await client.listTools()).tools, []);
+  } finally {
+    await client.close();
+  }
+  const codex = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".codex-mcp.json"), "utf8")) as { mcpServers: { define: { env_vars: string[] } } };
+  assert.ok(codex.mcpServers.define.env_vars.includes("DEFINE_OPENSPEC_CHANGE_CHILD"));
 });

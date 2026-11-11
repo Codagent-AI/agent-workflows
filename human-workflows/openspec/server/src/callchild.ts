@@ -12,14 +12,14 @@ export interface PreparedChild {
   command: ChildCommand;
 }
 
-/** Makes the call's log folder and records the prompt and the command (without the prompt argument) there. */
+/** Makes the call's log folder and records the prompt and the command there. */
 export function prepareChild(context: Context, root: string, prompt: string, choice: CrosscheckChoice): PreparedChild {
   const id = `call-${randomBytes(4).toString("hex")}`;
   const dir = privateLogDir(context, root, id);
   const lastMessageFile = join(dir, "last-message.txt");
   const command = childCommand({ ...choice, prompt, pluginRoot: context.pluginRoot, lastMessageFile });
   writeFileSync(join(dir, "prompt.txt"), prompt, { mode: 0o600 });
-  const shown = JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2);
+  const shown = JSON.stringify({ command: command.command, args: command.args, prompt: "on stdin, see prompt.txt" }, null, 2);
   writeFileSync(join(dir, "command.json"), shown, { mode: 0o600 });
   return { id, dir, command };
 }
@@ -30,7 +30,10 @@ export interface LoggedChild {
   closeLogs: () => void;
 }
 
-/** Starts the child in its own process group, with stdout and stderr going to files in `dir`. Throws if it cannot start. */
+/**
+ * Starts the child in its own process group, with stdout and stderr going to files in `dir` and the
+ * prompt on its stdin. Throws if it cannot start.
+ */
 export function spawnLogged(command: ChildCommand, dir: string, root: string, env: NodeJS.ProcessEnv): LoggedChild {
   const stdoutFd = openSync(join(dir, "stdout"), "w", 0o600);
   let stderrFd: number;
@@ -48,9 +51,12 @@ export function spawnLogged(command: ChildCommand, dir: string, root: string, en
     const child = spawn(command.command, command.args, {
       cwd: root,
       env: childEnv(env),
-      stdio: ["ignore", stdoutFd, stderrFd],
+      stdio: ["pipe", stdoutFd, stderrFd],
       detached: true,
     });
+    // A child that exits without reading its prompt closes the pipe. The call's outcome says what happened.
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(command.prompt);
     return { child, closeLogs };
   } catch (error) {
     closeLogs();

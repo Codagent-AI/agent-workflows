@@ -43,7 +43,7 @@ async function atProposal(options: Parameters<typeof makeContext>[1] = {}, fixtu
   return { fixture, context, ...s };
 }
 
-test("a Claude lead gets a read-only Codex child with this plugin turned off", async () => {
+test("a Claude lead gets a read-only Codex child that reads its prompt from stdin", async () => {
   const { fixture, context, calls } = await atProposal({ client: "claude-code", extraEnv: SESSION_VARS });
   const result = await calls.start("crosscheck", "Review the proposal.");
   const body = parse(result);
@@ -65,16 +65,15 @@ test("a Claude lead gets a read-only Codex child with this plugin turned off", a
     "read-only",
     "-c",
     'model_reasoning_effort="high"',
-    "-c",
-    'plugins.define-openspec-change@agent-workflows.enabled=false',
     "-o",
     lastMessage,
-    "--",
-    "Review the proposal.",
+    "-",
   ]);
+  assert.equal(child.prompt, "Review the proposal.");
   assert.ok(lastMessage?.startsWith(context.logBase), "child output stays outside the worktree");
   assert.equal(child.cwd, fixture.repo);
   assert.deepEqual(child.env?.filter((name) => name.startsWith("CLAUDE")), ["CLAUDE_CODE_USE_BEDROCK"]);
+  assert.ok(child.env?.includes("DEFINE_OPENSPEC_CHANGE_CHILD"), "the child is marked so the server registers no tools in it");
 });
 
 test("a Codex lead gets a Claude child with no settings, no MCP servers, and read-only tools", async () => {
@@ -104,9 +103,8 @@ test("a Codex lead gets a Claude child with no settings, no MCP servers, and rea
     context.pluginRoot,
     "--effort",
     "high",
-    "--",
-    "Review the proposal.",
   ]);
+  assert.equal(child.prompt, "Review the proposal.");
 });
 
 test("the other CLI's config entry sets the child's model and effort", async () => {
@@ -198,17 +196,13 @@ test("the config is checked: a crosscheck list of claude and codex entries with 
   assert.equal(!missing.ok && missing.reason, "missing");
 });
 
-test("the Codex child turns off the marketplace this plugin was installed from", async () => {
-  const fixture = makeFixture();
-  const context = makeContext(fixture, { client: "claude-code" });
-  const { next } = session(context);
-  await next({ change_name: CHANGE, start: true });
-  const cached = session({ ...context, pluginRoot: `${context.pluginRoot}/../../../plugins/cache/my-market/define-openspec-change/0.1.0` });
-  // The step prompt files are not under the fake cache path, but the child command is built before they matter.
-  await cached.calls.start("crosscheck", "Review.");
-  const args = fakeCall(fixture, "codex").args;
-  assert.ok(args.includes('plugins.define-openspec-change@agent-workflows.enabled=false'));
-  assert.ok(args.includes('plugins.define-openspec-change@my-market.enabled=false'));
+test("a long prompt reaches the child on stdin, not in its arguments", async () => {
+  const { fixture, calls } = await atProposal({ client: "claude-code" });
+  const prompt = `Review.\n${"x".repeat(300_000)}`;
+  assert.equal(parse(await calls.start("crosscheck", prompt)).status, "succeeded");
+  const child = fakeCall(fixture, "codex");
+  assert.equal(child.prompt, prompt);
+  assert.equal(child.args.some((arg) => arg.includes("xxxx")), false);
 });
 
 test("a slow child returns running, then get_agent_call returns the result", async () => {
@@ -399,7 +393,7 @@ test("a log file that cannot be opened closes the one that was", () => {
   mkdirSync(join(dir, "stderr"), { recursive: true });
   const open = () => readdirSync("/dev/fd").length;
   const before = open();
-  assert.throws(() => spawnLogged({ command: "true", args: [] }, dir, fixture.repo, fixture.env));
+  assert.throws(() => spawnLogged({ command: "true", args: [], prompt: "" }, dir, fixture.repo, fixture.env));
   assert.equal(open(), before);
 });
 

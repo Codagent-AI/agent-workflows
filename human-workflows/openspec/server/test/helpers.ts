@@ -58,8 +58,9 @@ const FAKE_CHILD = (cli: string) => `#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
-const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_"));
-if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ bin: "${cli}", args, cwd: process.cwd(), env: keep }) + "\\n");
+const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_") || k.startsWith("DEFINE_"));
+const prompt = fs.readFileSync(0, "utf8");
+if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ bin: "${cli}", args, cwd: process.cwd(), env: keep, prompt }) + "\\n");
 const delay = Number(process.env.FAKE_CHILD_SLEEP_MS || 0);
 if (process.env.FAKE_CHILD_IGNORE_TERM) process.on("SIGTERM", () => {});
 setTimeout(() => {
@@ -228,7 +229,7 @@ export function pathWithout(fixture: Fixture, missing: string[]): string {
   return [bin, "/usr/bin", "/bin"].join(delimiter);
 }
 
-export function fakeLog(fixture: Fixture): Array<{ bin: string; args: string[]; cwd?: string; env?: string[] }> {
+export function fakeLog(fixture: Fixture): Array<{ bin: string; args: string[]; cwd?: string; env?: string[]; prompt?: string }> {
   if (!existsSync(fixture.log)) return [];
   return readFileSync(fixture.log, "utf8")
     .split("\n")

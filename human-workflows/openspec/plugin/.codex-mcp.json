@@ -6,6 +6,7 @@
       "cwd": ".",
       "env_vars": [
         "DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS",
+        "DEFINE_OPENSPEC_CHANGE_CHILD",
         "CODEX_HOME",
         "CLAUDE_CONFIG_DIR",
         "ANTHROPIC_API_KEY",

@@ -44512,8 +44512,7 @@ import { closeSync, openSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // src/child.ts
-var PLUGIN_NAME = "define-openspec-change";
-var DEFAULT_MARKETPLACE = "agent-workflows";
+var CHILD_ENV_VAR = "DEFINE_OPENSPEC_CHANGE_CHILD";
 var SESSION_ENV_VARS = [
   "CLAUDECODE",
   "CLAUDE_CODE_SESSION_ATTENDED",
@@ -44541,14 +44540,6 @@ function detectLead(clientName, env) {
   }
   return void 0;
 }
-function marketplaceNames(pluginRoot2) {
-  const names = [DEFAULT_MARKETPLACE];
-  const match = pluginRoot2.match(new RegExp(`/plugins/cache/([^/]+)/${PLUGIN_NAME}(?:/|$)`));
-  if (match?.[1] && !names.includes(match[1])) {
-    names.push(match[1]);
-  }
-  return names;
-}
 function childCommand(input2) {
   if (input2.cli === "codex") {
     const args2 = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only"];
@@ -44556,13 +44547,8 @@ function childCommand(input2) {
     if (input2.model) {
       args2.push("-m", input2.model);
     }
-    for (const marketplace of marketplaceNames(input2.pluginRoot)) {
-      if (!marketplace.includes(".")) {
-        args2.push("-c", `plugins.${PLUGIN_NAME}@${marketplace}.enabled=false`);
-      }
-    }
-    args2.push("-o", input2.lastMessageFile, "--", input2.prompt);
-    return { command: "codex", args: args2 };
+    args2.push("-o", input2.lastMessageFile, "-");
+    return { command: "codex", args: args2, prompt: input2.prompt };
   }
   const tools = ["Read", "Grep", "Glob", "WebSearch"];
   const args = [
@@ -44585,11 +44571,10 @@ function childCommand(input2) {
   if (input2.model) {
     args.push("--model", input2.model);
   }
-  args.push("--", input2.prompt);
-  return { command: "claude", args };
+  return { command: "claude", args, prompt: input2.prompt };
 }
 function childEnv(env) {
-  const clean = { ...env };
+  const clean = { ...env, [CHILD_ENV_VAR]: "1" };
   for (const name of SESSION_ENV_VARS) {
     delete clean[name];
   }
@@ -44603,7 +44588,7 @@ function prepareChild(context, root, prompt, choice) {
   const lastMessageFile = join5(dir, "last-message.txt");
   const command = childCommand({ ...choice, prompt, pluginRoot: context.pluginRoot, lastMessageFile });
   writeFileSync2(join5(dir, "prompt.txt"), prompt, { mode: 384 });
-  const shown = JSON.stringify({ command: command.command, args: command.args.slice(0, -1) }, null, 2);
+  const shown = JSON.stringify({ command: command.command, args: command.args, prompt: "on stdin, see prompt.txt" }, null, 2);
   writeFileSync2(join5(dir, "command.json"), shown, { mode: 384 });
   return { id, dir, command };
 }
@@ -44624,9 +44609,12 @@ function spawnLogged(command, dir, root, env) {
     const child = spawn2(command.command, command.args, {
       cwd: root,
       env: childEnv(env),
-      stdio: ["ignore", stdoutFd, stderrFd],
+      stdio: ["pipe", stdoutFd, stderrFd],
       detached: true
     });
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(command.prompt);
     return { child, closeLogs };
   } catch (error62) {
     closeLogs();
@@ -45577,6 +45565,10 @@ function registerCancelAgentCall({ server: server2, calls: calls2 }) {
     async ({ call_id }) => guarded(() => calls2.cancel(call_id))
   );
 }
+function registerNoTools(server2) {
+  server2.server.registerCapabilities({ tools: {} });
+  server2.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+}
 function createServer(makeContext) {
   const server2 = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -45584,6 +45576,10 @@ function createServer(makeContext) {
   );
   const context = makeContext(server2);
   const calls2 = new CallManager(context);
+  if (context.env[CHILD_ENV_VAR]) {
+    registerNoTools(server2);
+    return { server: server2, calls: calls2 };
+  }
   const deps = { server: server2, context, calls: calls2, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
   registerNextStep(deps);
   registerCallAgent(deps);

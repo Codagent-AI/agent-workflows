@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { CallManager } from "./agentcall.js";
+import { CHILD_ENV_VAR } from "./child.js";
 import type { Context } from "./context.js";
 import { nextStep } from "./define.js";
 import type { ToolText } from "./finish.js";
@@ -118,6 +120,12 @@ function registerCancelAgentCall({ server, calls }: ToolDeps): void {
   );
 }
 
+/** Makes the server answer tools/list with no tools. Used in the crosscheck child, which must not reach the define tools. */
+function registerNoTools(server: McpServer): void {
+  server.server.registerCapabilities({ tools: {} });
+  server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+}
+
 /** Builds the MCP server. `context.clientName` should read the connected client's name. */
 export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CallManager } {
   const server = new McpServer(
@@ -126,6 +134,10 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
   );
   const context = makeContext(server);
   const calls = new CallManager(context);
+  if (context.env[CHILD_ENV_VAR]) {
+    registerNoTools(server);
+    return { server, calls };
+  }
   const deps: ToolDeps = { server, context, calls, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
   registerNextStep(deps);
   registerCallAgent(deps);
