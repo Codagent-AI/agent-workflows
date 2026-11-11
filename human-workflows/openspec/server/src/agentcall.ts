@@ -7,6 +7,7 @@ import { type ChildCommand, type CrosscheckChoice, detectLead } from "./child.js
 import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
 import type { ToolText } from "./finish.js";
+import { Gate } from "./gate.js";
 import { compareFingerprints, workingTreeFingerprint } from "./worktree.js";
 
 export const CROSSCHECK_AGENT = "crosscheck";
@@ -28,11 +29,18 @@ export class CallManager {
   private active: Call | undefined;
   /** True from the busy check until a new call is the active one. */
   private starting = false;
+  /** Held while next_step runs, so no crosscheck starts against a step that may be advancing or being committed. */
+  readonly stepGate = new Gate();
 
   constructor(private readonly context: Context) {}
 
   running(): Call | undefined {
     return this.active?.status === "running" ? this.active : undefined;
+  }
+
+  /** Whether a call_agent has passed its busy check and its child has not started yet. */
+  isStarting(): boolean {
+    return this.starting;
   }
 
   async start(agent: string, prompt: string, cwd: string = this.context.cwd, changeName?: string): Promise<ToolText> {
@@ -118,6 +126,9 @@ export class CallManager {
     }
     if (this.starting) {
       return errorText("call_in_progress", "Another call_agent is still starting. Try again in a moment.");
+    }
+    if (this.stepGate.held) {
+      return errorText("step_in_progress", "next_step is still running. Call call_agent again after it returns.");
     }
     const busy = this.running();
     if (busy) {

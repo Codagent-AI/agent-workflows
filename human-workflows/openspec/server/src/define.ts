@@ -78,13 +78,32 @@ function loadState(workflow: Workflow, root: string, name: string): { state: Def
   }
 }
 
-async function nextStepIn(context: Context, calls: CallManager, root: string, args: NextStepArgs): Promise<ToolText> {
+/** Why next_step cannot run now, if it cannot: a crosscheck is starting or running, or another next_step is. */
+function busyRefusal(calls: CallManager): ToolText | undefined {
+  if (calls.isStarting()) {
+    return refuse(
+      "a crosscheck call is still starting. Wait for call_agent to return, then collect the call with get_agent_call or stop it with cancel_agent_call before calling next_step.",
+    );
+  }
   const busy = calls.running();
   if (busy) {
     return refuse(
       `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`,
     );
   }
+  return calls.stepGate.held ? refuse("another next_step call is still running. Wait for it to return.") : undefined;
+}
+
+/** Runs one next_step with the step gate held, so no crosscheck starts until it returns. */
+function nextStepIn(context: Context, calls: CallManager, root: string, args: NextStepArgs): Promise<ToolText> {
+  const busy = busyRefusal(calls);
+  if (busy) {
+    return Promise.resolve(busy);
+  }
+  return calls.stepGate.hold(() => stepIn(context, root, args));
+}
+
+async function stepIn(context: Context, root: string, args: NextStepArgs): Promise<ToolText> {
   const name = resolveName(context.workflow, root, args);
   if (typeof name !== "string") {
     return name;

@@ -47,7 +47,7 @@ if (args[0] === "new" && args[1] === "change") {
     { id: "design", status: st(has("design.md")) },
     { id: "specs", status: st(specs) },
     { id: "tasks", status: "blocked" },
-  ] }));
+  ].filter((artifact) => artifact.id !== process.env.FAKE_OPENSPEC_STATUS_OMIT) }));
 } else if (args[0] === "validate") {
   if (process.env.FAKE_OPENSPEC_VALIDATE_FAIL) { console.error("Change has issues: no deltas"); process.exit(1); }
   console.log("Change is valid");

@@ -41,8 +41,13 @@ export function waitMsFromEnv(env: NodeJS.ProcessEnv): number {
   return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : DEFAULT_WAIT_SECONDS * 1000;
 }
 
+/**
+ * One folder per user: in a temp folder users share, such as Linux's /tmp, a single folder would
+ * belong to whoever made it first, and the private-folder check would fail for everyone else.
+ */
 export function defaultLogBase(): string {
-  return join(tmpdir(), "define-openspec-change");
+  const uid = process.getuid?.();
+  return join(tmpdir(), uid === undefined ? "define-openspec-change" : `define-openspec-change-${uid}`);
 }
 
 export class RepoError extends Error {}

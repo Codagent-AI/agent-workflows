@@ -16,27 +16,64 @@ function gitRunner(root: string, env: NodeJS.ProcessEnv): Git {
   return (...args) => run("git", args, { cwd: root, env: { ...env, GIT_TERMINAL_PROMPT: "0" } });
 }
 
-/** The staged entries (mode, object, path) under a folder, so a failed commit can put them back. */
-async function stagedEntries(git: Git, dir: string): Promise<string[]> {
+/**
+ * The staged entries (mode,object,path) under a folder, so a failed commit can put them back, and the
+ * paths with merge conflicts, whose stages restoring the index could not bring back.
+ */
+async function indexEntries(git: Git, dir: string): Promise<{ staged: string[]; unmerged: string[] }> {
   const listed = await git("ls-files", "-s", "-z", "--", dir);
-  return listed.stdout
-    .split("\0")
-    .filter(Boolean)
-    .flatMap((entry) => {
-      const match = entry.match(/^(\d+) ([0-9a-f]+) 0\t(.*)$/s);
-      return match ? [`${match[1]},${match[2]},${match[3]}`] : [];
-    });
+  const staged: string[] = [];
+  const unmerged = new Set<string>();
+  for (const entry of listed.stdout.split("\0").filter(Boolean)) {
+    const match = entry.match(/^(\d+) ([0-9a-f]+) (\d)\t(.*)$/s);
+    if (match?.[3] === "0") {
+      staged.push(`${match[1]},${match[2]},${match[4]}`);
+    } else if (match?.[4] !== undefined) {
+      unmerged.add(match[4]);
+    }
+  }
+  return { staged, unmerged: [...unmerged] };
 }
 
-/** Puts the index under `dir` back to `entries`, leaving the working tree alone. */
-async function restoreIndex(git: Git, dir: string, entries: string[]): Promise<void> {
+/** Puts the index under `dir` back to `entries`, leaving the working tree alone. Returns the paths it could not put back. */
+async function restoreIndex(git: Git, dir: string, entries: string[]): Promise<string[]> {
   const current = (await git("ls-files", "-z", "--", dir)).stdout.split("\0").filter(Boolean);
   if (current.length > 0) {
     await git("update-index", "--force-remove", "--", ...current);
   }
+  const unrestored: string[] = [];
   for (const entry of entries) {
-    await git("update-index", "--add", "--cacheinfo", entry);
+    if ((await git("update-index", "--add", "--cacheinfo", entry)).code !== 0) {
+      unrestored.push(entry.split(",").slice(2).join(","));
+    }
   }
+  return unrestored;
+}
+
+function conflictRefusal(dir: string, unmerged: string[]): ToolText {
+  return {
+    text: [
+      `Refused: ${dir}/ has unresolved merge conflicts (${unmerged.join(", ")}), so nothing was committed.`,
+      "",
+      "Tell the user to resolve them, then call next_step again.",
+    ].join("\n"),
+    isError: true,
+  };
+}
+
+function commitFailure(dir: string, commit: RunResult, unrestored: string[]): ToolText {
+  const lost =
+    unrestored.length > 0 ? ["", `The staged state could not be put back for: ${unrestored.join(", ")}. Stage these paths again before retrying.`] : [];
+  return {
+    text: [
+      `Validation passed, but committing ${dir}/ failed, so the define is not finished:`,
+      tail(output(commit)),
+      ...lost,
+      "",
+      "Tell the user what failed. After it is fixed, call next_step again to retry the commit.",
+    ].join("\n"),
+    isError: true,
+  };
 }
 
 export function commitMessage(changeName: string): string {
@@ -109,6 +146,10 @@ async function validationRefusal(context: Context, root: string, state: DefineSt
 async function commitChange(context: Context, root: string, state: DefineState, git: Git): Promise<{ failure: ToolText } | { sha: string }> {
   const name = state.change_name;
   const dir = state.change_dir;
+  const { staged, unmerged } = await indexEntries(git, dir);
+  if (unmerged.length > 0) {
+    return { failure: conflictRefusal(dir, unmerged) };
+  }
   const previous = readStateText(root, name);
   const at = context.now().toISOString();
   state.status = "complete";
@@ -118,7 +159,6 @@ async function commitChange(context: Context, root: string, state: DefineState, 
   state.steps[last] = { started_at: state.steps[last]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
 
-  const staged = await stagedEntries(git, dir);
   const add = await git("add", "--", dir);
   const commit = add.code === 0 ? await git("commit", "-m", commitMessage(name), "--", dir) : add;
   if (commit.code === 0) {
@@ -127,19 +167,9 @@ async function commitChange(context: Context, root: string, state: DefineState, 
   if (previous !== undefined) {
     writeStateText(root, name, previous);
   }
-  await restoreIndex(git, dir, staged);
-  logEvent(context, root, "finish_commit_failed", { change: name });
-  return {
-    failure: {
-      text: [
-        `Validation passed, but committing ${dir}/ failed, so the define is not finished:`,
-        tail(output(commit)),
-        "",
-        "Tell the user what failed. After it is fixed, call next_step again to retry the commit.",
-      ].join("\n"),
-      isError: true,
-    },
-  };
+  const unrestored = await restoreIndex(git, dir, staged);
+  logEvent(context, root, "finish_commit_failed", { change: name, unrestored });
+  return { failure: commitFailure(dir, commit, unrestored) };
 }
 
 /**

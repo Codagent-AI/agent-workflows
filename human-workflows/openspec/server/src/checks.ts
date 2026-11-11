@@ -129,6 +129,11 @@ export async function missingForSteps(root: string, changeName: string, steps: r
   if (typeof statuses === "string") {
     return [...missing, statuses];
   }
-  const notDone = present.filter((id) => statuses.has(id) && statuses.get(id) !== "done");
-  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (it reports "${statuses.get(id)}")`)];
+  // An artifact OpenSpec does not report on counts as not done.
+  const notDone = present.filter((id) => statuses.get(id) !== "done");
+  const reported = (id: string) => {
+    const status = statuses.get(id);
+    return status === undefined ? "it reports no status for it" : `it reports "${status}"`;
+  };
+  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (${reported(id)})`)];
 }

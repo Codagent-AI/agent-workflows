@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -174,6 +175,23 @@ test("a failed commit keeps what the user had staged", async () => {
   assert.equal(fixture.git("show", `:${DIR}/design.md`), "staged version");
   assert.equal(fixture.read(`${DIR}/design.md`), "later edit\n");
   assert.equal(fixture.git("diff", "--cached", "--name-only").trim(), `${DIR}/design.md`);
+});
+
+test("a merge conflict in the change folder is refused before the index changes", async () => {
+  const fixture = makeFixture();
+  const { next } = session(makeContext(fixture));
+  await driveToApproachReview(next, fixture);
+  const blob = fixture.git("hash-object", "-w", `${DIR}/design.md`);
+  const stages = [1, 2, 3].map((stage) => `100644 ${blob} ${stage}\t${DIR}/design.md\n`).join("");
+  execFileSync("git", ["update-index", "--index-info"], { cwd: fixture.repo, env: fixture.env, input: stages });
+  const before = fixture.read(`${DIR}/${STATE_FILE}`);
+
+  const result = await next({ change_name: CHANGE });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /^Refused: openspec\/changes\/add-reading-time\/ has unresolved merge conflicts \(openspec\/changes\/add-reading-time\/design\.md\)/);
+  assert.equal(fixture.git("ls-files", "-u", "--", `${DIR}/design.md`).split("\n").length, 3, "the conflict stages are kept");
+  assert.equal(fixture.read(`${DIR}/${STATE_FILE}`), before);
+  assert.equal(fixture.git("log", "-1", "--format=%s"), "initial");
 });
 
 test("the push runs with git terminal prompts off", async () => {

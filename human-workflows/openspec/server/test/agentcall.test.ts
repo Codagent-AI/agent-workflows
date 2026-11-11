@@ -241,6 +241,28 @@ test("next_step is refused while a call is running", async () => {
   assert.match(advanced.text, /^Continuing to step "specs"/);
 });
 
+test("next_step and call_agent never overlap", async () => {
+  const { calls, next, fixture } = await atProposal({ waitMs: 50, extraEnv: { FAKE_CHILD_SLEEP_MS: "300" } });
+  writeArtifacts(fixture, CHANGE, "proposal");
+  // A crosscheck that has passed its busy check but not started yet still holds next_step back.
+  const starting = calls.start("crosscheck", "Review.");
+  const refused = await next({ change_name: CHANGE });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /^Refused: a crosscheck call is still (starting|running)|^Refused: crosscheck call \S+ is still running/);
+  await settled(calls, parse(await starting).call_id);
+
+  // While next_step runs, a crosscheck cannot start and a second next_step is refused.
+  await calls.stepGate.hold(async () => {
+    const blocked = parse(await calls.start("crosscheck", "Review."));
+    assert.equal(blocked.error?.code, "step_in_progress");
+    const second = await next({ change_name: CHANGE });
+    assert.equal(second.text, "Refused: another next_step call is still running. Wait for it to return.");
+  });
+  assert.equal(calls.stepGate.held, false);
+  const advanced = await next({ change_name: CHANGE });
+  assert.match(advanced.text, /^Continuing to step "specs"/);
+});
+
 test("cancel stops a running child", async () => {
   const { calls } = await atProposal({ waitMs: 100, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000" } });
   const started = parse(await calls.start("crosscheck", "Review."));

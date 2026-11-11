@@ -36012,7 +36012,8 @@ function waitMsFromEnv(env) {
   return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1e3) : DEFAULT_WAIT_SECONDS * 1e3;
 }
 function defaultLogBase() {
-  return join(tmpdir(), "define-openspec-change");
+  const uid = process.getuid?.();
+  return join(tmpdir(), uid === void 0 ? "define-openspec-change" : `define-openspec-change-${uid}`);
 }
 var RepoError = class extends Error {
 };
@@ -44335,7 +44336,8 @@ function stateSchema(workflow2, changeName) {
     schema: external_exports.literal(1),
     workflow: external_exports.literal(workflow2.name),
     change_name: external_exports.literal(changeName),
-    change_dir: text,
+    // The finish step commits this folder, so a saved state cannot point it anywhere else.
+    change_dir: external_exports.literal(changeDirFor(changeName)),
     status: external_exports.enum(["in_progress", "complete"]),
     current_step: step.nullable(),
     steps: external_exports.record(step, times),
@@ -44763,6 +44765,26 @@ function resolveCrosscheck(lead, env) {
   return typeof choice === "string" ? `${choice} ${SETUP_HINT}` : choice;
 }
 
+// src/gate.ts
+var Gate = class {
+  holding = false;
+  get held() {
+    return this.holding;
+  }
+  /**
+   * Runs `work` with the gate held. Check `held` just before calling this, with no await in between,
+   * so no other call can pass the same check before the gate closes.
+   */
+  async hold(work) {
+    this.holding = true;
+    try {
+      return await work();
+    } finally {
+      this.holding = false;
+    }
+  }
+};
+
 // src/worktree.ts
 import { createHash as createHash2 } from "node:crypto";
 import { lstatSync, readFileSync as readFileSync5, readlinkSync } from "node:fs";
@@ -44819,8 +44841,14 @@ var CallManager = class {
   active;
   /** True from the busy check until a new call is the active one. */
   starting = false;
+  /** Held while next_step runs, so no crosscheck starts against a step that may be advancing or being committed. */
+  stepGate = new Gate();
   running() {
     return this.active?.status === "running" ? this.active : void 0;
+  }
+  /** Whether a call_agent has passed its busy check and its child has not started yet. */
+  isStarting() {
+    return this.starting;
   }
   async start(agent, prompt, cwd = this.context.cwd, changeName) {
     const refusal = this.startRefusal(agent, prompt);
@@ -44899,6 +44927,9 @@ var CallManager = class {
     }
     if (this.starting) {
       return errorText("call_in_progress", "Another call_agent is still starting. Try again in a moment.");
+    }
+    if (this.stepGate.held) {
+      return errorText("step_in_progress", "next_step is still running. Call call_agent again after it returns.");
     }
     const busy = this.running();
     if (busy) {
@@ -45143,29 +45174,67 @@ async function missingForSteps(root, changeName, steps, env) {
   if (typeof statuses === "string") {
     return [...missing, statuses];
   }
-  const notDone = present.filter((id) => statuses.has(id) && statuses.get(id) !== "done");
-  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (it reports "${statuses.get(id)}")`)];
+  const notDone = present.filter((id) => statuses.get(id) !== "done");
+  const reported = (id) => {
+    const status = statuses.get(id);
+    return status === void 0 ? "it reports no status for it" : `it reports "${status}"`;
+  };
+  return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (${reported(id)})`)];
 }
 
 // src/finish.ts
 function gitRunner(root, env) {
   return (...args) => run("git", args, { cwd: root, env: { ...env, GIT_TERMINAL_PROMPT: "0" } });
 }
-async function stagedEntries(git, dir) {
+async function indexEntries(git, dir) {
   const listed = await git("ls-files", "-s", "-z", "--", dir);
-  return listed.stdout.split("\0").filter(Boolean).flatMap((entry) => {
-    const match = entry.match(/^(\d+) ([0-9a-f]+) 0\t(.*)$/s);
-    return match ? [`${match[1]},${match[2]},${match[3]}`] : [];
-  });
+  const staged = [];
+  const unmerged = /* @__PURE__ */ new Set();
+  for (const entry of listed.stdout.split("\0").filter(Boolean)) {
+    const match = entry.match(/^(\d+) ([0-9a-f]+) (\d)\t(.*)$/s);
+    if (match?.[3] === "0") {
+      staged.push(`${match[1]},${match[2]},${match[4]}`);
+    } else if (match?.[4] !== void 0) {
+      unmerged.add(match[4]);
+    }
+  }
+  return { staged, unmerged: [...unmerged] };
 }
 async function restoreIndex(git, dir, entries) {
   const current = (await git("ls-files", "-z", "--", dir)).stdout.split("\0").filter(Boolean);
   if (current.length > 0) {
     await git("update-index", "--force-remove", "--", ...current);
   }
+  const unrestored = [];
   for (const entry of entries) {
-    await git("update-index", "--add", "--cacheinfo", entry);
+    if ((await git("update-index", "--add", "--cacheinfo", entry)).code !== 0) {
+      unrestored.push(entry.split(",").slice(2).join(","));
+    }
   }
+  return unrestored;
+}
+function conflictRefusal(dir, unmerged) {
+  return {
+    text: [
+      `Refused: ${dir}/ has unresolved merge conflicts (${unmerged.join(", ")}), so nothing was committed.`,
+      "",
+      "Tell the user to resolve them, then call next_step again."
+    ].join("\n"),
+    isError: true
+  };
+}
+function commitFailure(dir, commit, unrestored) {
+  const lost = unrestored.length > 0 ? ["", `The staged state could not be put back for: ${unrestored.join(", ")}. Stage these paths again before retrying.`] : [];
+  return {
+    text: [
+      `Validation passed, but committing ${dir}/ failed, so the define is not finished:`,
+      tail(output2(commit)),
+      ...lost,
+      "",
+      "Tell the user what failed. After it is fixed, call next_step again to retry the commit."
+    ].join("\n"),
+    isError: true
+  };
 }
 function commitMessage(changeName) {
   return `chore: add change documents for ${changeName}`;
@@ -45227,6 +45296,10 @@ async function validationRefusal(context, root, state) {
 async function commitChange(context, root, state, git) {
   const name = state.change_name;
   const dir = state.change_dir;
+  const { staged, unmerged } = await indexEntries(git, dir);
+  if (unmerged.length > 0) {
+    return { failure: conflictRefusal(dir, unmerged) };
+  }
   const previous = readStateText(root, name);
   const at = context.now().toISOString();
   state.status = "complete";
@@ -45235,7 +45308,6 @@ async function commitChange(context, root, state, git) {
   const last = lastStepId(context.workflow);
   state.steps[last] = { started_at: state.steps[last]?.started_at ?? at, completed_at: at };
   writeState(root, state, at);
-  const staged = await stagedEntries(git, dir);
   const add = await git("add", "--", dir);
   const commit = add.code === 0 ? await git("commit", "-m", commitMessage(name), "--", dir) : add;
   if (commit.code === 0) {
@@ -45244,19 +45316,9 @@ async function commitChange(context, root, state, git) {
   if (previous !== void 0) {
     writeStateText(root, name, previous);
   }
-  await restoreIndex(git, dir, staged);
-  logEvent(context, root, "finish_commit_failed", { change: name });
-  return {
-    failure: {
-      text: [
-        `Validation passed, but committing ${dir}/ failed, so the define is not finished:`,
-        tail(output2(commit)),
-        "",
-        "Tell the user what failed. After it is fixed, call next_step again to retry the commit."
-      ].join("\n"),
-      isError: true
-    }
-  };
+  const unrestored = await restoreIndex(git, dir, staged);
+  logEvent(context, root, "finish_commit_failed", { change: name, unrestored });
+  return { failure: commitFailure(dir, commit, unrestored) };
 }
 async function leftoverLines(git) {
   const status = await git("status", "--porcelain=v1", "--untracked-files=all");
@@ -45381,13 +45443,28 @@ function loadState(workflow2, root, name) {
     throw error62;
   }
 }
-async function nextStepIn(context, calls2, root, args) {
+function busyRefusal(calls2) {
+  if (calls2.isStarting()) {
+    return refuse(
+      "a crosscheck call is still starting. Wait for call_agent to return, then collect the call with get_agent_call or stop it with cancel_agent_call before calling next_step."
+    );
+  }
   const busy = calls2.running();
   if (busy) {
     return refuse(
       `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`
     );
   }
+  return calls2.stepGate.held ? refuse("another next_step call is still running. Wait for it to return.") : void 0;
+}
+function nextStepIn(context, calls2, root, args) {
+  const busy = busyRefusal(calls2);
+  if (busy) {
+    return Promise.resolve(busy);
+  }
+  return calls2.stepGate.hold(() => stepIn(context, root, args));
+}
+async function stepIn(context, root, args) {
   const name = resolveName(context.workflow, root, args);
   if (typeof name !== "string") {
     return name;

@@ -132,6 +132,18 @@ test("an early next_step is refused and names what is missing", async () => {
   assert.equal(JSON.parse(fixture.read(STATE)).current_step, "specs");
 });
 
+test("an artifact OpenSpec reports no status for is not done", async () => {
+  const fixture = makeFixture();
+  const { next } = session(makeContext(fixture, { extraEnv: { FAKE_OPENSPEC_STATUS_OMIT: "proposal" } }));
+  await next({ change_name: CHANGE, start: true });
+  writeArtifacts(fixture, CHANGE, "proposal");
+
+  const result = await next({ change_name: CHANGE });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /Missing: OpenSpec to report the proposal artifact as done \(it reports no status for it\)/);
+  assert.equal(JSON.parse(fixture.read(STATE)).current_step, "proposal");
+});
+
 test("steps advance in workflow.yaml order and each prompt arrives once", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
@@ -318,6 +330,8 @@ test("a state file is checked whole: its workflow name, starts, and calls", asyn
     [(copy) => (copy.calls = [{ call_id: 1 }]), /calls\[0\]\.call_id/],
     [(copy) => (copy.starts = "none"), /starts:/],
     [(copy) => (copy.current_step = "tasks"), /current_step: must be one of proposal, specs/],
+    // The finish step commits change_dir, so it must be the change's own folder.
+    [(copy) => (copy.change_dir = "."), /change_dir:/],
   ];
   for (const [damage, pattern] of broken) {
     const copy = structuredClone(state);

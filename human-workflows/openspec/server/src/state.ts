@@ -95,7 +95,8 @@ function stateSchema(workflow: Workflow, changeName: string): z.ZodType<DefineSt
       schema: z.literal(1),
       workflow: z.literal(workflow.name),
       change_name: z.literal(changeName),
-      change_dir: text,
+      // The finish step commits this folder, so a saved state cannot point it anywhere else.
+      change_dir: z.literal(changeDirFor(changeName)),
       status: z.enum(["in_progress", "complete"]),
       current_step: step.nullable(),
       steps: z.record(step, times),

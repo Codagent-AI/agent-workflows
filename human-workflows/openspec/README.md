@@ -53,7 +53,7 @@ Write the key without quotes. Codex 0.166 ignores the quoted TOML form `plugins.
 | Claude Code | `/define-openspec-change:define <change-name> [what you want]` |
 | Codex | `$define <change-name> [what you want]` |
 
-Only you start a define. The `define` skill sets `disable-model-invocation: true`, so Claude Code does not load it on its own and runs it only when you type the command. Codex 0.166 accepts the key but lists the skill as usual, so it does not stop the agent from using the skill there.
+On Claude Code, only you start a define. The `define` skill sets `disable-model-invocation: true`, so Claude Code does not load it on its own and runs it only when you type the command. Codex 0.166 accepts the key but lists the skill as usual, so on Codex the agent can also start a define when you ask it in your own words to define a change, as the skill's description says. Either way the define then creates the change folder, and its last step commits and can push and open a pull request.
 
 The change name uses lowercase letters, digits, and hyphens, for example `add-dark-mode`.
 
@@ -142,7 +142,7 @@ One environment variable remains, for testing: `DEFINE_OPENSPEC_CHANGE_WAIT_SECO
 
 Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards that variable through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, the Bedrock and Vertex settings that go with them (`AWS_PROFILE`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION`, and `GOOGLE_APPLICATION_CREDENTIALS`), `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`. Claude Code passes its whole environment to the server.
 
-Logs go to `$TMPDIR/define-openspec-change/`. The folders are readable only by you (mode 700), and so are the files in them:
+Logs go to `$TMPDIR/define-openspec-change-<uid>/`, one folder per user. The folders are readable only by you (mode 700), and so are the files in them:
 
 - `server-starts.log` gets one line each time the server starts.
 - `<repo-hash>/events.jsonl` records each tool call.
