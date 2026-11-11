@@ -252,9 +252,9 @@ test("the session directory is read from Codex tool-call metadata", async () => 
   assert.equal(sessionCwdFromMeta(undefined), undefined);
   assert.equal(sessionCwdFromMeta({ progressToken: 1 }), undefined);
   assert.equal(sessionCwdFromMeta({ "codex/sandbox-state-meta": { sandboxCwd: "file:///tmp/some%20repo" } }), "/tmp/some repo");
-  assert.equal(sessionCwdFromMeta({ "codex/sandbox-state": { sandboxCwd: "/tmp/plain" } }), "/tmp/plain");
-  assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/tmp/ws": { has_changes: false } } } }), "/tmp/ws");
-  assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/a": {}, "/b": {} } } }), undefined);
+  assert.equal(sessionCwdFromMeta({ "codex/sandbox-state-meta": { sandboxCwd: "/tmp/plain" } }), "/tmp/plain");
+  assert.equal(sessionCwdFromMeta({ "codex/sandbox-state-meta": { sandboxCwd: "" } }), undefined);
+  assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/tmp/ws": { has_changes: false } } } }), undefined);
 });
 
 test("the shipped workflow.yaml has the five steps the artifact checks are keyed by", () => {

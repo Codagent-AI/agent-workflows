@@ -8,7 +8,10 @@ import type { Workflow } from "./steps.js";
 
 /** Everything the server needs from its surroundings, so tests can supply their own. */
 export interface Context {
-  /** The session's working directory. Both CLIs start the server there. */
+  /**
+   * The session's working directory when a call does not carry its own: CLAUDE_PROJECT_DIR on Claude Code.
+   * Codex starts the server in the plugin folder, so there each call's `_meta` gives the directory instead.
+   */
   cwd: string;
   env: NodeJS.ProcessEnv;
   /** The installed plugin folder, which holds workflow.yaml and skills/. */
@@ -17,6 +20,8 @@ export interface Context {
   workflow: Workflow;
   /** How long call_agent and get_agent_call wait before returning a running snapshot. */
   waitMs: number;
+  /** The longest a crosscheck call may run before it is stopped. Defaults to MAX_CALL_MS. */
+  maxCallMs?: number;
   /** Where logs and child output go. Never inside the working tree. */
   logBase: string;
   /** The MCP client's name from initialize, once known. */
@@ -24,7 +29,11 @@ export interface Context {
   now: () => Date;
 }
 
-export const DEFAULT_WAIT_SECONDS = 100;
+/**
+ * Kept under the 60 seconds that Codex allows an MCP tool call by default, so a wait never needs the
+ * user to raise a timeout setting. Claude Code's default is longer.
+ */
+export const DEFAULT_WAIT_SECONDS = 50;
 
 export function waitMsFromEnv(env: NodeJS.ProcessEnv): number {
   const raw = env.DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS;

@@ -100,7 +100,7 @@ The server checks the file when it starts. It refuses to start, and says what is
 
 ## The crosscheck
 
-`call_agent` takes `agent: "crosscheck"` and a standalone prompt. When more than one define is in progress it also needs `change_name`, so the call is recorded against the right change. It starts one child agent, waits up to 100 seconds, and returns the child's result or `status: "running"` with a `call_id`. The lead then calls `get_agent_call` until the call ends. Only one call runs at a time, and a call can last at most 60 minutes. `cancel_agent_call` stops it.
+`call_agent` takes `agent: "crosscheck"` and a standalone prompt. When more than one define is in progress it also needs `change_name`, so the call is recorded against the right change. It starts one child agent, waits up to 50 seconds, and returns the child's result or `status: "running"` with a `call_id`. The lead then calls `get_agent_call` until the call ends. Only one call runs at a time, and a call that runs for 60 minutes is stopped and ends as `failed` with the code `timeout`. `cancel_agent_call` stops it.
 
 The child's CLI, model, and effort come from `~/.agent-workflows/config.yaml` (see [Configuration](#configuration)). It has no access to the lead's conversation and runs read-only:
 
@@ -136,7 +136,7 @@ factory-workflows: {}
 - For each call, the server uses the entry for the CLI that is not leading, if that CLI is listed and on `PATH`. Otherwise it uses the lead's own entry, so the crosscheck runs on the same CLI as the lead. If the lead can't be told apart, it uses the first listed CLI that is on `PATH`.
 - If the file is missing or invalid, or no listed CLI is on `PATH`, `next_step` refuses to start and `call_agent` refuses to run. Either way, the agent then uses the `setup` skill (`/define-openspec-change:setup`, or `$setup` in Codex). That skill finds the CLIs you have, recommends an entry for each, and writes the file once you confirm. You can also run it at any time to change the config.
 
-One environment variable remains, for testing: `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS` (default `100`) sets how long `call_agent` and `get_agent_call` wait before they return `running`.
+One environment variable remains, for testing: `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS` (default `50`, under the 60 seconds Codex allows an MCP tool call by default) sets how long `call_agent` and `get_agent_call` wait before they return `running`.
 
 Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards that variable through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, the Bedrock and Vertex settings that go with them (`AWS_PROFILE`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION`, and `GOOGLE_APPLICATION_CREDENTIALS`), `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`. Claude Code passes its whole environment to the server.
 
@@ -148,7 +148,9 @@ Logs go to `$TMPDIR/define-openspec-change/`. The folders are readable only by y
 
 ## How Codex runs the server
 
-Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` or any other plugin-root variable in a plugin's `.mcp.json`. So the Codex manifest names its own server file, `.codex-mcp.json`, which starts `node ./server.mjs` with `cwd: "."`. That makes Codex start the server in the plugin folder. The server then reads the session's directory from each tool call's `_meta`, which Codex sends as `codex/sandbox-state-meta` and `x-codex-turn-metadata`. Claude Code reads `.mcp.json` and starts the server in the session directory.
+Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` in a plugin's `.mcp.json`. So the Codex manifest names its own server file, `.codex-mcp.json`, which starts `node ./server.mjs` with `cwd: "."`. That makes Codex start the server in the plugin folder. The server then reads the session's directory from the `codex/sandbox-state-meta` field of each tool call's `_meta`, which Codex sends to a server that declares that capability. Claude Code reads `.mcp.json`, and the server takes the session's directory from `CLAUDE_PROJECT_DIR`, which Claude Code sets for the servers it starts.
+
+Codex 0.166 also has a portable plugin format: a root `plugin.json` and `mcp.json` that carry the `$schema` marker, where `${PLUGIN_ROOT}` expands. This plugin does not use it, because the server must receive some of the user's environment (`GH_TOKEN`, the child CLIs' credentials, and the rest listed under [Configuration](#configuration)). The portable `mcp.json` has no `env_vars`, and its `env` values are passed on as literal text: `"GH_TOKEN": "${GH_TOKEN}"` reaches the server as the string `${GH_TOKEN}`, and unset variables the same way. `.codex-mcp.json` with `env_vars` is the only form that forwards them.
 
 ## How it behaves
 

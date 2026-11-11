@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { STATE_FILE } from "../src/state.js";
 import { spawnLogged } from "../src/callchild.js";
 import { readConfig } from "../src/config.js";
+import { waitMsFromEnv } from "../src/context.js";
 import { workingTreeFingerprint } from "../src/worktree.js";
 import { CHANGE, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
 
@@ -256,6 +257,23 @@ test("cancel stops a running child", async () => {
   assert.equal(canceled.status, "canceled");
   assert.equal(canceled.error?.code, "call_canceled");
   assert.equal(calls.running(), undefined, "the slot is free after the cancel settles");
+});
+
+test("a call that runs past the time limit is stopped and reported as a timeout", async () => {
+  const { calls } = await atProposal({ waitMs: 100, maxCallMs: 300, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000" } });
+  const started = parse(await calls.start("crosscheck", "Review."));
+  assert.equal(started.status, "running");
+  const ended = await settled(calls, started.call_id);
+  assert.equal(ended.status, "failed");
+  assert.equal(ended.error?.code, "timeout");
+  assert.match(ended.error?.message ?? "", /ran past its limit/);
+  assert.equal(calls.running(), undefined, "the slot is free after the timeout settles");
+});
+
+test("the default wait stays under the 60 seconds Codex allows an MCP tool call", () => {
+  assert.equal(waitMsFromEnv({}), 50_000);
+  assert.equal(waitMsFromEnv({ DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "5" }), 5_000);
+  assert.equal(waitMsFromEnv({ DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "nope" }), 50_000);
 });
 
 test("a failing child is reported as failed with its error", async () => {

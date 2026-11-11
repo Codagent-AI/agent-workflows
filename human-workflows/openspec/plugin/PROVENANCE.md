@@ -36,7 +36,7 @@ commit that touched the skill.
   it is configured and installed), is read-only, and has none of this plugin's skills or tools, so
   the prompt must name the skill by its absolute `SKILL.md` path. A `crosscheck_not_configured`
   refusal sends the lead to the setup skill.
-- Collection: `call_agent` and each `get_agent_call` wait about 100 seconds on the server, so the lead
+- Collection: `call_agent` and each `get_agent_call` wait about 50 seconds on the server, so the lead
   polls straight away instead of the 5 to 60 second backoff. The 60-minute bound, the cancel then
   poll rule, and the transport-error rules are kept.
 - Adds that the lead must not call `next_step` or end its turn while a call is running.

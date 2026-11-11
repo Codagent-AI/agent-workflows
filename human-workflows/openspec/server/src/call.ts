@@ -27,6 +27,11 @@ export interface Call {
   cancelRequested: boolean;
   /** Fires the SIGKILL that follows a cancel. */
   killTimer?: NodeJS.Timeout;
+  /** Stops the child once the call has run for `limitMs`. */
+  limitTimer?: NodeJS.Timeout;
+  limitMs: number;
+  /** True when the call was stopped for running past its time limit. */
+  timedOut: boolean;
   fingerprintBefore?: string;
   workingTree?: WorkingTreeChange;
   response?: string;

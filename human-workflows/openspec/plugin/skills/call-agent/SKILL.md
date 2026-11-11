@@ -37,10 +37,10 @@ another target, broaden authority, or exceed the caller's budget. Do not silentl
 
 ## Collect the result
 
-`call_agent` waits up to about 100 seconds. If the child finishes in that time, it returns the
+`call_agent` waits up to about 50 seconds. If the child finishes in that time, it returns the
 terminal result. Otherwise it returns `status: "running"` with a `call_id`, which is not the child's
 final response. Call `get_agent_call` with that `call_id` straight away. Each `get_agent_call` also
-waits up to about 100 seconds, so do not pause or sleep between calls. Repeat until the status is
+waits up to about 50 seconds, so do not pause or sleep between calls. Repeat until the status is
 terminal: `succeeded`, `failed`, or `canceled`. A review can legitimately take ten minutes or more.
 
 While the status is `running`, do not report child findings, claim the work completed, start another

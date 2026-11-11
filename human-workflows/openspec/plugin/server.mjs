@@ -36005,7 +36005,7 @@ function tail(text, max = 2e3) {
 }
 
 // src/context.ts
-var DEFAULT_WAIT_SECONDS = 100;
+var DEFAULT_WAIT_SECONDS = 50;
 function waitMsFromEnv(env) {
   const raw = env.DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS;
   const seconds = raw === void 0 || raw.trim() === "" ? NaN : Number(raw);
@@ -44491,7 +44491,9 @@ function claudeOutcome(call, exit) {
   fail(call, "execution_failed", `claude ended with ${describeExit(exit)}. ${[reported, stderr].filter(Boolean).join("\n")}`.trim());
 }
 function applyOutcome(call, exit) {
-  if (call.cancelRequested) {
+  if (call.timedOut) {
+    fail(call, "timeout", `The call ran past its limit of ${formatElapsed(call.limitMs)} and was stopped (${describeExit(exit)}).`);
+  } else if (call.cancelRequested) {
     call.status = "canceled";
     call.error = { code: "call_canceled", message: `The call was canceled (${describeExit(exit)}).` };
   } else if (exit.launchError) {
@@ -44803,6 +44805,7 @@ function compareFingerprints(before, after) {
 // src/agentcall.ts
 var CROSSCHECK_AGENT = "crosscheck";
 var KILL_GRACE_MS = 1e4;
+var MAX_CALL_MS = 60 * 60 * 1e3;
 var SHUTDOWN_GRACE_MS = 3e3;
 var CallManager = class {
   constructor(context) {
@@ -44942,6 +44945,8 @@ var CallManager = class {
       }),
       markDone: () => markDone(),
       cancelRequested: false,
+      limitMs: this.context.maxCallMs ?? MAX_CALL_MS,
+      timedOut: false,
       ...choice.model === void 0 ? {} : { model: choice.model }
     };
     call.fingerprintBefore = await workingTreeFingerprint(root, this.context.env);
@@ -44969,6 +44974,11 @@ var CallManager = class {
       child_pid: logged.child.pid
     });
     this.watch(call, logged, command);
+    call.limitTimer = setTimeout(() => {
+      call.timedOut = true;
+      this.terminate(call);
+    }, call.limitMs);
+    call.limitTimer.unref();
     return this.wait(call);
   }
   /** Settles the call once, when its child closes or fails to start. */
@@ -44982,6 +44992,7 @@ var CallManager = class {
       finished = true;
       closeLogs();
       clearTimeout(call.killTimer);
+      clearTimeout(call.limitTimer);
       if (call.cancelRequested) {
         this.signal(call, "SIGKILL");
       }
@@ -45478,41 +45489,22 @@ function advance(context, root, state, move) {
 
 // src/session.ts
 import { fileURLToPath } from "node:url";
+var CODEX_SANDBOX_META_CAPABILITY = "codex/sandbox-state-meta";
 function sessionCwdFromMeta(meta3) {
   if (!meta3 || typeof meta3 !== "object") {
     return void 0;
   }
-  const fields = meta3;
-  return sandboxCwd(fields) ?? turnWorkspaceCwd(fields);
-}
-function sandboxCwd(fields) {
-  for (const key of ["codex/sandbox-state-meta", "codex/sandbox-state"]) {
-    const cwd = fields[key]?.sandboxCwd;
-    if (typeof cwd === "string" && cwd !== "") {
-      const path = toPath(cwd);
-      if (path !== void 0) {
-        return path;
-      }
-    }
+  const state = meta3[CODEX_SANDBOX_META_CAPABILITY];
+  const cwd = state?.sandboxCwd;
+  if (typeof cwd !== "string" || cwd === "") {
+    return void 0;
   }
-  return void 0;
-}
-function toPath(cwd) {
   try {
     return cwd.startsWith("file:") ? fileURLToPath(cwd) : cwd;
   } catch {
     return void 0;
   }
 }
-function turnWorkspaceCwd(fields) {
-  const workspaces = fields["x-codex-turn-metadata"]?.workspaces;
-  if (!workspaces || typeof workspaces !== "object") {
-    return void 0;
-  }
-  const keys = Object.keys(workspaces);
-  return keys.length === 1 ? keys[0] : void 0;
-}
-var CODEX_SANDBOX_META_CAPABILITY = "codex/sandbox-state-meta";
 
 // src/server.ts
 var SERVER_NAME = "define";
@@ -45530,6 +45522,9 @@ async function guarded(work) {
     return toResult({ text: `define-openspec-change internal error: ${error62.stack ?? String(error62)}`, isError: true });
   }
 }
+function waitText(context) {
+  return `about ${Math.round(context.waitMs / 1e3)} seconds`;
+}
 function registerNextStep({ server: server2, context, calls: calls2, cwdFor }) {
   server2.registerTool(
     "next_step",
@@ -45544,12 +45539,12 @@ function registerNextStep({ server: server2, context, calls: calls2, cwdFor }) {
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls2, args))
   );
 }
-function registerCallAgent({ server: server2, calls: calls2, cwdFor }) {
+function registerCallAgent({ server: server2, context, calls: calls2, cwdFor }) {
   server2.registerTool(
     "call_agent",
     {
       title: "Start a crosscheck",
-      description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to about 100 seconds: returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.`,
+      description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to ` + waitText(context) + ": returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.",
       inputSchema: {
         agent: external_exports.string().describe('Must be "crosscheck".'),
         prompt: external_exports.string().describe("The complete, standalone task for the child."),
@@ -45559,12 +45554,12 @@ function registerCallAgent({ server: server2, calls: calls2, cwdFor }) {
     async ({ agent, prompt, change_name }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra), change_name))
   );
 }
-function registerGetAgentCall({ server: server2, calls: calls2 }) {
+function registerGetAgentCall({ server: server2, context, calls: calls2 }) {
   server2.registerTool(
     "get_agent_call",
     {
       title: "Wait for a crosscheck",
-      description: "Waits up to about 100 seconds for a call started by call_agent and returns its result, or status running if it is still going. Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
+      description: "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
       inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") },
       annotations: { readOnlyHint: true }
     },
@@ -45622,7 +45617,7 @@ try {
 } catch {
 }
 var { server, calls } = createServer((mcp) => ({
-  cwd: process.cwd(),
+  cwd: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
   env: process.env,
   pluginRoot,
   workflow,

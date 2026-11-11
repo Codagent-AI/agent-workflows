@@ -25,6 +25,11 @@ async function guarded(work: () => Promise<ToolText>) {
   }
 }
 
+/** How long a wait lasts, in words, for the tool descriptions. */
+function waitText(context: Context): string {
+  return `about ${Math.round(context.waitMs / 1000)} seconds`;
+}
+
 interface ToolDeps {
   server: McpServer;
   context: Context;
@@ -60,14 +65,14 @@ function registerNextStep({ server, context, calls, cwdFor }: ToolDeps): void {
 }
 
 /** Registers call_agent. */
-function registerCallAgent({ server, calls, cwdFor }: ToolDeps): void {
+function registerCallAgent({ server, context, calls, cwdFor }: ToolDeps): void {
   server.registerTool(
     "call_agent",
     {
       title: "Start a crosscheck",
       description:
         'Starts one crosscheck review on the other vendor\'s CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". ' +
-        "The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to about 100 seconds: " +
+        "The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to " + waitText(context) + ": " +
         "returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status " +
         "is never the child's answer. One call at a time. Only available during the proposal and approach-review steps.",
       inputSchema: {
@@ -84,13 +89,13 @@ function registerCallAgent({ server, calls, cwdFor }: ToolDeps): void {
 }
 
 /** Registers get_agent_call. */
-function registerGetAgentCall({ server, calls }: ToolDeps): void {
+function registerGetAgentCall({ server, context, calls }: ToolDeps): void {
   server.registerTool(
     "get_agent_call",
     {
       title: "Wait for a crosscheck",
       description:
-        "Waits up to about 100 seconds for a call started by call_agent and returns its result, or status running if it is still going. " +
+        "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. " +
         "Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
       inputSchema: { call_id: z.string().describe("The call_id that call_agent returned.") },
       annotations: { readOnlyHint: true },

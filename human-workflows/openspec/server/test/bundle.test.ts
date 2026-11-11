@@ -14,12 +14,12 @@ function text(result: unknown): string {
   return (result as TextResult).content.map((part) => part.text ?? "").join("");
 }
 
-async function connect(fixture: ReturnType<typeof makeFixture>, clientName: string, cwd = fixture.repo) {
+async function connect(fixture: ReturnType<typeof makeFixture>, clientName: string, cwd = fixture.repo, extraEnv: Record<string, string> = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [join(PLUGIN_ROOT, "server.mjs")],
     cwd,
-    env: { ...(fixture.env as Record<string, string>), DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "5" },
+    env: { ...(fixture.env as Record<string, string>), DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "5", ...extraEnv },
     stderr: "pipe",
   });
   const client = new Client({ name: clientName, version: "0.0.0" });
@@ -73,7 +73,6 @@ test("started in the plugin folder as Codex does, it works in the session direct
   const fixture = makeFixture();
   const client = await connect(fixture, "codex-mcp-client", PLUGIN_ROOT);
   const _meta = {
-    "x-codex-turn-metadata": { workspaces: { [fixture.repo]: { has_changes: false } } },
     "codex/sandbox-state-meta": { sandboxCwd: pathToFileURL(fixture.repo).href },
   };
   try {
@@ -81,14 +80,25 @@ test("started in the plugin folder as Codex does, it works in the session direct
     assert.equal((started as TextResult).isError, undefined, text(started));
     assert.equal(JSON.parse(fixture.read(`openspec/changes/${CHANGE}/.define-openspec-change.json`)).current_step, "proposal");
 
-    const turnOnly = { "x-codex-turn-metadata": _meta["x-codex-turn-metadata"] };
-    const early = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE }, _meta: turnOnly });
+    const early = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE }, _meta });
     assert.match(text(early), /^Refused: step "proposal"/);
 
     const review = JSON.parse(text(await client.callTool({ name: "call_agent", arguments: { agent: "crosscheck", prompt: "Review." }, _meta })));
     assert.equal(review.status, "succeeded");
     const child = fakeCall(fixture, "claude");
     assert.equal(child.cwd, fixture.repo);
+  } finally {
+    await client.close();
+  }
+});
+
+test("on Claude Code the session directory is CLAUDE_PROJECT_DIR, not where the server started", async () => {
+  const fixture = makeFixture();
+  const client = await connect(fixture, "claude-code", fixture.dir, { CLAUDE_PROJECT_DIR: fixture.repo });
+  try {
+    const started = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE, start: true } });
+    assert.equal((started as TextResult).isError, undefined, text(started));
+    assert.equal(JSON.parse(fixture.read(`openspec/changes/${CHANGE}/.define-openspec-change.json`)).current_step, "proposal");
   } finally {
     await client.close();
   }

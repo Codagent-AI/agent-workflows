@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Call } from "./call.js";
+import { type Call, formatElapsed } from "./call.js";
 import { tail } from "./proc.js";
 
 const MAX_RESPONSE_CHARS = 200_000;
@@ -112,7 +112,9 @@ function claudeOutcome(call: Call, exit: Exit): void {
 
 /** Sets the call's status, response, cost, and error from how its child ended and what it wrote. */
 export function applyOutcome(call: Call, exit: Exit): void {
-  if (call.cancelRequested) {
+  if (call.timedOut) {
+    fail(call, "timeout", `The call ran past its limit of ${formatElapsed(call.limitMs)} and was stopped (${describeExit(exit)}).`);
+  } else if (call.cancelRequested) {
     call.status = "canceled";
     call.error = { code: "call_canceled", message: `The call was canceled (${describeExit(exit)}).` };
   } else if (exit.launchError) {

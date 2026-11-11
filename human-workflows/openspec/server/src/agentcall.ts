@@ -11,6 +11,8 @@ import { compareFingerprints, workingTreeFingerprint } from "./worktree.js";
 
 export const CROSSCHECK_AGENT = "crosscheck";
 const KILL_GRACE_MS = 10_000;
+/** The longest a crosscheck call may run: 60 minutes. */
+export const MAX_CALL_MS = 60 * 60 * 1000;
 const SHUTDOWN_GRACE_MS = 3_000;
 
 /** Everything a start needs once its checks pass. */
@@ -166,6 +168,8 @@ export class CallManager {
       }),
       markDone: () => markDone(),
       cancelRequested: false,
+      limitMs: this.context.maxCallMs ?? MAX_CALL_MS,
+      timedOut: false,
       ...(choice.model === undefined ? {} : { model: choice.model }),
     };
     call.fingerprintBefore = await workingTreeFingerprint(root, this.context.env);
@@ -194,6 +198,11 @@ export class CallManager {
       child_pid: logged.child.pid,
     });
     this.watch(call, logged, command);
+    call.limitTimer = setTimeout(() => {
+      call.timedOut = true;
+      this.terminate(call);
+    }, call.limitMs);
+    call.limitTimer.unref();
     return this.wait(call);
   }
 
@@ -210,6 +219,7 @@ export class CallManager {
       // The leader is gone. Clear the timer so a reused group id is never signaled, and sweep any
       // group members a cancel left behind.
       clearTimeout(call.killTimer);
+      clearTimeout(call.limitTimer);
       if (call.cancelRequested) {
         this.signal(call, "SIGKILL");
       }

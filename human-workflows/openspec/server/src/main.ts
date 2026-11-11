@@ -35,7 +35,7 @@ try {
 }
 
 const { server, calls } = createServer((mcp) => ({
-  cwd: process.cwd(),
+  cwd: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
   env: process.env,
   pluginRoot,
   workflow,
