@@ -166,7 +166,10 @@ The Claude Code entry point is the `define` skill. A `commands/define.md` with t
 cd human-workflows/openspec/server
 npm install
 npm run build   # writes ../plugin/server.mjs
+npm run lint    # Biome and jscpd
 npm run check   # typecheck, bundle-matches-build check, tests
 ```
 
 Commit `plugin/server.mjs` with any change to `server/src`.
+
+Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more. Fix the code rather than raising a limit or adding an ignore comment.

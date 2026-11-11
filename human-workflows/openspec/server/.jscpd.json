@@ -1,0 +1,9 @@
+{
+  "path": ["src", "test", "scripts"],
+  "format": ["typescript", "javascript"],
+  "minTokens": 50,
+  "exitCode": 1,
+  "reporters": ["console"],
+  "gitignore": true,
+  "noSymlinks": true
+}

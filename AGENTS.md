@@ -11,7 +11,7 @@
 
 - `plugin/` is the installable plugin root. Codex, and Claude Code for a Git marketplace, copy only that folder into the plugin cache, so nothing outside it is reachable at run time. Keep `node_modules` and sources out of it.
 - `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.
-- After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass.
+- After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run lint` (Biome and jscpd) and `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.
 - Add tests to the existing suites in `server/test/`.
 - The skills in `plugin/skills/` were copied from Agent Skills and are now the source of truth for define. Record what changed in a copied file in `plugin/PROVENANCE.md`.
 - Keep the plugin name and version the same in `plugin/.claude-plugin/plugin.json`, `plugin/.codex-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.

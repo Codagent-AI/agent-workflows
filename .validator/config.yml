@@ -25,10 +25,18 @@ entry_points:
       - plugin/server.mjs
       - server/package-lock.json
     checks:
+      # Biome lint (complexity, function and file size) and jscpd duplication.
+      # This check and the next both install into server/node_modules, so they
+      # run one after the other.
+      - openspec-server-lint:
+          command: npm ci --no-audit --no-fund --silent && npm run lint
+          working_directory: human-workflows/openspec/server
+          parallel: false
       # Typecheck, bundle-matches-build, and the node:test suite.
       - openspec-server:
           command: npm ci --no-audit --no-fund --silent && npm run check
           working_directory: human-workflows/openspec/server
+          parallel: false
       - openspec-server-audit:
           command: npm audit --audit-level=moderate
           working_directory: human-workflows/openspec/server
