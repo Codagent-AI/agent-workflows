@@ -148,15 +148,15 @@ Logs go to `$TMPDIR/define-openspec-change/`:
 
 Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` or any other plugin-root variable in a plugin's `.mcp.json`. So the Codex manifest names its own server file, `.codex-mcp.json`, which starts `node ./server.mjs` with `cwd: "."`. That makes Codex start the server in the plugin folder. The server then reads the session's directory from each tool call's `_meta`, which Codex sends as `codex/sandbox-state-meta` and `x-codex-turn-metadata`. Claude Code reads `.mcp.json` and starts the server in the session directory.
 
-## Differences from Runner's define
+## How it behaves
 
 - **No preflight.** Define can run on `main` and on a dirty tree. It still checks the change name, and it refuses a change folder it did not start.
-- **Finish.** Runner left committing to you. Here the last `next_step` validates, then commits only the change folder. On a branch it also pushes and opens a pull request. On the default branch it only commits.
-- **The child is read-only.** Runner told the reviewer not to write. Here the child runs in a read-only sandbox or with read-only tools.
+- **Finish.** The last `next_step` validates, then commits only the change folder. On a branch it also pushes and opens a pull request. On the default branch it only commits.
+- **The child is read-only.** The reviewer runs in a read-only sandbox or with read-only tools, and its prompt tells it not to write.
 - **One crosscheck per call.** There are no `session` or `follow_up` targets. Each call starts a fresh child, and the lead puts follow-up questions in a new call.
-- **No agent switch between steps.** The lead you start with runs every step.
-- **Config.** Runner took the crosscheck from its `crosscheck` profile in `~/.agent-runner/config.yaml`. Here it comes from the `human-workflows.crosscheck` list in `~/.agent-workflows/config.yaml`, and the lead is whatever session you start.
-- **No task steps.** Runner's plan-tasks and review-tasks steps are left out, because change v3 no longer uses them.
+- **One agent for every step.** The lead you start with runs every step.
+- **Config.** The crosscheck comes from the `human-workflows.crosscheck` list in `~/.agent-workflows/config.yaml`, and the lead is whatever session you start.
+- **No task steps.** The workflow ends with approach-review and does not plan tasks.
 - **Starting and resuming** both use `next_step` with `start: true`. A later call without `start` completes the current step, so a new session cannot skip a step by mistake.
 
 ## Layout
@@ -172,9 +172,9 @@ human-workflows/openspec/
     server.mjs                 bundled server, committed
     skills/define/             the entry point on both CLIs
     skills/setup/              writes ~/.agent-workflows/config.yaml with you
-    skills/<copied skills>/    from Agent Skills, now the source of truth for define
+    skills/<other skills>/     the skills the steps use
     workflow.yaml              the steps and their prompts
-    PROVENANCE.md              source commits, and what changed in each copied file
+    PROVENANCE.md              where the skills and the workflow came from
   server/                      TypeScript source, tests, and the esbuild build
 ```
 

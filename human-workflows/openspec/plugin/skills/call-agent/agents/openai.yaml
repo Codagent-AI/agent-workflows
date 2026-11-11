@@ -1,4 +1,0 @@
-interface:
-  display_name: "Call Agent"
-  short_description: "Run one crosscheck child agent"
-  default_prompt: "Use define-openspec-change:call-agent to run one crosscheck child and independently assess its result."

@@ -22,11 +22,9 @@ commit that touched the skill.
 | `skills/spec/SKILL.md` | `e9b4dfa` | `codagent:ask-questions` renamed. |
 | `skills/design/SKILL.md` | `d9c5059` | `codagent:ask-questions` renamed. |
 | `skills/test-plan/SKILL.md` | `8605d33` | `codagent:ask-questions` renamed. Added `name: test-plan` to the front matter. |
-| `skills/test-plan/agents/openai.yaml` | `8605d33` | None. |
 | `skills/review-approach/SKILL.md` | `4b0a362` | Added `name: review-approach` to the front matter. |
 | `skills/ask-questions/SKILL.md` | `d9c5059` | None. |
 | `skills/call-agent/SKILL.md` | `6442600` | Rewritten for this plugin's tools. See below. |
-| `skills/call-agent/agents/openai.yaml` | `6442600` | Descriptions point at this plugin's call-agent instead of the Runner-owned tool. |
 
 `skills/call-agent/SKILL.md` changes:
 
@@ -46,7 +44,7 @@ commit that touched the skill.
   longer a status. The closing paragraph on autonomous evidence was dropped, since define is
   interactive.
 
-Not copied: plan-tasks and review-tasks. Runner's define has five steps and change v3 no longer uses
+Not copied: the `agents/openai.yaml` files that Agent Skills keeps beside `skills/test-plan/` and `skills/call-agent/`, because they are Codex-specific UI metadata. Also not copied: plan-tasks and review-tasks. Runner's define has five steps and change v3 no longer uses
 them.
 
 Written here, not copied: `skills/define/SKILL.md`, the entry point, and `skills/setup/SKILL.md`,

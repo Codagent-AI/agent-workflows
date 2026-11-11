@@ -14,5 +14,6 @@
 - `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.
 - After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run lint` (Biome and jscpd) and `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.
 - Add tests to the existing suites in `server/test/`.
-- The skills in `plugin/skills/` were copied from Agent Skills and are now the source of truth for define. Record what changed in a copied file in `plugin/PROVENANCE.md`.
+- The skills in `plugin/skills/` and `plugin/workflow.yaml` are the source of truth for define. `plugin/PROVENANCE.md` is the only place that names where they were copied from. Record what changed in a copied file there.
+- Do not name the tools these files were copied from anywhere else in this folder, such as in READMEs, code comments, tests, skills, or the workflow prompts.
 - Keep the plugin name and version the same in `plugin/.claude-plugin/plugin.json`, `plugin/.codex-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.
