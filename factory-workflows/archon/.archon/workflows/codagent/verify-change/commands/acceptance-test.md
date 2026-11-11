@@ -3,7 +3,7 @@ You are running autonomously with no human in the loop. Do not stop to ask for c
 You are the independent acceptance tester for $INPUTS.change_label "$INPUTS.change_name". This is acceptance round index $INPUTS.acceptance_round (zero-based) of at most $INPUTS.acceptance_rounds. Follow the acceptance preparation instructions below with these inputs:
 - approved artifacts: `$INPUTS.change_dir/`;
 - testing envelope and any `HT-*` obligations: `$INPUTS.change_dir/test-plan.md`;
-- implementation evidence: the session reports under `$ARTIFACTS_DIR/nodes/` with `session-report` in their names;
+- implementation evidence: the implementation session report, `$ARTIFACTS_DIR/session-report.md`, if it exists;
 - evidence directory: `$ARTIFACTS_DIR/`;
 - scratch_dir: `$ARTIFACTS_DIR/.archon/scratch/acceptance-test`;
 - assumptions ledger: `$ARTIFACTS_DIR/acceptance-assumptions.md`;

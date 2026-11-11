@@ -31,7 +31,7 @@ Then write `<evidence-directory>/acceptance-handoff.md`:
 6. **Human-only obligations**: applicable `HT-*` items as instructions, with no execution outcome.
 7. **Assumptions**: the ledger path, then each unresolved decision named by its ledger heading with its
    options and consequence, each material limitation the ledger, findings, or log record, and each risky
-   or notable assumption in the implementation session report, if one was supplied. A count or a
+   or notable assumption in the implementation session report (`$ARTIFACTS_DIR/session-report.md`), if it exists. A count or a
    pointer alone does not carry a decision.
 
 Before reporting ready, confirm every referenced path exists, that any scratch folder the acceptance

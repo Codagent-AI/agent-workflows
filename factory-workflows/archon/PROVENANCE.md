@@ -43,7 +43,7 @@ Each of these can change what a run does or costs.
 7. **A blocked repair answers in structured output.** A repair returns `{blocked, reason}` instead of a trailing `REPAIR_BLOCKED` line, and the recheck fails with `REPAIR_BLOCKED: <reason>`.
 8. **Agents run on the host**, not in a sandbox.
 9. **The autonomy preamble repeats.** Every `context: fresh` node's command starts with it, and so does `repair-definition`, whose later loop iterations continue one session and see it again.
-10. **Session files move to `$ARTIFACTS_DIR`.** The files agents write keep their names, with `{{session_dir}}/output/` replaced by `$ARTIFACTS_DIR/`, and the `session_dir` input is gone. Archon saves the audit and the session report under `nodes/`. There is no `audit.log`.
+10. **Session files move to `$ARTIFACTS_DIR`.** The files agents write keep their names, with `{{session_dir}}/output/` replaced by `$ARTIFACTS_DIR/`, and the `session_dir` input is gone. Archon saves the audit under `nodes/`, and the session report is a file the implementor writes to `$ARTIFACTS_DIR/session-report.md`. There is no `audit.log`.
 11. **Repairs that rerun a step reuse its command.** `reopen-draft-pr` resumes `open-draft-pr` with the same command, so the preamble appears twice in that session.
 12. **The tester stops what it starts.** Archon waits for every command a Codex turn started, so `acceptance-test` and `acceptance-handoff` end by stopping every server and long-running command the tester started.
 13. **The pull request body markers are `<!-- codagent:generated-body:start -->` and `<!-- codagent:generated-body:end -->`**, instead of `agent-runner:generated-body`. A body written by Agent Runner gets a second generated block.

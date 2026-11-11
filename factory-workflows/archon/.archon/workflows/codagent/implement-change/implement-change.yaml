@@ -342,7 +342,7 @@ nodes:
       reason: $repair-implementation-commits.output.reason
     output_format: *check
 
-  # Saved as $ARTIFACTS_DIR/nodes/session-report.md, which the acceptance
+  # The agent writes $ARTIFACTS_DIR/session-report.md, which the acceptance
   # tester reads.
   - id: session-report
     depends_on: [verify-implementation-commits, recheck-implementation-commits]
@@ -351,7 +351,6 @@ nodes:
     context: { resume: resolve-findings }
     command: session-report
     with: *change
-    output_type: report
 
   # The implementor's maintainability pass replaces verify-change's own
   # assumption review and simplification. stop_unchanged_acceptance ends the

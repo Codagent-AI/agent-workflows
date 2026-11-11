@@ -1,4 +1,4 @@
-Write a session report for your implementation of $INPUTS.change_label "$INPUTS.change_name", as the instructions below describe, treating the definition under `$INPUTS.change_dir/` and `$INPUTS.change_dir/checklist.md` as the task specification. Include every row that is not verified, with its status and why, and every decision in `$ARTIFACTS_DIR/implementor-decisions.md` if it exists, whatever its impact. Do not run Agent Validator. Respond with the report itself; the workflow saves your response as the report the acceptance tester reads.
+Write a session report for your implementation of $INPUTS.change_label "$INPUTS.change_name", as the instructions below describe, treating the definition under `$INPUTS.change_dir/` and `$INPUTS.change_dir/checklist.md` as the task specification. Include every row that is not verified, with its status and why, and every decision in `$ARTIFACTS_DIR/implementor-decisions.md` if it exists, whatever its impact. Do not run Agent Validator. Write the report to `$ARTIFACTS_DIR/session-report.md`, where the acceptance tester and the assumption review read it.
 
 # Session report instructions
 

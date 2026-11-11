@@ -6,7 +6,7 @@ This folder is the workflow source Archon reads: pass it to `--workflow-source`.
 
 ## Workflows
 
-- `codagent-implement-change`, the entry point. It validates and commits the definition, has the implementor write a checklist, implement the change and record evidence, has the crosscheck audit the work and the implementor resolve the findings, checks that the work is committed and the worktree clean, saves the implementor's session report, and then runs `codagent-verify-change` with its own review steps turned off.
+- `codagent-implement-change`, the entry point. It validates and commits the definition, has the implementor write a checklist, implement the change and record evidence, has the crosscheck audit the work and the implementor resolve the findings, checks that the work is committed and the worktree clean, has the implementor write its session report, and then runs `codagent-verify-change` with its own review steps turned off.
 - `codagent-verify-change`. It reviews the implementation's assumptions and simplifies it (unless the caller already did), opens a draft pull request, and runs the acceptance rounds: an independent tester explores the change, the round waits for CI, the tester hands off, and a gate decides whether the change has converged. A round that has not converged gets a fix from the lead, a push, and a retest.
 - `codagent-check-definition` and `codagent-commit-definition`, building blocks that `codagent-implement-change` includes.
 
@@ -85,7 +85,8 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `implementor-decisions.md` | implementor | Ordinary decisions that could change behavior, scope or integration. |
 | `evidence/` | implementor, lead | Saved output each checklist row's evidence names. |
 | `planned-checklist.md`, `evidence-problems.txt` | scripts | The planned checklist, and the evidence check's problem list. |
-| `nodes/audit.md`, `nodes/session-report.md` | Archon | The crosscheck's findings and the implementor's session report. |
+| `nodes/audit.md` | Archon | The crosscheck's findings. |
+| `session-report.md` | implementor | The implementor's session report, which the assumption review and the acceptance tester read. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
