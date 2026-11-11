@@ -64,21 +64,10 @@ nodes:
       change_dir: $INPUTS.change_dir
       change_kind: $INPUTS.change_kind
 
-  - id: record-definition-head
-    depends_on: [commit-definition]
-    script: record-definition-head
-    runtime: bun
-    output_format: &head
-      type: object
-      properties:
-        head: { type: string }
-      required: [head]
-      additionalProperties: false
-
   # The implementor's session starts here and owns the whole change: its
   # checklist, the implementation, and fixes.
   - id: implementor-checklist
-    depends_on: [record-definition-head]
+    depends_on: [commit-definition]
     model: ['@implementor', large]
     context: fresh
     command: implementor-checklist
@@ -99,7 +88,7 @@ nodes:
     with:
       change_dir: $INPUTS.change_dir
       change_name: $INPUTS.change_name
-      definition_head: $record-definition-head.output.head
+      start: "$implementor-checklist.execution.checkoutStart"
 
   - id: verify-checklist
     depends_on: [check-implementor-checklist]
@@ -148,17 +137,9 @@ nodes:
       reason: $repair-checklist.output.reason
     output_format: *check
 
-  # Recorded after the checklist commit, so that commit cannot satisfy the
-  # implementation check.
-  - id: record-implementation-start
+  - id: implement
     depends_on: [verify-checklist, recheck-checklist]
     trigger_rule: none_failed_min_one_success
-    script: record-implementation-start
-    runtime: bun
-    output_format: *head
-
-  - id: implement
-    depends_on: [record-implementation-start]
     model: ['@implementor', large]
     context: { resume: implementor-checklist }
     command: implement
@@ -318,7 +299,7 @@ nodes:
     script: verify-implementation-commits
     runtime: bun
     with:
-      start_head: $record-implementation-start.output.head
+      start: "$implement.execution.checkoutStart"
       strict: false
       blocked: false
       reason: ""
@@ -334,7 +315,7 @@ nodes:
       change_label: $INPUTS.change_label
       change_name: $INPUTS.change_name
       change_dir: $INPUTS.change_dir
-      start_head: $record-implementation-start.output.head
+      start: "$implement.execution.checkoutStart"
       problems: $verify-implementation-commits.output.problems
     output_format: *repair
 
@@ -343,7 +324,7 @@ nodes:
     script: verify-implementation-commits
     runtime: bun
     with:
-      start_head: $record-implementation-start.output.head
+      start: "$implement.execution.checkoutStart"
       strict: true
       blocked: $repair-implementation-commits.output.blocked
       reason: $repair-implementation-commits.output.reason

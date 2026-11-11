@@ -28,6 +28,23 @@ export function status(exec: Exec, args: readonly string[] = []): string | undef
   return result.status === 0 ? result.stdout.replace(/\n+$/, '') : undefined;
 }
 
+/**
+ * Every changed path, tracked or untracked, as git spells it, or undefined when git fails.
+ * Read with `-z`, so a path with spaces or unusual characters is not quoted. A rename lists
+ * its source as a second record, which is skipped.
+ */
+export function changedPaths(exec: Exec): string[] | undefined {
+  const result = exec('git', ['status', '--porcelain', '-z', '--untracked-files=all']);
+  if (result.status !== 0) return undefined;
+  const records = result.stdout.split('\0').filter(record => record !== '');
+  const paths: string[] = [];
+  for (let index = 0; index < records.length; index += 1) {
+    paths.push(records[index].slice(3));
+    if (/^[RC]/.test(records[index])) index += 1;
+  }
+  return paths;
+}
+
 /** No tracked file has uncommitted changes. */
 export function checkTrackedClean(exec: Exec, problem: string): CheckResult {
   const changes = status(exec, ['--untracked-files=no']);

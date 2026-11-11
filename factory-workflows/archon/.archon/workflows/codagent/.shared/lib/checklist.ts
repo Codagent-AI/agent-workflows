@@ -6,7 +6,8 @@ import { join } from 'node:path';
 
 import { type CheckResult, fail, pass } from './check.ts';
 import type { Exec } from './exec.ts';
-import { head, status } from './worktree.ts';
+import type { CheckoutStart } from './checkout.ts';
+import { changedPaths, head, status } from './worktree.ts';
 
 export const checklistPath = (changeDir: string): string => join(changeDir, 'checklist.md');
 
@@ -57,16 +58,8 @@ export function tableBlocks(text: string): TableBlock[] {
 export interface ImplementorChecklistInput {
   changeDir: string;
   changeName: string;
-  definitionHead: string;
-  /** `git status --porcelain --untracked-files=all` before the checklist step. */
-  preListStatus: string;
-}
-
-/** Status lines for changes other than the checklist and those already there before the step. */
-function otherChanges(now: string, before: ReadonlySet<string>, list: string): string[] {
-  // A porcelain line is `XY <path>`; only the checklist's own line is allowed. Quoted paths
-  // and renames never equal the checklist path, so they count as other changes.
-  return now.split('\n').filter(line => line !== '' && line.slice(3) !== list && !before.has(line));
+  /** Where the checklist step started: the definition's commit and any earlier changes. */
+  start: CheckoutStart;
 }
 
 /** Commits the checklist, unless it is outside the repository. */
@@ -84,12 +77,13 @@ function commitChecklist(exec: Exec, list: string, changeName: string): CheckRes
 /** Checks what the checklist step changed, then commits the checklist. */
 export function checkImplementorChecklist(exec: Exec, input: ImplementorChecklistInput): CheckResult {
   const list = checklistPath(input.changeDir);
-  if (head(exec) !== input.definitionHead) {
+  if (head(exec) !== input.start.commit) {
     return fail(`implementor-checklist committed work; it may only write ${list}`);
   }
-  const now = status(exec, ['--untracked-files=all']);
+  const now = changedPaths(exec);
   if (now === undefined) return fail('could not inspect the worktree');
-  const other = otherChanges(now, new Set(input.preListStatus.split('\n')), list);
+  // Only the checklist, and what was changed before the step, may be changed now.
+  const other = now.filter(path => path !== list && !input.start.dirtyPaths.has(path));
   if (other.length > 0) {
     return fail([`implementor-checklist changed files other than ${list}:`, ...other]);
   }

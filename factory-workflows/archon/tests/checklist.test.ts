@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ import {
   tableShapeProblems,
   verifyChecklist,
 } from '../.archon/workflows/codagent/.shared/lib/checklist.ts';
+import { checkoutStart } from '../.archon/workflows/codagent/.shared/lib/checkout.ts';
 import { type Sandbox, createSandbox } from './helpers.ts';
 
 let box: Sandbox;
@@ -109,13 +111,13 @@ describe('verifyChecklist (verify-checklist)', () => {
 describe('checkImplementorChecklist (check-implementor-checklist)', () => {
   const dir = 'change';
   let definitionHead: string;
-  let preListStatus: string;
+  let dirtyPaths: Set<string>;
   beforeEach(() => {
     definitionHead = box.head();
-    preListStatus = box.git('status', '--porcelain', '--untracked-files=all');
+    dirtyPaths = new Set();
   });
-  const run = () =>
-    checkImplementorChecklist(box.exec, { changeDir: dir, changeName: 'demo', definitionHead, preListStatus });
+  const start = () => ({ commit: definitionHead, dirtyPaths });
+  const run = () => checkImplementorChecklist(box.exec, { changeDir: dir, changeName: 'demo', start: start() });
 
   test('commits the checklist when it is the only change', () => {
     box.write(`${dir}/checklist.md`, `${PLAN_HEADER}| I-1 | x | y |\n`);
@@ -156,10 +158,17 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
 
   test('ignores changes that were already there before the step', () => {
     box.write('earlier.txt', 'earlier\n');
-    preListStatus = box.git('status', '--porcelain', '--untracked-files=all');
+    dirtyPaths = new Set(['earlier.txt']);
     box.write(`${dir}/checklist.md`, 'x\n');
     expect(run().ok).toBe(true);
     expect(box.git('status', '--porcelain')).toBe('?? earlier.txt');
+  });
+
+  test('an earlier change to a path with a space is not another change', () => {
+    box.write('my notes.txt', 'earlier\n');
+    dirtyPaths = new Set(['my notes.txt']);
+    box.write(`${dir}/checklist.md`, 'x\n');
+    expect(run().ok).toBe(true);
   });
 
   test('fails when no checklist was written', () => {
@@ -179,7 +188,7 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
       const changeDir = join(outside, 'change');
       mkdirSync(changeDir);
       writeFileSync(join(changeDir, 'checklist.md'), 'x\n');
-      const result = checkImplementorChecklist(box.exec, { changeDir, changeName: 'demo', definitionHead, preListStatus });
+      const result = checkImplementorChecklist(box.exec, { changeDir, changeName: 'demo', start: start() });
       expect(result.ok).toBe(true);
       expect(box.head()).toBe(definitionHead);
     } finally {
@@ -189,5 +198,57 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
 
   test('checklistPath joins the change directory', () => {
     expect(checklistPath('a/b')).toBe('a/b/checklist.md');
+  });
+});
+
+describe('checkoutStart (a node.execution.checkoutStart binding)', () => {
+  const commit = 'a'.repeat(40);
+  const git = (worktree: object, extra: object = {}): string =>
+    JSON.stringify({ kind: 'git', sampledAt: '2026-11-11T00:00:00Z', commit, tree: 'b'.repeat(40), worktree, ...extra });
+  const manifest = (entries: object[]): { json: string; digest: string } => {
+    const json = JSON.stringify({ version: 1, objectFormat: 'sha1', commit, entries });
+    return { json, digest: createHash('sha256').update(json).digest('hex') };
+  };
+  const dirty = (digest: string): string =>
+    git({ status: 'dirty', manifest: { pointer: { type: 'archon_artifact', run_id: 'r', path: '.archon/checkout/m.json' }, sha256: digest, entries: 1 } });
+  const put = (json: string): void => box.write('artifacts/.archon/checkout/m.json', json);
+  const mismatched = (): string => {
+    put('{"entries":[]}');
+    return '0'.repeat(64);
+  };
+
+  test('a clean start carries its commit and no dirty paths', () => {
+    expect(checkoutStart(git({ status: 'clean' }), box.path('artifacts'))).toEqual({
+      start: { commit, dirtyPaths: new Set() },
+    });
+  });
+
+  test('a dirty start carries the manifest paths, including a base64 path', () => {
+    const { json, digest } = manifest([
+      { path: 'a.txt', kind: 'file', mode: '100644', blob: 'c'.repeat(40) },
+      { path: { base64: Buffer.from('b.txt').toString('base64') }, kind: 'absent' },
+    ]);
+    put(json);
+    expect(checkoutStart(dirty(digest), box.path('artifacts'))).toEqual({
+      start: { commit, dirtyPaths: new Set(['a.txt', 'b.txt']) },
+    });
+  });
+
+  test('the commit alone does not read the manifest', () => {
+    expect(checkoutStart(dirty('0'.repeat(64)), box.path('artifacts'), false)).toEqual({
+      start: { commit, dirtyPaths: new Set() },
+    });
+  });
+
+  test.each([
+    ['a manifest that is missing', () => dirty('0'.repeat(64)), 'is unreadable'],
+    ['a manifest that does not match its digest', () => dirty(mismatched()), 'does not match its recorded digest'],
+    ['a checkout that is not git', () => JSON.stringify({ kind: 'not_git' }), 'the checkout is not_git'],
+    ['an observation that could not be made', () => JSON.stringify({ kind: 'unavailable', reason: 'git_failed' }), 'the checkout is unavailable'],
+    ['an unborn branch', () => git({ status: 'clean' }, { commit: null }), 'no commit yet'],
+    ['text that is not JSON', () => 'not json', 'the checkout is unreadable'],
+  ])('refuses %s', (_name, raw, why) => {
+    const observed = checkoutStart(raw(), box.path('artifacts'));
+    expect('failure' in observed && observed.failure.problems).toContain(why);
   });
 });

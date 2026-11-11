@@ -5,6 +5,7 @@ import {
   checkCommitsSince,
   checkNotBlocked,
   checkTrackedClean,
+  changedPaths,
   checkWorktreeClean,
   head,
   status,
@@ -89,5 +90,23 @@ describe('head and status', () => {
     box.write('a.txt', 'a\n');
     expect(status(box.exec)).toBe('?? a.txt');
     expect(status(box.exec, ['--untracked-files=no'])).toBe('');
+  });
+});
+
+describe('changedPaths', () => {
+  test('lists tracked and untracked changes, unquoted', () => {
+    box.write('file.txt', 'changed\n');
+    box.write('my notes.txt', 'new\n');
+    expect(changedPaths(box.exec)?.sort()).toEqual(['file.txt', 'my notes.txt']);
+  });
+
+  test('lists a renamed path once, by its new name', () => {
+    box.git('mv', 'file.txt', 'moved.txt');
+    expect(changedPaths(box.exec)).toEqual(['moved.txt']);
+  });
+
+  test('is empty for a clean worktree and undefined when git fails', () => {
+    expect(changedPaths(box.exec)).toEqual([]);
+    expect(changedPaths(() => ({ status: 128, stdout: '', stderr: 'fatal' }))).toBeUndefined();
   });
 });

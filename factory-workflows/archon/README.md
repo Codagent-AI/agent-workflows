@@ -84,7 +84,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `acceptance-assumptions.md` | every agent | Rulings an agent made on questions a human might have decided. |
 | `implementor-decisions.md` | implementor | Ordinary decisions that could change behavior, scope or integration. |
 | `evidence/` | implementor, lead | Saved output each checklist row's evidence names. |
-| `pre-list-status.txt`, `planned-checklist.md`, `evidence-problems.txt` | scripts | The checklist checks' state and problem list. |
+| `planned-checklist.md`, `evidence-problems.txt` | scripts | The planned checklist, and the evidence check's problem list. |
 | `nodes/audit.md`, `nodes/session-report.md` | Archon | The crosscheck's findings and the implementor's session report. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |

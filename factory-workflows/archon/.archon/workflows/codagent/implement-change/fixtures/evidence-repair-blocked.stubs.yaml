@@ -4,12 +4,10 @@ check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }
 commit-definition__check-clean-before-implementation: "no tracked changes"
-record-definition-head: { head: "1111111111111111111111111111111111111111" }
 implementor-checklist: "Wrote the checklist."
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: { ok: true, problems: "" }
-record-implementation-start: { head: "2222222222222222222222222222222222222222" }
 implement: "Implemented the change."
 check-implementation-not-blocked: "not blocked"
 check-evidence: { ok: false, problems: "evidence check: I-2 is failed but its Evidence cell does not say why" }
