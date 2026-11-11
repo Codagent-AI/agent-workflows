@@ -5,7 +5,7 @@
 // the same script with the `strict`, `blocked` and `reason` bindings set:
 //
 //   - `blocked: true` from the repair agent fails the node with `REPAIR_BLOCKED: <reason>`
-//     before anything is rechecked, as Agent Runner stops a blocked repair;
+//     before anything is rechecked;
 //   - `strict: true` fails the node when the check still fails.
 //
 // These three bindings are optional, so they are read through `binding()` rather than as

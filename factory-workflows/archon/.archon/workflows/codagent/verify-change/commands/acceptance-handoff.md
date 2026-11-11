@@ -3,7 +3,7 @@ The workflow has finished the CI step of this acceptance round.
 - CI status: $INPUTS.ci_status (`not run` means the workflow did not wait for CI, because you reported it was not ready: $INPUTS.ci_reason)
 - CI report: `$INPUTS.ci_report` (none when CI was not run)
 
-Finish the pass now by following the instructions below. The report stands in for a wait-ci skill's result: it lists failed checks with their logs, merge conflicts, blocking reviews, actionable PR comments, deferred threads, informational bot comments, passing checks, and checks still running. The script that wrote it did not judge comment meaning. If an informational bot comment says its review of the current head is still pending or in progress, read the pull request's comments again once with `gh pr view --comments`; if that review is still unfinished, treat the status as `pending`, unless failed checks, a conflict or blocking reviews make it `failed`, or actionable feedback makes it `comments`.
+Finish the pass now by following the instructions below. The report stands in for a CI wait's result: it lists failed checks with their logs, merge conflicts, blocking reviews, actionable PR comments, deferred threads, informational bot comments, passing checks, and checks still running. The script that wrote it did not judge comment meaning. If an informational bot comment says its review of the current head is still pending or in progress, read the pull request's comments again once with `gh pr view --comments`; if that review is still unfinished, treat the status as `pending`, unless failed checks, a conflict or blocking reviews make it `failed`, or actionable feedback makes it `comments`.
 
 ## Wait for CI and hand off
 
@@ -34,8 +34,8 @@ Then write `<evidence-directory>/acceptance-handoff.md`:
    or notable assumption in the implementation session report, if one was supplied. A count or a
    pointer alone does not carry a decision.
 
-Before reporting ready, confirm every referenced path exists, that any scratch folder created by this
-skill was removed, and that no persisted evidence exposes secrets, credentials, or private data. Report
+Before reporting ready, confirm every referenced path exists, that any scratch folder the acceptance
+test created was removed, and that no persisted evidence exposes secrets, credentials, or private data. Report
 the ready SHA, PR URL, handoff path, unresolved-decision count, CI status, and known limitations.
 
 ## Round status

@@ -1,5 +1,4 @@
-// The change's draft pull request. Ports of Agent Runner's check-draft-pr.sh,
-// acceptance-push.sh and update-pr-body.sh.
+// The change's draft pull request: checking it, pushing to it, and updating its body.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -87,8 +86,8 @@ export function acceptancePush(exec: Exec): CheckResult {
   return pass();
 }
 
-export const BODY_START = '<!-- agent-runner:generated-body:start -->';
-export const BODY_END = '<!-- agent-runner:generated-body:end -->';
+export const BODY_START = '<!-- codagent:generated-body:start -->';
+export const BODY_END = '<!-- codagent:generated-body:end -->';
 
 /** Whether `text` holds a start marker with an end marker after it. */
 function hasOrderedMarkers(text: string): boolean {

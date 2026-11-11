@@ -39,7 +39,7 @@ thoroughness is the easy thing to simulate.
 A first pass has two parts. The coverage floor makes sure every user-visible behavior the change
 promises was seen working in the running product at least once; it is the one place walking specified
 behavior is required, and it is kept brief. Exploration beyond the floor hunts for what nobody
-asserted, and most of this skill is about that part.
+asserted, and most of these instructions are about that part.
 
 ## Targeting versus oracle
 
@@ -77,7 +77,7 @@ disposable files and folders. Do not reuse an existing folder or create one unde
 folder. Keep durable evidence separate from scratch space:
 `exploration-log.md`, `acceptance-findings.md`, screenshots, and `acceptance-tested-revision.txt` live
 under the evidence directory, outside the scratch subfolder. Copy any retained evidence out of scratch
-space, then remove only the folder this skill created before the skill ends on any path, including early
+space, then remove only the folder this step created before the step ends on any path, including early
 stops for defects, revision misalignment, or pending CI. On successful passes, do this before writing
 the handoff.
 

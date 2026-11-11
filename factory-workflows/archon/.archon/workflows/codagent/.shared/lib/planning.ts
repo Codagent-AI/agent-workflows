@@ -1,5 +1,4 @@
-// Deterministic validation of an approved change definition. Port of Agent Runner's
-// validate-planning-artifacts.sh.
+// Deterministic validation of an approved change definition.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, posix } from 'node:path';
 

@@ -1,5 +1,5 @@
 // Commits an approved change definition so the checklist and implementation commits start
-// from it. Port of Agent Runner's commit-change-plan.sh without its Agent Validator step.
+// from it.
 import { existsSync, lstatSync, statSync } from 'node:fs';
 
 import { type CheckResult, fail, pass } from './check.ts';

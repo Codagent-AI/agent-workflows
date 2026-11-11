@@ -1,7 +1,6 @@
 // The implementor's verification checklist: a Markdown table with an ID column, written
 // before implementation, committed, and filled in with Code, Evidence and Status as the
-// implementor works. Port of Agent Runner's checklist checks (check-implementor-checklist,
-// verify-checklist and check-evidence.sh).
+// implementor works.
 import { copyFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 

@@ -1,5 +1,4 @@
-// The acceptance rounds' evidence files and convergence gate. Port of Agent Runner's
-// acceptance-gate.sh and the round steps around it.
+// The acceptance rounds' evidence files and convergence gate.
 //
 // Convergence requires all of:
 //   - the tester's acceptance-round-status.txt ends with `READY <HEAD>`, where <HEAD> is
