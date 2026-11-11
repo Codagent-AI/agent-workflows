@@ -8,11 +8,11 @@ are left unstubbed and run for real (--exec-code), so the shell wrappers and
 Runner scripts are exercised, not only the routing.
 
 Dry runs read the pack from the target checkout, so the script builds a
-scratch git repository with `.archon` linked to this repository's pack.
+scratch git repository with `.archon` linked to this pack's `.archon`.
 
 It also checks scripts/codex-launcher.sh (scenario name `codex-launcher`).
 
-Usage: python3 tests/scenarios.py [scenario-name ...]
+Usage, from factory-workflows/archon/: python3 tests/scenarios.py [scenario-name ...]
 Needs archon (0.14), git, jq and python3 on PATH. Makes no model calls.
 """
 import json
