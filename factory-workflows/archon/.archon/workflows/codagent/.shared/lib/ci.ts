@@ -5,12 +5,13 @@
 // Judging comment meaning stays with the agent: a review bot's "still reviewing" notice is
 // listed under informational bot comments, and the tester's handoff decides whether it
 // leaves the status pending.
+import { type PrComments, fetchComments } from './ci-comments.ts';
 import type { Exec, Sleep } from './exec.ts';
 import { output } from './exec.ts';
 
 export type CiStatus = 'passed' | 'failed' | 'pending' | 'comments' | 'error';
 
-interface Check {
+export interface Check {
   name: string;
   state: string;
   bucket?: string;
@@ -23,25 +24,6 @@ interface Review {
   body: string;
 }
 
-export interface Thread {
-  file: string;
-  line: number | null;
-  author: string;
-  body: string;
-}
-
-export interface Comment {
-  author: string;
-  body: string;
-}
-
-export interface PrComments {
-  hasComments: boolean;
-  unresolvedThreads: Thread[];
-  deferredThreads: Thread[];
-  issueComments: Comment[];
-  informationalBotComments: Comment[];
-}
 
 export interface CiResult {
   status: CiStatus;
@@ -95,128 +77,6 @@ export function failedRunIds(checks: readonly Check[]): string[] {
   return [...new Set(ids)];
 }
 
-interface GraphAuthor {
-  __typename?: string;
-  login?: string;
-}
-
-interface GraphComment {
-  author?: GraphAuthor | null;
-  body?: string;
-  path?: string;
-  line?: number | null;
-  originalLine?: number | null;
-}
-
-interface GraphPullRequest {
-  author?: GraphAuthor | null;
-  reviewThreads?: {
-    pageInfo?: { hasNextPage?: boolean };
-    nodes?: { isResolved: boolean; comments?: { nodes?: GraphComment[] } }[];
-  };
-  comments?: { pageInfo?: { hasNextPage?: boolean }; nodes?: GraphComment[] };
-}
-
-const isBot = (author: GraphAuthor | null | undefined): boolean => author?.__typename === 'Bot';
-
-/**
- * Classifies the PR's comments. An unresolved thread is deferred, and does not block, when
- * the latest significant comment (after dropping the finding bot's trailing acks) is from
- * the PR author, or from a different bot than the one that raised it.
- */
-export function classifyComments(pr: GraphPullRequest, prAuthorLogin = ''): PrComments {
-  const prAuthor = prAuthorLogin || pr.author?.login || '';
-  const unresolvedThreads: Thread[] = [];
-  const deferredThreads: Thread[] = [];
-  for (const thread of pr.reviewThreads?.nodes ?? []) {
-    if (thread.isResolved) continue;
-    const comments = thread.comments?.nodes ?? [];
-    const first = comments[0];
-    const findingAuthor = first?.author?.login ?? '';
-    const findingIsBot = isBot(first?.author);
-    let significant = comments;
-    while (
-      findingIsBot &&
-      significant.length > 1 &&
-      isBot(significant.at(-1)?.author) &&
-      (significant.at(-1)?.author?.login ?? '') === findingAuthor
-    ) {
-      significant = significant.slice(0, -1);
-    }
-    const latest = significant.at(-1);
-    const deferred =
-      latest !== undefined &&
-      ((!isBot(latest.author) && prAuthor !== '' && (latest.author?.login ?? '') === prAuthor) ||
-        (isBot(latest.author) && significant.length > 1 && (latest.author?.login ?? '') !== findingAuthor));
-    const entry: Thread = {
-      file: first?.path ?? '',
-      line: first?.line ?? first?.originalLine ?? null,
-      author: first?.author?.login ?? 'unknown',
-      body: first?.body ?? '',
-    };
-    (deferred ? deferredThreads : unresolvedThreads).push(entry);
-  }
-  const topLevel = (pr.comments?.nodes ?? []).filter(
-    comment => prAuthor === '' || (comment.author?.login ?? '') !== prAuthor
-  );
-  const asComment = (comment: GraphComment): Comment => ({
-    author: comment.author?.login ?? 'unknown',
-    body: comment.body ?? '',
-  });
-  // Only explicit Bot actors are informational, so missing author metadata cannot hide feedback.
-  const issueComments = topLevel.filter(comment => !isBot(comment.author)).map(asComment);
-  const informationalBotComments = topLevel.filter(comment => isBot(comment.author)).map(asComment);
-  return {
-    hasComments: unresolvedThreads.length + issueComments.length > 0,
-    unresolvedThreads,
-    deferredThreads,
-    issueComments,
-    informationalBotComments,
-  };
-}
-
-const COMMENTS_QUERY = `
-query($owner: String!, $repo: String!, $prNumber: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      author { __typename login }
-      reviewThreads(first: 100) {
-        pageInfo { hasNextPage }
-        nodes {
-          isResolved
-          comments(first: 10) { nodes { author { __typename login } body path line originalLine } }
-        }
-      }
-      comments(first: 100) {
-        pageInfo { hasNextPage }
-        nodes { author { __typename login } body }
-      }
-    }
-  }
-}`;
-
-function fetchComments(exec: Exec, owner: string, repo: string, number: number): PrComments | string {
-  const result = exec('gh', [
-    'api',
-    'graphql',
-    '-f',
-    `query=${COMMENTS_QUERY}`,
-    '-f',
-    `owner=${owner}`,
-    '-f',
-    `repo=${repo}`,
-    '-F',
-    `prNumber=${String(number)}`,
-  ]);
-  if (result.status !== 0) return `failed to fetch PR comments: ${result.stderr.trim()}`;
-  const parsed = JSON.parse(result.stdout) as { data?: { repository?: { pullRequest?: GraphPullRequest } } };
-  const pr = parsed.data?.repository?.pullRequest ?? {};
-  // Feedback past the first page would be unseen, so the round cannot report it as passed.
-  if (pr.reviewThreads?.pageInfo?.hasNextPage || pr.comments?.pageInfo?.hasNextPage) {
-    return 'the PR has more than 100 review threads or top-level comments; read them on GitHub';
-  }
-  return classifyComments(pr);
-}
 
 /** The final status, by the wait-ci skill's precedence. */
 export function finalStatus(result: Pick<CiResult, 'failedChecks' | 'blockingReviews' | 'mergeable' | 'pendingChecks'>, comments: PrComments | undefined): CiStatus {
@@ -264,67 +124,137 @@ function viewPr(exec: Exec, fields: string): PrView | undefined {
   const viewed = exec('gh', ['pr', 'view', '--json', fields]);
   return viewed.status === 0 ? (JSON.parse(viewed.stdout) as PrView) : undefined;
 }
+/** The PR and repository a wait reads. */
+interface Target {
+  pr: PrView;
+  owner: string;
+  repo: string;
+}
 
-export function waitForCi(exec: Exec, sleep: Sleep, options: WaitOptions): CiResult {
-  const now = options.now ?? Date.now;
-  const started = now();
-  const deadline = started + options.maxMinutes * 60_000;
+/** The wait's fixed inputs and the deadline it polls until. */
+interface Waiter {
+  exec: Exec;
+  sleep: Sleep;
+  options: WaitOptions;
+  now: () => number;
+  deadline: number;
+  target: Target;
+}
+
+/** The result being filled in, and the base commit the PR last reported. */
+interface Run {
+  result: CiResult;
+  baseOid: string;
+}
+
+const failure = (result: CiResult, error: string): CiResult => ({ ...result, status: 'error', error });
+
+/** The PR and repository for the current branch, or an error result. */
+function findTarget(exec: Exec): Target | CiResult {
   const pr = viewPr(exec, 'number,url,headRefOid,baseRefOid,mergeable');
   if (!pr) return blank('no PR found for the current branch');
   if (!pr.headRefOid) return blank('the PR head SHA is missing');
   const repoView = exec('gh', ['repo', 'view', '--json', 'owner,name']);
   if (repoView.status !== 0) return blank('failed to fetch repository info');
   const repoInfo = JSON.parse(repoView.stdout) as { owner: { login: string }; name: string };
-  const result: CiResult = { ...blank(''), prUrl: pr.url, headSha: pr.headRefOid, mergeable: pr.mergeable ?? '' };
-  let baseOid = pr.baseRefOid ?? '';
+  return { pr, owner: repoInfo.owner.login, repo: repoInfo.name };
+}
 
-  for (;;) {
-    const merge = viewPr(exec, 'mergeable,baseRefOid');
-    if (merge) {
-      result.mergeable = merge.mergeable ?? '';
-      baseOid = merge.baseRefOid ?? '';
-    }
-    let checks: Check[] = [];
-    const listed = exec('gh', ['pr', 'checks', '--json', 'name,state,bucket,link']);
-    if (listed.status === 0) {
-      checks = JSON.parse(listed.stdout) as Check[];
-    } else if (!listed.stderr.includes('no checks reported')) {
-      return { ...result, status: 'error', error: `failed to fetch PR checks: ${listed.stderr.trim()}` };
-    }
-    const reviews = exec('gh', [
-      'api',
-      '--paginate',
-      `repos/${repoInfo.owner.login}/${repoInfo.name}/pulls/${String(pr.number)}/reviews?per_page=100`,
-      '--jq',
-      '.[]',
-    ]);
-    if (reviews.status !== 0) {
-      return { ...result, status: 'error', error: `failed to fetch PR reviews: ${reviews.stderr.trim()}` };
-    }
-    result.hadChecks ||= checks.length > 0;
-    result.pendingChecks = checks.filter(isPending);
-    result.failedChecks = checks.filter(isFailed);
-    result.passedChecks = checks.filter(isPassed);
-    result.blockingReviews = blockingReviews(jsonLines(reviews.stdout));
-    const terminal =
-      result.mergeable === 'CONFLICTING' ||
-      result.failedChecks.length > 0 ||
-      result.blockingReviews.length > 0 ||
-      (result.mergeable !== 'UNKNOWN' &&
-        checks.length > 0 &&
-        result.pendingChecks.length === 0 &&
-        result.passedChecks.length === checks.length);
-    if (terminal || now() + options.intervalSeconds * 1000 > deadline) break;
-    sleep(options.intervalSeconds * 1000);
+/** The PR's checks, or an error message. A branch with no checks has none. */
+function fetchChecks(exec: Exec): Check[] | string {
+  const listed = exec('gh', ['pr', 'checks', '--json', 'name,state,bucket,link']);
+  if (listed.status === 0) return JSON.parse(listed.stdout) as Check[];
+  if (listed.stderr.includes('no checks reported')) return [];
+  return `failed to fetch PR checks: ${listed.stderr.trim()}`;
+}
+
+/** The PR's reviews, or an error message. */
+function fetchReviews(exec: Exec, target: Target): Review[] | string {
+  const reviews = exec('gh', [
+    'api',
+    '--paginate',
+    `repos/${target.owner}/${target.repo}/pulls/${String(target.pr.number)}/reviews?per_page=100`,
+    '--jq',
+    '.[]',
+  ]);
+  if (reviews.status !== 0) return `failed to fetch PR reviews: ${reviews.stderr.trim()}`;
+  return blockingReviews(jsonLines(reviews.stdout));
+}
+
+/** Reads the PR's mergeable state once more; a failed read keeps the last one. */
+function refreshMergeable(exec: Exec, run: Run): void {
+  const merge = viewPr(exec, 'mergeable,baseRefOid');
+  if (!merge) return;
+  run.result.mergeable = merge.mergeable ?? '';
+  run.baseOid = merge.baseRefOid ?? '';
+}
+
+/** Reads the PR's state into the result once; returns the number of checks, or an error message. */
+function pollOnce(waiter: Waiter, run: Run): number | string {
+  refreshMergeable(waiter.exec, run);
+  const checks = fetchChecks(waiter.exec);
+  if (typeof checks === 'string') return checks;
+  const blocking = fetchReviews(waiter.exec, waiter.target);
+  if (typeof blocking === 'string') return blocking;
+  const { result } = run;
+  result.hadChecks ||= checks.length > 0;
+  result.pendingChecks = checks.filter(isPending);
+  result.failedChecks = checks.filter(isFailed);
+  result.passedChecks = checks.filter(isPassed);
+  result.blockingReviews = blocking;
+  return checks.length;
+}
+
+/** Whether polling again cannot change the outcome. */
+function isSettled(result: CiResult, checkCount: number): boolean {
+  if (result.mergeable === 'CONFLICTING' || result.failedChecks.length > 0 || result.blockingReviews.length > 0) {
+    return true;
   }
+  return (
+    result.mergeable !== 'UNKNOWN' &&
+    checkCount > 0 &&
+    result.pendingChecks.length === 0 &&
+    result.passedChecks.length === checkCount
+  );
+}
 
-  if (result.mergeable === 'CONFLICTING') result.conflictingFiles = conflictingFiles(exec, baseOid, result.headSha);
+/** Polls until the outcome is settled or the deadline passes; returns an error message if a read fails. */
+function pollUntilSettled(waiter: Waiter, run: Run): string | undefined {
+  const waitMs = waiter.options.intervalSeconds * 1000;
+  for (;;) {
+    const polled = pollOnce(waiter, run);
+    if (typeof polled === 'string') return polled;
+    if (isSettled(run.result, polled) || waiter.now() + waitMs > waiter.deadline) return undefined;
+    waiter.sleep(waitMs);
+  }
+}
+
+/** Adds the conflicting files and the failed runs' logs to the result. */
+function addFailureDetails(exec: Exec, run: Run): void {
+  const { result } = run;
+  if (result.mergeable === 'CONFLICTING') result.conflictingFiles = conflictingFiles(exec, run.baseOid, result.headSha);
   for (const runId of failedRunIds(result.failedChecks)) {
     const log = exec('gh', ['run', 'view', runId, '--log-failed']);
     result.failedLogs.push({ runId, log: (log.stdout || log.stderr).split('\n').slice(-100).join('\n') });
   }
-  const comments = fetchComments(exec, repoInfo.owner.login, repoInfo.name, pr.number);
-  if (typeof comments === 'string') return { ...result, status: 'error', error: comments };
+}
+
+/** Waits for the PR's checks to settle, then reports the checks, reviews and comments. */
+export function waitForCi(exec: Exec, sleep: Sleep, options: WaitOptions): CiResult {
+  const now = options.now ?? Date.now;
+  const started = now();
+  const target = findTarget(exec);
+  if ('status' in target) return target;
+  const { pr } = target;
+  const result: CiResult = { ...blank(''), prUrl: pr.url, headSha: pr.headRefOid, mergeable: pr.mergeable ?? '' };
+  const run: Run = { result, baseOid: pr.baseRefOid ?? '' };
+  const waiter: Waiter = { exec, sleep, options, now, deadline: started + options.maxMinutes * 60_000, target };
+
+  const problem = pollUntilSettled(waiter, run);
+  if (problem !== undefined) return failure(result, problem);
+  addFailureDetails(exec, run);
+  const comments = fetchComments(exec, target.owner, target.repo, pr.number);
+  if (typeof comments === 'string') return failure(result, comments);
   result.comments = comments;
   result.status = finalStatus(result, comments);
   const localHead = output(exec, 'git', ['rev-parse', 'HEAD']);
@@ -335,50 +265,10 @@ export function waitForCi(exec: Exec, sleep: Sleep, options: WaitOptions): CiRes
 }
 
 function conflictingFiles(exec: Exec, base: string, headSha: string): string[] {
-  if (!base || !headSha) return [];
+  if (!(base && headSha)) return [];
   for (const commit of [base, headSha]) {
     if (exec('git', ['cat-file', '-e', `${commit}^{commit}`]).status !== 0) return [];
   }
   const merged = exec('git', ['merge-tree', '--name-only', '--no-messages', base, headSha]);
   return merged.stdout.split('\n').filter(line => line !== '' && !/^[0-9a-f]{40,64}$/.test(line));
-}
-
-const checkLine = (check: Check): string =>
-  `- **${check.name}** (${check.state})${check.link ? `\n  Link: ${check.link}` : ''}`;
-const threadLine = (thread: Thread): string =>
-  `- **${thread.author}** on \`${thread.file}\` line ${String(thread.line ?? '?')}: ${thread.body}`;
-const commentLine = (comment: Comment, kind = ''): string => `- **${comment.author}**${kind}: ${comment.body}`;
-
-/** The report in the wait-ci skill's output format. */
-export function renderReport(result: CiResult): string {
-  const lines = [`## CI Status: ${result.status}`, '', `**PR:** ${result.prUrl || 'unknown'}`];
-  lines.push(`**Head:** ${result.headSha || 'unknown'}${result.headMoved ? ' (local HEAD or the PR head has since moved)' : ''}`);
-  lines.push(`**Elapsed:** ~${String(result.elapsedMinutes)} minutes`);
-  if (result.error) lines.push('', `**Error:** ${result.error}`);
-  if (!result.hadChecks && result.status !== 'error') lines.push('', 'No CI checks are configured or reported for this pull request.');
-  const section = (title: string, items: string[]): void => {
-    if (items.length > 0) lines.push('', `### ${title}`, ...items);
-  };
-  section(
-    'Failed Checks',
-    result.failedChecks.map(check => {
-      const runId = failedRunIds([check])[0];
-      const log = result.failedLogs.find(entry => entry.runId === runId)?.log;
-      return log ? `${checkLine(check)}\n  Logs:\n  \`\`\`\n${log}\n  \`\`\`` : checkLine(check);
-    })
-  );
-  section('Merge Conflicts', result.conflictingFiles.map(file => `- \`${file}\``));
-  section('Blocking Reviews', result.blockingReviews.map(review => `- **${review.login}**: ${review.body}`));
-  const comments = result.comments;
-  if (comments) {
-    section('PR Comments', [
-      ...comments.unresolvedThreads.map(threadLine),
-      ...comments.issueComments.map(comment => commentLine(comment, ' (issue comment)')),
-    ]);
-    section('Deferred Threads', comments.deferredThreads.map(threadLine));
-    section('Informational Bot Comments', comments.informationalBotComments.map(comment => commentLine(comment)));
-  }
-  section('Passing Checks', result.passedChecks.map(check => `- ${check.name} (${check.state})`));
-  section('Still Running', result.pendingChecks.map(check => `- ${check.name} (${check.state})`));
-  return `${lines.join('\n')}\n`;
 }

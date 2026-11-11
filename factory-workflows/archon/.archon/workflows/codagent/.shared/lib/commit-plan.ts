@@ -35,47 +35,73 @@ export function commitMessage(changeName: string): string {
 
 const succeeded = (exec: Exec, args: readonly string[]): boolean => exec('git', args).status === 0;
 
-export function commitChangePlan(exec: Exec, input: CommitPlanInput): CommitPlanResult {
-  const { changeName, changeDir } = input;
-  const nameProblems = changeNameProblems(changeName);
+/** A problem with the change name or directory, if any. */
+function inputProblem(input: CommitPlanInput): CommitPlanResult | undefined {
+  const nameProblems = changeNameProblems(input.changeName);
   if (nameProblems.length > 0) return outcome(fail(nameProblems.map(p => `commit-change-plan: ${p}`)));
-  if (!isConfinedRelativePath(changeDir)) {
-    return outcome(fail(`commit-change-plan: change_dir must be a confined relative path: ${changeDir}`));
+  if (!isConfinedRelativePath(input.changeDir)) {
+    return outcome(fail(`commit-change-plan: change_dir must be a confined relative path: ${input.changeDir}`));
   }
+  return undefined;
+}
 
-  if (existsSync('openspec') && lstatSync('openspec').isSymbolicLink() && changeDir.startsWith('openspec/')) {
-    if (!existsSync(changeDir) || !statSync(changeDir).isDirectory()) {
-      return outcome(fail(`commit-change-plan: change directory not found: ${changeDir}`));
-    }
-    return outcome(
-      pass(),
-      `openspec is a symbolic link; ${changeDir} is not committed here. Commit it by hand in the repository that holds the OpenSpec project.`
-    );
+/** The result for a change inside a symlinked openspec directory, which is not committed here. */
+function symlinkedOpenspec(changeDir: string): CommitPlanResult | undefined {
+  if (!(existsSync('openspec') && lstatSync('openspec').isSymbolicLink() && changeDir.startsWith('openspec/'))) {
+    return undefined;
   }
+  if (!(existsSync(changeDir) && statSync(changeDir).isDirectory())) {
+    return outcome(fail(`commit-change-plan: change directory not found: ${changeDir}`));
+  }
+  return outcome(
+    pass(),
+    `openspec is a symbolic link; ${changeDir} is not committed here. Commit it by hand in the repository that holds the OpenSpec project.`
+  );
+}
 
+/** Whether the change directory has no staged, unstaged or untracked changes and is in HEAD. */
+function alreadyCommitted(exec: Exec, changeDir: string): boolean {
   const untracked = exec('git', ['ls-files', '--others', '--exclude-standard', '--', changeDir]);
-  if (
+  return (
     succeeded(exec, ['diff', '--cached', '--quiet', '--', changeDir]) &&
     succeeded(exec, ['diff', '--quiet', '--', changeDir]) &&
     untracked.status === 0 &&
     untracked.stdout.trim() === '' &&
     succeeded(exec, ['cat-file', '-e', `HEAD:${changeDir}`])
-  ) {
-    return outcome(pass(), `${changeName} is already committed`);
-  }
+  );
+}
 
-  const paths = [changeDir];
-  const add = exec('git', ['add', '-A', '--', changeDir]);
-  if (add.status !== 0) return outcome(fail(['commit-change-plan: git add failed:', add.stderr.trim()]));
-  if (changeDir === `openspec/changes/${changeName}`) {
-    const config = exec('git', ['ls-files', '--others', '--exclude-standard', '--', 'openspec/config.yaml']);
-    if (config.stdout.trim() === 'openspec/config.yaml') {
-      if (!succeeded(exec, ['add', '--', 'openspec/config.yaml'])) {
-        return outcome(fail('commit-change-plan: git add openspec/config.yaml failed'));
-      }
-      paths.push('openspec/config.yaml');
-    }
+/** Stages a new openspec/config.yaml with its change; returns a failure, or undefined. */
+function stageNewConfig(exec: Exec, paths: string[]): CommitPlanResult | undefined {
+  const config = exec('git', ['ls-files', '--others', '--exclude-standard', '--', 'openspec/config.yaml']);
+  if (config.stdout.trim() !== 'openspec/config.yaml') return undefined;
+  if (!succeeded(exec, ['add', '--', 'openspec/config.yaml'])) {
+    return outcome(fail('commit-change-plan: git add openspec/config.yaml failed'));
   }
+  paths.push('openspec/config.yaml');
+  return undefined;
+}
+
+/** Stages the change; returns the paths to commit, or a failure. */
+function stageChange(exec: Exec, input: CommitPlanInput): string[] | CommitPlanResult {
+  const paths = [input.changeDir];
+  const add = exec('git', ['add', '-A', '--', input.changeDir]);
+  if (add.status !== 0) return outcome(fail(['commit-change-plan: git add failed:', add.stderr.trim()]));
+  if (input.changeDir === `openspec/changes/${input.changeName}`) {
+    const failed = stageNewConfig(exec, paths);
+    if (failed) return failed;
+  }
+  return paths;
+}
+
+export function commitChangePlan(exec: Exec, input: CommitPlanInput): CommitPlanResult {
+  const { changeName, changeDir } = input;
+  const early = inputProblem(input) ?? symlinkedOpenspec(changeDir);
+  if (early) return early;
+  if (alreadyCommitted(exec, changeDir)) return outcome(pass(), `${changeName} is already committed`);
+
+  const paths = stageChange(exec, input);
+  if (!Array.isArray(paths)) return paths;
   if (succeeded(exec, ['diff', '--cached', '--quiet', '--', changeDir])) {
     return outcome(fail(`commit-change-plan: no staged changes found for ${changeName}`));
   }

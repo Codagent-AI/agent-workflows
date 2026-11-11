@@ -18,14 +18,14 @@ The pack is now the source of truth for all of it. Agent Skills is deprecated: n
 | `validate-planning-artifacts.sh` | `.shared/lib/planning.ts` |
 | `commit-change-plan.sh` | `.shared/lib/commit-plan.ts` |
 | `check-not-blocked.sh` and the workflows' inline git checks | `.shared/lib/worktree.ts` |
-| `check-evidence.sh` and implement-change's inline checklist checks | `.shared/lib/checklist.ts` |
+| `check-evidence.sh` and implement-change's inline checklist checks | `.shared/lib/checklist.ts`, `checklist-plan.ts` and `evidence.ts` |
 | `acceptance-gate.sh` and verify-change's inline round steps | `.shared/lib/acceptance.ts` |
 | `check-draft-pr.sh`, `acceptance-push.sh`, `update-pr-body.sh` | `.shared/lib/pull-request.ts` |
 | Skill `implement-change` (last touched at `002e9e8`) | `.shared/implement-change.md`, without its front matter. |
 | Skill `verify-behavior` (`7f994ed`) | `.shared/verify-behavior.md`, without its front matter. |
 | Skill `prepare-acceptance` (`a4e5a34`) | Split between `verify-change/commands/acceptance-test.md` (everything but "Wait for CI and hand off") and `acceptance-handoff.md` (that section). "This skill" became "these instructions" or "this step". `agents/openai.yaml` is dropped. |
 | Skill `session-report` (`7c00678`) | Inlined in `implement-change/commands/session-report.md`. |
-| Skill `wait-ci` (`3919c92`) | `check-ci.sh` and `get-pr-comments.sh` ported to `.shared/lib/ci.ts`, run by the `wait-ci` script node. The tester still judges what a comment means, in `acceptance-handoff.md`. |
+| Skill `wait-ci` (`3919c92`) | `check-ci.sh` and `get-pr-comments.sh` ported to `.shared/lib/ci.ts`, `ci-comments.ts` and `ci-report.ts`, run by the `wait-ci` script node. The tester still judges what a comment means, in `acceptance-handoff.md`. |
 | Skill `review-assumptions` (`d9c5059`) | Not carried. The `review-assumptions` node uses Agent Runner's own prompt, which does not name the skill. |
 
 The tests in `tests/*.test.ts` port Agent Runner's Go test cases for the shell checks, and the `wait-ci` skill's shell tests.

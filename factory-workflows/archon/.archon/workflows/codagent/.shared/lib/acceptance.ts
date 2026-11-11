@@ -89,7 +89,7 @@ export interface Gate {
 export function checkGate(exec: Exec, evidenceDir: string, last: boolean): Gate {
   const reasons = convergenceReasons(exec, evidenceDir);
   const ready = reasons.length === 0;
-  return { ready, fix: !ready && !last, reasons: reasons.map(reason => `- ${reason}`).join('\n') };
+  return { ready, fix: !(ready || last), reasons: reasons.map(reason => `- ${reason}`).join('\n') };
 }
 
 export interface Progress {
@@ -164,9 +164,9 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
 export function handoffProblems(evidenceDir: string): string[] {
   const problems: string[] = [];
   if (!nonEmptyFile(join(evidenceDir, FILES.handoff))) problems.push('acceptance handoff is missing or empty');
-  const status = lastLine(join(evidenceDir, FILES.preparationStatus));
-  if (status !== 'ACCEPTANCE_COMPLETE' && status !== 'ACCEPTANCE_FAILED') {
-    problems.push(`invalid acceptance preparation status: ${status}`);
+  const preparation = lastLine(join(evidenceDir, FILES.preparationStatus));
+  if (preparation !== 'ACCEPTANCE_COMPLETE' && preparation !== 'ACCEPTANCE_FAILED') {
+    problems.push(`invalid acceptance preparation status: ${preparation}`);
   }
   return problems;
 }

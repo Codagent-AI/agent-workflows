@@ -16,7 +16,7 @@ export interface PlanningInput {
 const nonEmptyFile = (path: string): boolean => existsSync(path) && statSync(path).isFile() && statSync(path).size > 0;
 
 function sortedFiles(dir: string, pick: (name: string) => string | undefined): string[] {
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+  if (!(existsSync(dir) && statSync(dir).isDirectory())) return [];
   // As a shell glob, `*` skips hidden names.
   return readdirSync(dir)
     .filter(name => !name.startsWith('.'))
@@ -36,9 +36,32 @@ function sections(text: string, heading: RegExp): { title: string; body: string 
   const matches = [...text.matchAll(heading)];
   return matches.map((match, index) => {
     const start = (match.index ?? 0) + match[0].length;
-    const end = index + 1 < matches.length ? (matches[index + 1].index ?? text.length) : text.length;
+    const end = matches[index + 1]?.index ?? text.length;
     return { title: match[1], body: text.slice(start, end) };
   });
+}
+
+/** Problems with one scenario's WHEN and THEN behavior. */
+function scenarioProblems(label: string, scenario: { title: string; body: string }): string[] {
+  const scenarioLabel = `${label}, scenario '${scenario.title}'`;
+  const problems: string[] = [];
+  if (!/\*\*WHEN\*\*/.test(scenario.body)) problems.push(`${scenarioLabel} lacks WHEN behavior`);
+  if (!/\*\*THEN\*\*/.test(scenario.body)) problems.push(`${scenarioLabel} lacks THEN behavior`);
+  return problems;
+}
+
+/** Problems with one requirement's SHALL or MUST language and its scenarios. */
+function requirementProblems(path: string, requirement: { title: string; body: string }): string[] {
+  const label = `${path}: requirement '${requirement.title}'`;
+  const problems: string[] = [];
+  if (!/\b(?:SHALL|MUST)\b/.test(requirement.body)) problems.push(`${label} lacks SHALL or MUST language`);
+  const scenarios = sections(requirement.body, /^#### Scenario:[ \t]*(.+?)[ \t]*$/gm);
+  if (scenarios.length === 0) {
+    problems.push(`${label} has no '#### Scenario:'`);
+    return problems;
+  }
+  for (const scenario of scenarios) problems.push(...scenarioProblems(label, scenario));
+  return problems;
 }
 
 function specDrivenProblems(paths: readonly string[]): string[] {
@@ -49,20 +72,7 @@ function specDrivenProblems(paths: readonly string[]): string[] {
       problems.push(`${path} contains no '### Requirement:' heading`);
       continue;
     }
-    for (const requirement of requirements) {
-      const label = `${path}: requirement '${requirement.title}'`;
-      if (!/\b(?:SHALL|MUST)\b/.test(requirement.body)) problems.push(`${label} lacks SHALL or MUST language`);
-      const scenarios = sections(requirement.body, /^#### Scenario:[ \t]*(.+?)[ \t]*$/gm);
-      if (scenarios.length === 0) {
-        problems.push(`${label} has no '#### Scenario:'`);
-        continue;
-      }
-      for (const scenario of scenarios) {
-        const scenarioLabel = `${label}, scenario '${scenario.title}'`;
-        if (!/\*\*WHEN\*\*/.test(scenario.body)) problems.push(`${scenarioLabel} lacks WHEN behavior`);
-        if (!/\*\*THEN\*\*/.test(scenario.body)) problems.push(`${scenarioLabel} lacks THEN behavior`);
-      }
-    }
+    for (const requirement of requirements) problems.push(...requirementProblems(path, requirement));
   }
   return problems;
 }
@@ -73,6 +83,25 @@ function decodePath(path: string): string {
   } catch {
     return path;
   }
+}
+
+/** The normalized targets of the Markdown links in the task index. */
+function linkedDestinations(indexText: string): Set<string> {
+  const destinations = new Set<string>();
+  for (const match of indexText.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/g)) {
+    const destination = match[1].trim().replace(/^[<>]+|[<>]+$/g, '').split('#')[0].split('?')[0];
+    destinations.add(posix.normalize(decodePath(destination)));
+  }
+  return destinations;
+}
+
+/** Problems for each task file the index does not link to. */
+function unlinkedTaskProblems(index: string, tasksDir: string, tasks: readonly string[]): string[] {
+  const destinations = linkedDestinations(readFileSync(index, 'utf8'));
+  return tasks
+    .map(task => posix.join('tasks', task.slice(tasksDir.length + 1)))
+    .filter(relative => !destinations.has(relative))
+    .map(relative => `${index} does not link to ${relative}`);
 }
 
 function taskProblems(changeDir: string): string[] {
@@ -86,40 +115,28 @@ function taskProblems(changeDir: string): string[] {
   if (tasks.length === 0) {
     problems.push(`no non-empty task file under ${changeDir}/tasks/`);
   } else if (existsSync(index)) {
-    const destinations = new Set<string>();
-    for (const match of readFileSync(index, 'utf8').matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/g)) {
-      const destination = match[1].trim().replace(/^[<>]+|[<>]+$/g, '').split('#')[0].split('?')[0];
-      destinations.add(posix.normalize(decodePath(destination)));
-    }
-    for (const task of tasks) {
-      const relative = posix.join('tasks', task.slice(tasksDir.length + 1));
-      if (!destinations.has(relative)) problems.push(`${index} does not link to ${relative}`);
-    }
+    problems.push(...unlinkedTaskProblems(index, tasksDir, tasks));
   }
   return problems;
 }
 
-/** Validates the definition; the problems include any `openspec validate` output. */
-export function validatePlanningArtifacts(exec: Exec, input: PlanningInput): CheckResult {
-  const prefix = (problem: string): string => `validate-planning-artifacts: ${problem}`;
+/** Problems with the change name, kind and directory themselves. */
+function inputProblems(input: PlanningInput): string[] {
   const nameProblems = changeNameProblems(input.changeName);
-  if (nameProblems.length > 0) return fail(nameProblems.map(prefix));
+  if (nameProblems.length > 0) return nameProblems;
   if (input.changeKind !== 'openspec' && input.changeKind !== 'spec-driven') {
-    return fail(prefix(`unsupported change_kind: ${input.changeKind}`));
+    return [`unsupported change_kind: ${input.changeKind}`];
   }
-  if (input.changeDir === '') return fail(prefix('change_dir must not be empty'));
+  if (input.changeDir === '') return ['change_dir must not be empty'];
   const expectedDir = `openspec/changes/${input.changeName}`;
   if (input.changeKind === 'openspec' && input.changeDir !== expectedDir) {
-    return fail(prefix(`change_dir must be ${expectedDir} for ${input.changeKind}: ${input.changeDir}`));
+    return [`change_dir must be ${expectedDir} for ${input.changeKind}: ${input.changeDir}`];
   }
+  return [];
+}
 
-  if (input.changeKind === 'openspec') {
-    const result = exec('openspec', ['validate', '--type', 'change', input.changeName]);
-    if (result.status !== 0) {
-      return fail([result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n') || 'openspec validate failed');
-    }
-  }
-
+/** Problems with the files the definition must have, by kind. */
+function fileProblems(input: PlanningInput): string[] {
   const problems: string[] = [];
   for (const required of ['proposal.md', 'design.md', 'test-plan.md']) {
     const path = join(input.changeDir, required);
@@ -129,5 +146,22 @@ export function validatePlanningArtifacts(exec: Exec, input: PlanningInput): Che
   if (specs.length === 0) problems.push(`no non-empty specification under ${input.changeDir}/specs/`);
   if (input.changeKind === 'spec-driven') problems.push(...specDrivenProblems(specs));
   if (input.requireTasks) problems.push(...taskProblems(input.changeDir));
+  return problems;
+}
+
+/** Validates the definition; the problems include any `openspec validate` output. */
+export function validatePlanningArtifacts(exec: Exec, input: PlanningInput): CheckResult {
+  const prefix = (problem: string): string => `validate-planning-artifacts: ${problem}`;
+  const inputFailures = inputProblems(input);
+  if (inputFailures.length > 0) return fail(inputFailures.map(prefix));
+
+  if (input.changeKind === 'openspec') {
+    const result = exec('openspec', ['validate', '--type', 'change', input.changeName]);
+    if (result.status !== 0) {
+      return fail([result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n') || 'openspec validate failed');
+    }
+  }
+
+  const problems = fileProblems(input);
   return problems.length === 0 ? pass() : fail(problems.map(prefix));
 }

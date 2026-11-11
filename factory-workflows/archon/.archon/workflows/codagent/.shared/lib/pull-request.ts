@@ -20,6 +20,37 @@ interface PrListEntry {
   headRefOid: string;
 }
 
+const failedAttempt = (detail: string): DraftPrResult => ({ ...fail(detail), prUrl: '' });
+
+/** One look at the branch's open pull requests. */
+function draftPrAttempt(exec: Exec, branch: string, localHead: string): DraftPrResult {
+  const listed = exec('gh', [
+    'pr',
+    'list',
+    '--head',
+    branch,
+    '--state',
+    'open',
+    '--json',
+    'number,url,state,isDraft,baseRefName,headRefOid',
+    '--limit',
+    '2',
+  ]);
+  if (listed.status !== 0) return failedAttempt(`could not query the open pull request for branch '${branch}'`);
+  const prs = JSON.parse(listed.stdout) as PrListEntry[];
+  if (prs.length !== 1) {
+    return failedAttempt(`expected exactly one open pull request for branch '${branch}', found ${String(prs.length)}`);
+  }
+  const pr = prs[0];
+  if (pr.state === 'OPEN' && pr.isDraft && pr.baseRefName !== '' && pr.headRefOid === localHead) {
+    return { ...pass(), prUrl: pr.url };
+  }
+  return failedAttempt(
+    `open pull request does not match required draft state or local HEAD (state ${pr.state}, ` +
+      `draft ${String(pr.isDraft)}, base '${pr.baseRefName}', head ${pr.headRefOid}, local HEAD ${localHead})`
+  );
+}
+
 /**
  * The current branch has exactly one open pull request, a draft with a non-empty base
  * branch whose head equals local HEAD. Retries `attempts` times, `intervalSeconds` apart,
@@ -31,39 +62,13 @@ export function checkDraftPr(exec: Exec, sleep: Sleep, attempts: number, interva
     return { ...fail('HEAD is detached; check out the change branch before checking its pull request'), prUrl: '' };
   }
   const localHead = output(exec, 'git', ['rev-parse', 'HEAD']) ?? '';
-  let detail = '';
+  let result: DraftPrResult = { ...fail(''), prUrl: '' };
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const listed = exec('gh', [
-      'pr',
-      'list',
-      '--head',
-      branch,
-      '--state',
-      'open',
-      '--json',
-      'number,url,state,isDraft,baseRefName,headRefOid',
-      '--limit',
-      '2',
-    ]);
-    if (listed.status !== 0) {
-      detail = `could not query the open pull request for branch '${branch}'`;
-    } else {
-      const prs = JSON.parse(listed.stdout) as PrListEntry[];
-      if (prs.length !== 1) {
-        detail = `expected exactly one open pull request for branch '${branch}', found ${String(prs.length)}`;
-      } else {
-        const pr = prs[0];
-        if (pr.state === 'OPEN' && pr.isDraft && pr.baseRefName !== '' && pr.headRefOid === localHead) {
-          return { ...pass(), prUrl: pr.url };
-        }
-        detail =
-          `open pull request does not match required draft state or local HEAD (state ${pr.state}, ` +
-          `draft ${String(pr.isDraft)}, base '${pr.baseRefName}', head ${pr.headRefOid}, local HEAD ${localHead})`;
-      }
-    }
+    result = draftPrAttempt(exec, branch, localHead);
+    if (result.ok) return result;
     if (attempt < attempts) sleep(intervalSeconds * 1000);
   }
-  return { ...fail(detail), prUrl: '' };
+  return result;
 }
 
 /** Pushes the current branch after an acceptance fix, without force-pushing. */

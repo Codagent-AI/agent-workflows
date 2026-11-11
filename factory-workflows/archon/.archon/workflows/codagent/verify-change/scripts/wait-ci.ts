@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { artifactsDir, required } from '../../.shared/lib/check.ts';
-import { renderReport, waitForCi } from '../../.shared/lib/ci.ts';
+import { renderReport } from '../../.shared/lib/ci-report.ts';
+import { waitForCi } from '../../.shared/lib/ci.ts';
 import { runCommand, sleep } from '../../.shared/lib/exec.ts';
 
 const round = required(process.env.INPUTS_ROUND, 'round');
