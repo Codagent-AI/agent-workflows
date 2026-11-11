@@ -7,6 +7,7 @@ import {
   acceptanceRoundsProblems,
   booleanProblems,
   changeNameProblems,
+  inputProblems,
   nonEmptyProblems,
 } from '../.archon/workflows/codagent/.shared/lib/params.ts';
 
@@ -77,6 +78,32 @@ describe('acceptanceRoundsProblems', () => {
     const problems = acceptanceRoundsProblems(value);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain(`from 1 to ${String(MAX_ACCEPTANCE_ROUNDS)}`);
+  });
+});
+
+describe('inputProblems', () => {
+  const valid = { changeName: 'demo', acceptanceRounds: '3', acceptanceFixScope: 'resolve everything' };
+
+  test('accepts valid inputs, with or without verify-change flags', () => {
+    expect(inputProblems(valid)).toEqual([]);
+    expect(inputProblems({ ...valid, skipImplementationReview: 'true', stopUnchangedAcceptance: 'false' })).toEqual([]);
+  });
+
+  test('reports every problem at once', () => {
+    expect(
+      inputProblems({
+        changeName: 'Demo',
+        acceptanceRounds: '0',
+        acceptanceFixScope: ' ',
+        skipImplementationReview: 'yes',
+      })
+    ).toHaveLength(4);
+  });
+
+  test('checks the flags only when given', () => {
+    expect(inputProblems({ ...valid, stopUnchangedAcceptance: 'maybe' })).toEqual([
+      'stop_unchanged_acceptance must be true or false, got: maybe',
+    ]);
   });
 });
 

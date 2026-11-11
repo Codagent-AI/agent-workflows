@@ -29,3 +29,26 @@ export function acceptanceRoundsProblems(value: string): Problems {
     ? []
     : [`acceptance_rounds must be a whole number from 1 to ${MAX_ACCEPTANCE_ROUNDS}, got: ${value}`];
 }
+
+/** The inputs both workflows check before any other node. The two flags are verify-change's. */
+export interface WorkflowInputs {
+  changeName: string;
+  acceptanceRounds: string;
+  acceptanceFixScope: string;
+  skipImplementationReview?: string;
+  stopUnchangedAcceptance?: string;
+}
+
+/** Problems with any of the inputs, empty when they are all valid. */
+export function inputProblems(inputs: WorkflowInputs): Problems {
+  const flags: [string, string | undefined][] = [
+    ['skip_implementation_review', inputs.skipImplementationReview],
+    ['stop_unchanged_acceptance', inputs.stopUnchangedAcceptance],
+  ];
+  return [
+    ...changeNameProblems(inputs.changeName),
+    ...flags.flatMap(([name, value]) => (value === undefined ? [] : booleanProblems(name, value))),
+    ...nonEmptyProblems('acceptance_fix_scope', inputs.acceptanceFixScope),
+    ...acceptanceRoundsProblems(inputs.acceptanceRounds),
+  ];
+}

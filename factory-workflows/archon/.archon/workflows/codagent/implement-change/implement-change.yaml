@@ -42,6 +42,8 @@ nodes:
     runtime: bun
     with:
       change_name: $INPUTS.change_name
+      acceptance_rounds: $INPUTS.acceptance_rounds
+      acceptance_fix_scope: $INPUTS.acceptance_fix_scope
 
   - id: check-definition
     depends_on: [validate-inputs]
