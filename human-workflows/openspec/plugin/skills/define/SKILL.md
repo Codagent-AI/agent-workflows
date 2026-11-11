@@ -1,5 +1,6 @@
 ---
 name: define
+disable-model-invocation: true
 description: Defines an OpenSpec change step by step (proposal, specifications, design, test plan, approach review) with a cross-vendor review, then validates and commits the change documents. Use when the user asks to define an OpenSpec change with define-openspec-change, invokes $define or define-openspec-change:define, or wants to continue a define that is in progress.
 ---
 

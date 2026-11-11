@@ -53,6 +53,8 @@ Write the key without quotes. Codex 0.166 ignores the quoted TOML form `plugins.
 | Claude Code | `/define-openspec-change:define <change-name> [what you want]` |
 | Codex | `$define <change-name> [what you want]` |
 
+Only you start a define. The `define` skill sets `disable-model-invocation: true`, so Claude Code does not load it on its own and runs it only when you type the command. Codex 0.166 accepts the key but lists the skill as usual, so it does not stop the agent from using the skill there.
+
 The change name uses lowercase letters, digits, and hyphens, for example `add-dark-mode`.
 
 1. The agent calls `next_step` with `start: true`. That checks that a crosscheck agent is configured and can run, then runs `openspec new change <name>` and returns the proposal step. If the crosscheck isn't configured, it refuses before creating anything, and the agent runs the `setup` skill with you.
