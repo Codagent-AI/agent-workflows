@@ -100,8 +100,13 @@ export function childCommand(input: ChildInput): ChildCommand {
     if (input.model) {
       args.push("-m", input.model);
     }
+    // Codex 0.166 splits -c keys on dots and keeps quotes as part of the key, so the quoted TOML
+    // form `plugins."name@market"` is silently ignored. The unquoted key works; a marketplace name
+    // with a dot in it cannot be written this way.
     for (const marketplace of marketplaceNames(input.pluginRoot)) {
-      args.push("-c", `plugins."${PLUGIN_NAME}@${marketplace}".enabled=false`);
+      if (!marketplace.includes(".")) {
+        args.push("-c", `plugins.${PLUGIN_NAME}@${marketplace}.enabled=false`);
+      }
     }
     args.push("-o", input.lastMessageFile, "--", input.prompt);
     return { command: "codex", args };

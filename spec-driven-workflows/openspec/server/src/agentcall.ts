@@ -117,7 +117,7 @@ export class CallManager {
     return this.active?.status === "running" ? this.active : undefined;
   }
 
-  async start(agent: string, prompt: string): Promise<ToolText> {
+  async start(agent: string, prompt: string, cwd: string = this.context.cwd): Promise<ToolText> {
     if (agent !== CROSSCHECK_AGENT) {
       return errorText("invalid_target", `agent must be "${CROSSCHECK_AGENT}", the only target this plugin supports.`);
     }
@@ -135,7 +135,7 @@ export class CallManager {
 
     let root: string;
     try {
-      root = await repoRoot(this.context);
+      root = await repoRoot({ ...this.context, cwd });
     } catch (error) {
       return errorText("call_agent_unavailable", (error as Error).message);
     }

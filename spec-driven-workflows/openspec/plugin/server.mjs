@@ -7256,7 +7256,7 @@ var require_dist = __commonJS({
 // src/main.ts
 import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync3 } from "node:fs";
 import { dirname, join as join7 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
@@ -21720,7 +21720,9 @@ function childCommand(input) {
       args2.push("-m", input.model);
     }
     for (const marketplace of marketplaceNames(input.pluginRoot)) {
-      args2.push("-c", `plugins."${PLUGIN_NAME}@${marketplace}".enabled=false`);
+      if (!marketplace.includes(".")) {
+        args2.push("-c", `plugins.${PLUGIN_NAME}@${marketplace}.enabled=false`);
+      }
     }
     args2.push("-o", input.lastMessageFile, "--", input.prompt);
     return { command: "codex", args: args2 };
@@ -21975,7 +21977,7 @@ var CallManager = class {
   running() {
     return this.active?.status === "running" ? this.active : void 0;
   }
-  async start(agent, prompt) {
+  async start(agent, prompt, cwd = this.context.cwd) {
     if (agent !== CROSSCHECK_AGENT) {
       return errorText("invalid_target", `agent must be "${CROSSCHECK_AGENT}", the only target this plugin supports.`);
     }
@@ -21992,7 +21994,7 @@ var CallManager = class {
     }
     let root;
     try {
-      root = await repoRoot(this.context);
+      root = await repoRoot({ ...this.context, cwd });
     } catch (error2) {
       return errorText("call_agent_unavailable", error2.message);
     }
@@ -22568,6 +22570,33 @@ async function nextStepIn(context, calls2, root, args) {
   };
 }
 
+// src/session.ts
+import { fileURLToPath } from "node:url";
+function sessionCwdFromMeta(meta) {
+  if (!meta || typeof meta !== "object") {
+    return void 0;
+  }
+  const fields = meta;
+  for (const key of ["codex/sandbox-state-meta", "codex/sandbox-state"]) {
+    const cwd = fields[key]?.sandboxCwd;
+    if (typeof cwd === "string" && cwd !== "") {
+      try {
+        return cwd.startsWith("file:") ? fileURLToPath(cwd) : cwd;
+      } catch {
+      }
+    }
+  }
+  const workspaces = fields["x-codex-turn-metadata"]?.workspaces;
+  if (workspaces && typeof workspaces === "object") {
+    const keys = Object.keys(workspaces);
+    if (keys.length === 1) {
+      return keys[0];
+    }
+  }
+  return void 0;
+}
+var CODEX_SANDBOX_META_CAPABILITY = "codex/sandbox-state-meta";
+
 // src/server.ts
 var SERVER_NAME = "define";
 var SERVER_VERSION = "0.1.0";
@@ -22585,9 +22614,13 @@ async function guarded(work) {
   }
 }
 function createServer(makeContext) {
-  const server2 = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const server2 = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } }
+  );
   const context = makeContext(server2);
   const calls2 = new CallManager(context);
+  const cwdFor = (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd;
   server2.registerTool(
     "next_step",
     {
@@ -22598,7 +22631,7 @@ function createServer(makeContext) {
         start: external_exports.boolean().optional().describe("true to start a new define or resume one in progress. Leave it out to complete the current step.")
       }
     },
-    async (args) => guarded(() => nextStep(context, calls2, args))
+    async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls2, args))
   );
   server2.registerTool(
     "call_agent",
@@ -22610,7 +22643,7 @@ function createServer(makeContext) {
         prompt: external_exports.string().describe("The complete, standalone task for the child.")
       }
     },
-    async ({ agent, prompt }) => guarded(() => calls2.start(agent, prompt))
+    async ({ agent, prompt }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra)))
   );
   server2.registerTool(
     "get_agent_call",
@@ -22635,7 +22668,7 @@ function createServer(makeContext) {
 }
 
 // src/main.ts
-var pluginRoot = dirname(fileURLToPath(import.meta.url));
+var pluginRoot = dirname(fileURLToPath2(import.meta.url));
 var logBase = defaultLogBase();
 try {
   mkdirSync3(logBase, { recursive: true });

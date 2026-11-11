@@ -16,7 +16,7 @@
     "planning"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Define OpenSpec Change",
     "shortDescription": "Define an OpenSpec change step by step",

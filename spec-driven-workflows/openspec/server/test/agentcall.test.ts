@@ -51,7 +51,7 @@ test("a Claude lead gets a read-only Codex child with this plugin turned off", a
     "-c",
     'model_reasoning_effort="high"',
     "-c",
-    'plugins."define-openspec-change@agent-workflows".enabled=false',
+    'plugins.define-openspec-change@agent-workflows.enabled=false',
     "-o",
     lastMessage,
     "--",
@@ -121,8 +121,8 @@ test("the Codex child turns off the marketplace this plugin was installed from",
   // The step prompt files are not under the fake cache path, but the child command is built before they matter.
   await cached.calls.start("crosscheck", "Review.");
   const args = fakeLog(fixture).find((entry) => entry.bin === "codex")!.args;
-  assert.ok(args.includes('plugins."define-openspec-change@agent-workflows".enabled=false'));
-  assert.ok(args.includes('plugins."define-openspec-change@my-market".enabled=false'));
+  assert.ok(args.includes('plugins.define-openspec-change@agent-workflows.enabled=false'));
+  assert.ok(args.includes('plugins.define-openspec-change@my-market.enabled=false'));
 });
 
 test("a slow child returns running, then get_agent_call returns the result", async () => {

@@ -209,3 +209,13 @@ test("next_step outside a git repository is refused", async () => {
   assert.match(result.text, /must run inside a git repository/);
   assert.equal(existsSync(join(fixture.dir, "openspec")), false);
 });
+
+test("the session directory is read from Codex tool-call metadata", async () => {
+  const { sessionCwdFromMeta } = await import("../src/session.js");
+  assert.equal(sessionCwdFromMeta(undefined), undefined);
+  assert.equal(sessionCwdFromMeta({ progressToken: 1 }), undefined);
+  assert.equal(sessionCwdFromMeta({ "codex/sandbox-state-meta": { sandboxCwd: "file:///tmp/some%20repo" } }), "/tmp/some repo");
+  assert.equal(sessionCwdFromMeta({ "codex/sandbox-state": { sandboxCwd: "/tmp/plain" } }), "/tmp/plain");
+  assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/tmp/ws": { has_changes: false } } } }), "/tmp/ws");
+  assert.equal(sessionCwdFromMeta({ "x-codex-turn-metadata": { workspaces: { "/a": {}, "/b": {} } } }), undefined);
+});

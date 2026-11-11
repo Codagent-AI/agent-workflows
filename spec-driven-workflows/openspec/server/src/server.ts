@@ -5,6 +5,7 @@ import { CallManager } from "./agentcall.js";
 import type { Context } from "./context.js";
 import { nextStep } from "./define.js";
 import type { ToolText } from "./finish.js";
+import { CODEX_SANDBOX_META_CAPABILITY, sessionCwdFromMeta } from "./session.js";
 
 export const SERVER_NAME = "define";
 export const SERVER_VERSION = "0.1.0";
@@ -26,9 +27,14 @@ async function guarded(work: () => Promise<ToolText>) {
 
 /** Builds the MCP server. `context.clientName` should read the connected client's name. */
 export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CallManager } {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const server = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } },
+  );
   const context = makeContext(server);
   const calls = new CallManager(context);
+  /** The session directory for this call: from Codex's `_meta`, or where the server started. */
+  const cwdFor = (extra: { _meta?: unknown }) => sessionCwdFromMeta(extra._meta) ?? context.cwd;
 
   server.registerTool(
     "next_step",
@@ -50,7 +56,7 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
           .describe("true to start a new define or resume one in progress. Leave it out to complete the current step."),
       },
     },
-    async (args) => guarded(() => nextStep(context, calls, args)),
+    async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls, args)),
   );
 
   server.registerTool(
@@ -67,7 +73,7 @@ export function createServer(makeContext: (server: McpServer) => Context): { ser
         prompt: z.string().describe("The complete, standalone task for the child."),
       },
     },
-    async ({ agent, prompt }) => guarded(() => calls.start(agent, prompt)),
+    async ({ agent, prompt }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra))),
   );
 
   server.registerTool(

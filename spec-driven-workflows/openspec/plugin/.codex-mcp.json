@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "define": {
+      "command": "node",
+      "args": ["./server.mjs"],
+      "cwd": ".",
+      "env_vars": [
+        "DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI",
+        "DEFINE_OPENSPEC_CHANGE_CROSSCHECK_MODEL",
+        "DEFINE_OPENSPEC_CHANGE_CROSSCHECK_EFFORT",
+        "DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS",
+        "CODEX_HOME",
+        "CLAUDE_CONFIG_DIR",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "SSH_AUTH_SOCK",
+        "GIT_SSH_COMMAND",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_HOST",
+        "GH_CONFIG_DIR",
+        "XDG_CONFIG_HOME"
+      ],
+      "tools": {
+        "get_agent_call": { "approval_mode": "approve" },
+        "cancel_agent_call": { "approval_mode": "approve" }
+      }
+    }
+  }
+}
