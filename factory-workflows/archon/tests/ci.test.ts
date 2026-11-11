@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   type CiResult,
-  type PrComments,
   blockingReviews,
   failedRunIds,
   finalStatus,
   waitForCi,
 } from '../.archon/workflows/codagent/.shared/lib/ci.ts';
+import type { PrComments } from '../.archon/workflows/codagent/.shared/lib/ci-comments.ts';
 import { renderReport } from '../.archon/workflows/codagent/.shared/lib/ci-report.ts';
 import { type FakeResponse, type FakeRule, type Sandbox, createSandbox, pr, reply, rule, user } from './helpers.ts';
 

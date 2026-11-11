@@ -4,12 +4,14 @@
   "description": "Development tools for the codagent Archon workflow pack. The pack itself is .archon/ and needs none of them.",
   "type": "module",
   "scripts": {
-    "lint": "biome lint --error-on-warnings . && jscpd",
+    "lint": "biome lint --error-on-warnings . && jscpd && tsc --noEmit",
     "test": "bun test tests/",
     "test:fixtures": "bun tests/run-fixtures.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
-    "jscpd": "5.4.3"
+    "@types/bun": "1.4.4",
+    "jscpd": "5.4.3",
+    "typescript": "7.0.2"
   }
 }
