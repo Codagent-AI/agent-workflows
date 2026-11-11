@@ -1,70 +1,64 @@
 name: codagent-commit-definition
 description: >-
-  Building block of codagent-implement-change; not for standalone runs. Port of
-  Agent Runner core commit-definition-v1.0: commit an approved change
+  Building block of codagent-implement-change. Commit an approved change
   definition for a workflow without a planning step, and require a clean
   worktree before implementation starts.
 
 inputs:
-  change_name: {}
-  change_dir: {}
-  change_kind: {}
-  skip_validator: {}
-  session_dir: {}
-  # Agent Runner's autonomy preamble, from codagent-implement-change.
-  autonomy_preamble: {}
+  change_name: { required: true }
+  change_dir: { required: true }
+  change_kind: { required: true }
 
 nodes:
-  # Runner skips this step for spec-driven changes (skip_if). The port keeps
-  # the node and passes it, so the clean check below always has a dependency
-  # that ran.
+  # Passes without committing for a spec-driven change.
   - id: commit-definition
-    bash: |
-      if [ "$INPUTS_CHANGE_KIND" = spec-driven ]; then
-        jq -n '{status: "PASS", stdout: "", output: "", evidence: ""}'
-        exit 0
-      fi
-      CHECK_INPUT=$(jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg skip_validator "$INPUTS_SKIP_VALIDATOR" '{change_name: $change_name, change_dir: $change_dir, skip_validator: $skip_validator}') \
-        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/commit-change-plan.sh"
-    output_format: &check-result
+    script: commit-definition
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+    output_format: &check
       type: object
       properties:
-        status: { type: string, enum: [PASS, FAIL] }
-        stdout: { type: string }
-        output: { type: string }
-        evidence: { type: string }
-      required: [status, stdout, output, evidence]
+        ok: { type: boolean }
+        problems: { type: string }
+        message: { type: string }
+      required: [ok, problems, message]
+      additionalProperties: false
 
-  - id: commit-definition-repair
+  - id: repair-commit-definition
     depends_on: [commit-definition]
-    when: "$commit-definition.output.status == 'FAIL'"
-    model: '@lead'
-    settingSources: [project]
+    when: "$commit-definition.output.ok == 'false'"
+    model: ['@lead', large]
     context: fresh
-    prompt: |
-      $INPUTS.autonomy_preamble
+    command: repair-commit-definition
+    with:
+      change_dir: $INPUTS.change_dir
+      problems: $commit-definition.output.problems
+    output_format: &repair
+      type: object
+      properties:
+        blocked: { type: boolean }
+        reason: { type: string }
+      required: [blocked, reason]
+      additionalProperties: false
 
-      commit only $INPUTS.change_dir following repository conventions. Never declare success yourself; the check that runs after you decides. If only a human can resolve the failure, make no unsafe change, explain why, and end your response with the line `REPAIR_BLOCKED`.
-
-      $commit-definition.output.evidence
-
-  - id: commit-definition-repair-blocked
-    depends_on: [commit-definition-repair]
-    bash: AGENT_RESPONSE=$commit-definition-repair.output sh "$PACK_DIR/.shared/bin/repair-blocked.sh"
-
-  - id: commit-definition-2
-    depends_on: [commit-definition-repair-blocked]
-    bash: |
-      jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg skip_validator "$INPUTS_SKIP_VALIDATOR" '{change_name: $change_name, change_dir: $change_dir, skip_validator: $skip_validator}' \
-        | sh "$PACK_DIR/.shared/core/commit-change-plan.sh"
+  - id: recheck-commit-definition
+    depends_on: [repair-commit-definition]
+    script: commit-definition
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+      strict: true
+      blocked: $repair-commit-definition.output.blocked
+      reason: $repair-commit-definition.output.reason
+    output_format: *check
 
   - id: check-clean-before-implementation
-    depends_on: [commit-definition, commit-definition-2]
+    depends_on: [commit-definition, recheck-commit-definition]
     trigger_rule: none_failed_min_one_success
-    bash: |
-      if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-        echo "tracked worktree changes exist before implementation; commit or remove them before continuing" >&2
-        exit 1
-      fi
+    script: check-clean-before-implementation
+    runtime: bun

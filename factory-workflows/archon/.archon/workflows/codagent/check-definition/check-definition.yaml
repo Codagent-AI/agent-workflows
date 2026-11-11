@@ -1,106 +1,58 @@
 name: codagent-check-definition
 description: >-
-  Building block of codagent-implement-change; not for standalone runs. Port of
-  Agent Runner core check-definition-v1.0: validate an approved change
+  Building block of codagent-implement-change. Validate an approved change
   definition, with up to three autonomous lead repairs of reported conformance
   problems.
 
-# Runner runs a loop of at most three iterations, each validating and, on a
-# failure, repairing, then validates once more after the loop. The port unrolls
-# it into explicit nodes: validate-definition-N reports PASS or FAIL, a repair
-# runs only after a FAIL, and verify-definition fails the run if the third
-# repair did not fix it. Runner continues past a failed repair agent
-# (continue_on_failure); here a repair agent that fails after Archon's own
-# retries fails the run.
-
 inputs:
-  change_name: {}
-  change_dir: {}
-  change_label: {}
-  change_kind: {}
-  session_dir: {}
-  # Agent Runner's autonomy preamble, from codagent-implement-change. Only the
-  # fresh repair session gets it.
-  autonomy_preamble: {}
+  change_name: { required: true }
+  change_dir: { required: true }
+  change_label: { required: true }
+  change_kind: { required: true }
 
 nodes:
-  - id: validate-definition-1
-    bash: |
-      CHECK_INPUT=$(jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg change_kind "$INPUTS_CHANGE_KIND" '{change_name: $change_name, change_dir: $change_dir, change_kind: $change_kind, require_tasks: "false"}') \
-        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/validate-planning-artifacts.sh"
-    output_format: &check-result
-      type: object
-      properties:
-        status: { type: string, enum: [PASS, FAIL] }
-        stdout: { type: string }
-        output: { type: string }
-        evidence: { type: string }
-      required: [status, stdout, output, evidence]
+  # Each iteration validates and, on a failure, repairs; the next iteration's
+  # validation checks the repair. The lead's repairs continue one session.
+  - id: check-definition
+    loop_group:
+      max_iterations: 3
+      on_exhausted: complete
+      until_bash: 'ok=$validate-definition.output.ok; [ "$ok" = true ]'
+      nodes:
+        - id: validate-definition
+          script: validate-definition
+          runtime: bun
+          with:
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            change_kind: $INPUTS.change_kind
+          output_format: &check
+            type: object
+            properties:
+              ok: { type: boolean }
+              problems: { type: string }
+            required: [ok, problems]
+            additionalProperties: false
 
-  - id: repair-definition-1
-    depends_on: [validate-definition-1]
-    when: "$validate-definition-1.output.status == 'FAIL'"
-    model: '@lead'
-    settingSources: [project]
-    context: fresh
-    command: repair-definition
-    with:
-      session_preamble: $INPUTS.autonomy_preamble
-      validation_output: $validate-definition-1.output.output
+        - id: repair-definition
+          depends_on: [validate-definition]
+          when: "$validate-definition.output.ok == 'false'"
+          model: ['@lead', large]
+          command: repair-definition
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            validation_output: $validate-definition.output.problems
 
-  - id: validate-definition-2
-    depends_on: [repair-definition-1]
-    when: "$validate-definition-1.output.status == 'FAIL'"
-    bash: |
-      CHECK_INPUT=$(jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg change_kind "$INPUTS_CHANGE_KIND" '{change_name: $change_name, change_dir: $change_dir, change_kind: $change_kind, require_tasks: "false"}') \
-        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/validate-planning-artifacts.sh"
-    output_format: *check-result
-
-  - id: repair-definition-2
-    depends_on: [validate-definition-2]
-    when: "$validate-definition-2.output.status == 'FAIL'"
-    model: '@lead'
-    settingSources: [project]
-    context: { resume: repair-definition-1 }
-    command: repair-definition
-    with:
-      session_preamble: ""
-      validation_output: $validate-definition-2.output.output
-
-  - id: validate-definition-3
-    depends_on: [repair-definition-2]
-    when: "$validate-definition-2.output.status == 'FAIL'"
-    bash: |
-      CHECK_INPUT=$(jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg change_kind "$INPUTS_CHANGE_KIND" '{change_name: $change_name, change_dir: $change_dir, change_kind: $change_kind, require_tasks: "false"}') \
-        sh "$PACK_DIR/.shared/bin/check.sh" status sh "$PACK_DIR/.shared/core/validate-planning-artifacts.sh"
-    output_format: *check-result
-
-  - id: repair-definition-3
-    depends_on: [validate-definition-3]
-    when: "$validate-definition-3.output.status == 'FAIL'"
-    model: '@lead'
-    settingSources: [project]
-    context: { resume: repair-definition-2 }
-    command: repair-definition
-    with:
-      session_preamble: ""
-      validation_output: $validate-definition-3.output.output
-
-  # A repair in the final iteration still needs deterministic verification.
+  # A repair in the last iteration still needs deterministic verification.
   - id: verify-definition
-    depends_on: [repair-definition-3]
-    when: "$validate-definition-3.output.status == 'FAIL'"
-    bash: |
-      jq -n --arg change_name "$INPUTS_CHANGE_NAME" --arg change_dir "$INPUTS_CHANGE_DIR" \
-        --arg change_kind "$INPUTS_CHANGE_KIND" '{change_name: $change_name, change_dir: $change_dir, change_kind: $change_kind, require_tasks: "false"}' \
-        | sh "$PACK_DIR/.shared/core/validate-planning-artifacts.sh"
-
-  # The block's single exit. It runs once the definition has passed, at
-  # whichever validation passed it.
-  - id: definition-checked
-    depends_on: [validate-definition-1, validate-definition-2, validate-definition-3, verify-definition]
-    trigger_rule: none_failed_min_one_success
-    bash: echo "definition checked"
+    depends_on: [check-definition]
+    script: validate-definition
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+      strict: true
+    output_format: *check
