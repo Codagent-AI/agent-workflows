@@ -17,7 +17,8 @@ The steps and their prompts come from Agent Runner's define workflow. Runner mov
 - Node.js 20 or later on `PATH`. The server is one bundled file, `plugin/server.mjs`, with no install step.
 - The `openspec` CLI on `PATH`, in a repository that has an `openspec/` folder.
 - git. On a branch other than the default branch, `gh` must also be signed in, so the plugin can open the pull request.
-- Both `claude` and `codex` on `PATH` and signed in. The crosscheck runs on the CLI that is not leading.
+- `claude`, `codex`, or both on `PATH` and signed in. With both, the crosscheck runs on the CLI that is not leading. With one, it runs on that CLI.
+- `~/.agent-workflows/config.yaml`, which sets the crosscheck agent. If it's missing, the agent offers to set it up the first time you start a define. See [Configuration](#configuration).
 
 ## Install
 
@@ -52,7 +53,7 @@ Write the key without quotes. Codex 0.166 ignores the quoted TOML form `plugins.
 
 The change name uses lowercase letters, digits, and hyphens, for example `add-dark-mode`.
 
-1. The agent calls `next_step` with `start: true`. That runs `openspec new change <name>` and returns the proposal step.
+1. The agent calls `next_step` with `start: true`. That checks that a crosscheck agent is configured and can run, then runs `openspec new change <name>` and returns the proposal step. If the crosscheck isn't configured, it refuses before creating anything, and the agent runs the `setup` skill with you.
 2. The agent works through each step with you. When a step is done, it calls `next_step` again. The server checks the step's file before it moves on, and refuses with what is missing if the file is absent or empty:
    - proposal: `proposal.md`
    - specs: at least one `specs/<capability>/spec.md`
@@ -79,14 +80,14 @@ Progress is saved in `openspec/changes/<name>/.define-openspec-change.json` and 
 
 `call_agent` takes `agent: "crosscheck"` and a standalone prompt. It starts one child agent, waits up to 100 seconds, and returns the child's result or `status: "running"` with a `call_id`. The lead then calls `get_agent_call` until the call ends. Only one call runs at a time, and a call can last at most 60 minutes. `cancel_agent_call` stops it.
 
-The child has no access to the lead's conversation and runs read-only:
+The child's CLI, model, and effort come from `~/.agent-workflows/config.yaml` (see [Configuration](#configuration)). It has no access to the lead's conversation and runs read-only:
 
-- **Codex child** (when Claude Code leads):
-  - runs `codex exec --json --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort="high"`;
+- **Codex child**:
+  - runs `codex exec --json --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort="<effort>" [-m <model>]`;
   - has this plugin turned off;
   - still loads your own Codex configuration, including its MCP servers, plugins, and hooks. The read-only sandbox covers shell commands and file edits, not those tools.
-- **Claude child** (when Codex leads):
-  - runs `claude -p --setting-sources "" --strict-mcp-config --no-session-persistence`;
+- **Claude child**:
+  - runs `claude -p --setting-sources "" --strict-mcp-config --no-session-persistence --effort <effort> [--model <model>]`;
   - can use only Read, Grep, Glob, WebSearch, and WebFetch;
   - loads no settings, plugins, or MCP servers.
 
@@ -94,17 +95,25 @@ The child reads the review skill from the plugin folder by absolute path. Each c
 
 ## Configuration
 
-| Variable | Default | Effect |
-|---|---|---|
-| `DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI` | the CLI that is not leading | `claude` or `codex` |
-| `DEFINE_OPENSPEC_CHANGE_CROSSCHECK_MODEL` | the CLI's default | model for the child |
-| `DEFINE_OPENSPEC_CHANGE_CROSSCHECK_EFFORT` | `high` | reasoning effort for the child |
-| `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS` | `100` | how long `call_agent` and `get_agent_call` wait before they return `running` |
+The crosscheck agent is set in `~/.agent-workflows/config.yaml`, with one entry per CLI:
 
-Set them in the environment that starts the CLI.
+```yaml
+crosscheck:
+  - cli: codex
+    model: gpt-6-astra
+    effort: high
+  - cli: claude
+    model: opus
+    effort: high
+```
 
-- Claude Code passes its whole environment to the server.
-- Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards these four through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`.
+- `cli` is `claude` or `codex`, and each CLI appears at most once. `model` and `effort` are optional. Without them the child uses its CLI's default model and `high` effort. No other keys are allowed in an entry.
+- For each call, the server uses the entry for the CLI that is not leading, if that CLI is listed and on `PATH`. Otherwise it uses the lead's own entry, so the crosscheck runs on the same CLI as the lead. If the lead can't be told apart, it uses the first listed CLI that is on `PATH`.
+- If the file is missing or invalid, or no listed CLI is on `PATH`, `next_step` refuses to start and `call_agent` refuses to run. Either way, the agent then uses the `setup` skill (`/define-openspec-change:setup`, or `$setup` in Codex). That skill finds the CLIs you have, recommends an entry for each, and writes the file once you confirm. You can also run it at any time to change the config.
+
+One environment variable remains, for testing: `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS` (default `100`) sets how long `call_agent` and `get_agent_call` wait before they return `running`.
+
+Codex passes MCP servers only a few variables, such as `HOME` and `PATH`. `plugin/.codex-mcp.json` forwards that variable through `env_vars`, along with the variables the child CLIs, git, and `gh` need: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, `GH_CONFIG_DIR`, and `XDG_CONFIG_HOME`. Claude Code passes its whole environment to the server.
 
 Logs go to `$TMPDIR/define-openspec-change/`:
 
@@ -123,6 +132,7 @@ Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` or any other plugin-root var
 - **The child is read-only.** Runner told the reviewer not to write. Here the child runs in a read-only sandbox or with read-only tools.
 - **One crosscheck per call.** There are no `session` or `follow_up` targets. Each call starts a fresh child, and the lead puts follow-up questions in a new call.
 - **No agent switch between steps.** The lead you start with runs every step.
+- **Config.** Runner took the crosscheck from its `crosscheck` profile in `~/.agent-runner/config.yaml`. Here it comes from the `crosscheck` list in `~/.agent-workflows/config.yaml`, and the lead is whatever session you start.
 - **No task steps.** Runner's plan-tasks and review-tasks steps are left out, because change v3 no longer uses them.
 - **Starting and resuming** both use `next_step` with `start: true`. A later call without `start` completes the current step, so a new session cannot skip a step by mistake.
 
@@ -138,6 +148,7 @@ human-workflows/openspec/
     .codex-mcp.json            Codex: node ./server.mjs in the plugin folder
     server.mjs                 bundled server, committed
     skills/define/             the entry point on both CLIs
+    skills/setup/              writes ~/.agent-workflows/config.yaml with you
     skills/<copied skills>/    from Agent Skills, now the source of truth for define
     steps/<five steps>.md      step prompts from Runner
     PROVENANCE.md              source commits, and what changed in each copied file

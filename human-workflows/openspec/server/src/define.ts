@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { CallManager } from "./agentcall.js";
 import { isValidChangeName, missingForStep, nameRuleMessage } from "./checks.js";
 import { detectLead } from "./child.js";
+import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
 import { finishDefine, type ToolText } from "./finish.js";
 import { output, run } from "./proc.js";
@@ -82,9 +83,15 @@ async function nextStepIn(context: Context, calls: CallManager, root: string, ar
     throw error;
   }
   const at = context.now().toISOString();
-  const lead = detectLead(context.clientName(), context.env) ?? "unknown";
+  const leadCli = detectLead(context.clientName(), context.env);
+  const lead = leadCli ?? "unknown";
 
   if (args.start) {
+    // Check the crosscheck config before any step, so a missing one is set up before the proposal's review.
+    const crosscheck = resolveCrosscheck(leadCli, context.env);
+    if (typeof crosscheck === "string") {
+      return refuse(crosscheck);
+    }
     if (!state) {
       if (existsSync(absoluteDir)) {
         return refuse(

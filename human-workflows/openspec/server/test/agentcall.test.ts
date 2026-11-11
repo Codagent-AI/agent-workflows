@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
-import { CHANGE, fakeLog, makeContext, makeFixture, session, writeArtifacts } from "./helpers.js";
+import { readConfig } from "../src/config.js";
+import { CHANGE, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
 
 const SESSION_VARS = {
   CLAUDECODE: "1",
@@ -20,8 +21,8 @@ function parse(result: { text: string }) {
   return JSON.parse(result.text) as Record<string, unknown> & { error?: { code: string; message: string } };
 }
 
-async function atProposal(options: Parameters<typeof makeContext>[1] = {}) {
-  const fixture = makeFixture();
+async function atProposal(options: Parameters<typeof makeContext>[1] = {}, fixtureOptions: Parameters<typeof makeFixture>[0] = {}) {
+  const fixture = makeFixture(fixtureOptions);
   const context = makeContext(fixture, options);
   const s = session(context);
   await s.next({ change_name: CHANGE, start: true });
@@ -95,21 +96,84 @@ test("a Codex lead gets a Claude child with no settings, no MCP servers, and rea
   ]);
 });
 
-test("crosscheck CLI, model, and effort can be overridden", async () => {
-  const { fixture, calls } = await atProposal({
-    client: "claude-code",
-    extraEnv: {
-      DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI: "claude",
-      DEFINE_OPENSPEC_CHANGE_CROSSCHECK_MODEL: "sonnet",
-      DEFINE_OPENSPEC_CHANGE_CROSSCHECK_EFFORT: "medium",
-    },
-  });
+test("the other CLI's config entry sets the child's model and effort", async () => {
+  const config = "crosscheck:\n  - cli: claude\n    model: opus\n    effort: high\n  - cli: codex\n    model: gpt-6-astra\n    effort: xhigh\n";
+  const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
+  const body = parse(await calls.start("crosscheck", "Review."));
+  assert.equal(body.cli, "codex");
+  assert.equal(body.model, "gpt-6-astra");
+  assert.equal(body.effort, "xhigh");
+  const args = fakeLog(fixture).find((entry) => entry.bin === "codex")!.args;
+  assert.deepEqual(args.slice(args.indexOf("-c"), args.indexOf("-c") + 4), ["-c", 'model_reasoning_effort="xhigh"', "-m", "gpt-6-astra"]);
+});
+
+test("with only the lead's CLI in the config, the crosscheck runs on the lead's CLI", async () => {
+  const config = "crosscheck:\n  - cli: claude\n    model: sonnet\n    effort: medium\n";
+  const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
   const body = parse(await calls.start("crosscheck", "Review."));
   assert.equal(body.cli, "claude");
   assert.equal(body.model, "sonnet");
   assert.equal(body.effort, "medium");
   const args = fakeLog(fixture).find((entry) => entry.bin === "claude")!.args;
   assert.deepEqual(args.slice(args.indexOf("--effort"), args.indexOf("--effort") + 4), ["--effort", "medium", "--model", "sonnet"]);
+  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
+});
+
+test("the lead's own CLI is used when the other CLI is configured but not installed", async () => {
+  const fixture = makeFixture();
+  const context = makeContext(fixture, { client: "codex-mcp-client" });
+  const s = session(context);
+  await s.next({ change_name: CHANGE, start: true });
+  const noClaude = session({ ...context, env: { ...context.env, PATH: pathWithout(fixture, ["claude"]) } });
+  const body = parse(await noClaude.calls.start("crosscheck", "Review."));
+  assert.equal(body.status, "succeeded");
+  assert.equal(body.cli, "codex");
+});
+
+test("an unknown lead uses the first configured CLI that is installed", async () => {
+  const { calls } = await atProposal({ client: "some-other-client" });
+  const body = parse(await calls.start("crosscheck", "Review."));
+  assert.equal(body.cli, "codex");
+});
+
+test("call_agent without a usable config is refused and points at the setup skill", async () => {
+  const { fixture, calls } = await atProposal({ client: "claude-code" });
+  writeConfig(fixture, null);
+  const missing = parse(await calls.start("crosscheck", "Review."));
+  assert.equal(missing.error?.code, "crosscheck_not_configured");
+  assert.match(missing.error?.message ?? "", /~\/\.agent-workflows\/config\.yaml/);
+  assert.match(missing.error?.message ?? "", /define-openspec-change:setup/);
+  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
+});
+
+test("the config is checked: a crosscheck list of claude and codex entries with only cli, model, and effort", () => {
+  const fixture = makeFixture();
+  const read = (text: string) => {
+    writeConfig(fixture, text);
+    return readConfig(fixture.env);
+  };
+  const ok = read("crosscheck:\n  - cli: codex\n    model: gpt-6-astra\n  - cli: claude\n");
+  assert.deepEqual(ok.ok && ok.crosscheck, [
+    { cli: "codex", model: "gpt-6-astra", effort: "high" },
+    { cli: "claude", effort: "high" },
+  ]);
+  const problems: Array<[string, RegExp]> = [
+    ["crosscheck: []\n", /needs a `crosscheck` list/],
+    ["crosscheck:\n  cli: codex\n", /needs a `crosscheck` list/],
+    ["crosscheck:\n  - cli: gemini\n", /cli: claude or cli: codex/],
+    ["crosscheck:\n  - cli: codex\n  - cli: codex\n", /more than one crosscheck entry has cli: codex/],
+    ["crosscheck:\n  - cli: codex\n    reasoning: high\n", /unknown keys: reasoning/],
+    ["crosscheck:\n  - cli: codex\n    model: ''\n", /non-empty text/],
+    ["crosscheck: [\n", /not valid/],
+  ];
+  for (const [text, pattern] of problems) {
+    const result = read(text);
+    assert.equal(result.ok, false, text);
+    assert.match(result.ok ? "" : result.message, pattern, text);
+  }
+  writeConfig(fixture, null);
+  const missing = readConfig(fixture.env);
+  assert.equal(!missing.ok && missing.reason, "missing");
 });
 
 test("the Codex child turns off the marketplace this plugin was installed from", async () => {
@@ -220,14 +284,11 @@ test("call_agent is refused outside the proposal and approach-review steps", asy
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
 });
 
-test("bad targets, empty prompts, unknown calls, and an unknown lead are refused", async () => {
-  const { calls, fixture } = await atProposal({ client: "some-other-client" });
+test("bad targets, empty prompts, and unknown calls are refused", async () => {
+  const { calls, fixture } = await atProposal({ client: "claude-code" });
   assert.equal(parse(await calls.start("reviewer", "Review.")).error?.code, "invalid_target");
   assert.equal(parse(await calls.start("crosscheck", "   ")).error?.code, "invalid_request");
   assert.equal(parse(await calls.get("call-00000000")).error?.code, "unknown_call");
   assert.equal(parse(await calls.cancel("call-00000000")).error?.code, "unknown_call");
-  const unknownLead = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(unknownLead.error?.code, "invalid_cli");
-  assert.match(unknownLead.error?.message ?? "", /DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI/);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
 });

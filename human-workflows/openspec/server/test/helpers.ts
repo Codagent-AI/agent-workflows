@@ -1,5 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +56,7 @@ const FAKE_CHILD = (cli: string) => `#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
-const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_") || k === "DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI");
+const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_"));
 if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ bin: "${cli}", args, cwd: process.cwd(), env: keep }) + "\\n");
 const delay = Number(process.env.FAKE_CHILD_SLEEP_MS || 0);
 setTimeout(() => {
@@ -90,8 +101,25 @@ export interface Fixture {
   events: () => Array<Record<string, unknown>>;
 }
 
-/** A temp git repo with fake openspec, codex, claude, and gh first on PATH and an isolated git config. */
-export function makeFixture(options: { remote?: boolean; branch?: string } = {}): Fixture {
+/** The crosscheck config every fixture gets unless it asks for another: both CLIs, no model, high effort. */
+export const DEFAULT_CONFIG = "crosscheck:\n  - cli: codex\n    effort: high\n  - cli: claude\n    effort: high\n";
+
+/** Writes (or with null, removes) the fixture's ~/.agent-workflows/config.yaml. */
+export function writeConfig(fixture: Fixture, text: string | null): void {
+  const dir = join(fixture.env.HOME!, ".agent-workflows");
+  mkdirSync(dir, { recursive: true });
+  if (text === null) {
+    rmSync(join(dir, "config.yaml"), { force: true });
+  } else {
+    writeFileSync(join(dir, "config.yaml"), text);
+  }
+}
+
+/**
+ * A temp git repo with fake openspec, codex, claude, and gh first on PATH, an isolated git config,
+ * and a crosscheck config in its own HOME (`config: null` for none).
+ */
+export function makeFixture(options: { remote?: boolean; branch?: string; config?: string | null } = {}): Fixture {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "define-openspec-change-test-")));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -164,7 +192,23 @@ export function makeFixture(options: { remote?: boolean; branch?: string } = {})
   if (remote) {
     fixture.remote = remote;
   }
+  writeConfig(fixture, options.config === undefined ? DEFAULT_CONFIG : options.config);
   return fixture;
+}
+
+/**
+ * A PATH that has node, git, and the fixture's fakes except `missing`, and none of the real CLIs, so a
+ * test can say a CLI is not installed.
+ */
+export function pathWithout(fixture: Fixture, missing: string[]): string {
+  const bin = join(fixture.dir, `bin-without-${missing.join("-")}`);
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(process.execPath, join(bin, "node"));
+  for (const name of ["openspec", "codex", "claude", "gh"].filter((name) => !missing.includes(name))) {
+    copyFileSync(join(fixture.dir, "bin", name), join(bin, name));
+    chmodSync(join(bin, name), 0o755);
+  }
+  return [bin, "/usr/bin", "/bin"].join(delimiter);
 }
 
 export function fakeLog(fixture: Fixture): Array<{ bin: string; args: string[]; cwd?: string; env?: string[] }> {

@@ -34,8 +34,10 @@ commit that touched the skill.
   Runner-owned one.
 - The only target is `agent: "crosscheck"`. The `session` target and the Runner profile wording are
   gone.
-- Says the child runs on the other vendor's CLI, is read-only, and has none of this plugin's skills
-  or tools, so the prompt must name the skill by its absolute `SKILL.md` path.
+- Says the child runs on the CLI that `~/.agent-workflows/config.yaml` picks (the other vendor's when
+  it is configured and installed), is read-only, and has none of this plugin's skills or tools, so
+  the prompt must name the skill by its absolute `SKILL.md` path. A `crosscheck_not_configured`
+  refusal sends the lead to the setup skill.
 - Collection: `call_agent` and each `get_agent_call` wait about 100 seconds on the server, so the lead
   polls straight away instead of the 5 to 60 second backoff. The 60-minute bound, the cancel then
   poll rule, and the transport-error rules are kept.
@@ -46,6 +48,11 @@ commit that touched the skill.
 
 Not copied: plan-tasks and review-tasks. Runner's define has five steps and change v3 no longer uses
 them.
+
+Written here, not copied: `skills/define/SKILL.md`, the entry point, and `skills/setup/SKILL.md`,
+which writes `~/.agent-workflows/config.yaml` with the user. Runner set the crosscheck in its own
+`~/.agent-runner/config.yaml` profile, and the setup skill's recommended models come from that
+profile (Codex) and from Runner's `lead` profile (Claude).
 
 ## Step prompts
 

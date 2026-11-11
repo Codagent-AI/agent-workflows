@@ -2,7 +2,6 @@ export type Cli = "claude" | "codex";
 
 export const PLUGIN_NAME = "define-openspec-change";
 export const DEFAULT_MARKETPLACE = "agent-workflows";
-export const DEFAULT_EFFORT = "high";
 
 /**
  * Variables that tie a process to the lead's Claude Code session. A child must not inherit them:
@@ -39,31 +38,11 @@ export function detectLead(clientName: string | undefined, env: NodeJS.ProcessEn
   return undefined;
 }
 
+/** One crosscheck entry from ~/.agent-workflows/config.yaml. See config.ts for how one is chosen. */
 export interface CrosscheckChoice {
   cli: Cli;
   model?: string;
   effort: string;
-}
-
-/** The crosscheck CLI is the other vendor's unless DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI says otherwise. */
-export function chooseCrosscheck(lead: Cli | undefined, env: NodeJS.ProcessEnv): CrosscheckChoice | string {
-  const override = env.DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI?.trim();
-  let cli: Cli | undefined;
-  if (override) {
-    if (override !== "claude" && override !== "codex") {
-      return `DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI must be "claude" or "codex", not ${JSON.stringify(override)}.`;
-    }
-    cli = override;
-  } else if (lead === "claude") {
-    cli = "codex";
-  } else if (lead === "codex") {
-    cli = "claude";
-  } else {
-    return "Cannot tell whether Claude Code or Codex is leading this session, so the crosscheck CLI is unknown. Set DEFINE_OPENSPEC_CHANGE_CROSSCHECK_CLI to claude or codex.";
-  }
-  const model = env.DEFINE_OPENSPEC_CHANGE_CROSSCHECK_MODEL?.trim() || undefined;
-  const effort = env.DEFINE_OPENSPEC_CHANGE_CROSSCHECK_EFFORT?.trim() || DEFAULT_EFFORT;
-  return model === undefined ? { cli, effort } : { cli, model, effort };
 }
 
 /** Marketplace names this plugin may be installed under: the default, and the one in our own cache path. */

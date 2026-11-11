@@ -4,7 +4,17 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
-import { CHANGE, fakeLog, makeContext, makeFixture, session, writeArtifacts } from "./helpers.js";
+import {
+  CHANGE,
+  DEFAULT_CONFIG,
+  fakeLog,
+  makeContext,
+  makeFixture,
+  pathWithout,
+  session,
+  writeArtifacts,
+  writeConfig,
+} from "./helpers.js";
 
 const STATE = `openspec/changes/${CHANGE}/${STATE_FILE}`;
 
@@ -65,6 +75,31 @@ test("an existing change that define did not start is refused", async () => {
   assert.equal(advance.isError, true);
   assert.match(advance.text, /was not started with define-openspec-change/);
   assert.deepEqual(fakeLog(fixture), []);
+});
+
+test("start is refused until the crosscheck is configured, and nothing is created", async () => {
+  const fixture = makeFixture({ config: null });
+  const { next } = session(makeContext(fixture));
+  const refused = await next({ change_name: CHANGE, start: true });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /^Refused: There is no ~\/\.agent-workflows\/config\.yaml/);
+  assert.match(refused.text, /Use the define-openspec-change:setup skill to set it up with the user, then try again\./);
+  assert.equal(existsSync(join(fixture.repo, "openspec", "changes", CHANGE)), false);
+  assert.deepEqual(fakeLog(fixture), []);
+
+  writeConfig(fixture, DEFAULT_CONFIG);
+  const started = await next({ change_name: CHANGE, start: true });
+  assert.equal(started.isError, undefined);
+});
+
+test("start is refused when no configured CLI is installed", async () => {
+  const fixture = makeFixture({ config: "crosscheck:\n  - cli: codex\n" });
+  const context = makeContext(fixture);
+  const { next } = session({ ...context, env: { ...context.env, PATH: pathWithout(fixture, ["codex"]) } });
+  const refused = await next({ change_name: CHANGE, start: true });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /No crosscheck agent can run for a claude lead\. .* lists codex, but codex is not on PATH\./);
+  assert.match(refused.text, /define-openspec-change:setup/);
 });
 
 test("an early next_step is refused and names what is missing", async () => {

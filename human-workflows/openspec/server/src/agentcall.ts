@@ -3,7 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { childCommand, childEnv, chooseCrosscheck, type Cli, detectLead } from "./child.js";
+import { childCommand, childEnv, type Cli, detectLead } from "./child.js";
+import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoLogDir, repoRoot } from "./context.js";
 import type { ToolText } from "./finish.js";
 import { run, tail } from "./proc.js";
@@ -150,9 +151,9 @@ export class CallManager {
     }
 
     const lead = detectLead(this.context.clientName(), this.context.env);
-    const choice = chooseCrosscheck(lead, this.context.env);
+    const choice = resolveCrosscheck(lead, this.context.env);
     if (typeof choice === "string") {
-      return errorText("invalid_cli", choice);
+      return errorText("crosscheck_not_configured", choice);
     }
 
     const id = `call-${randomBytes(4).toString("hex")}`;
