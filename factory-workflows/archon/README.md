@@ -32,7 +32,7 @@ Every check is a TypeScript script node run by bun. Agents read the two `.shared
 
 ## Running
 
-Requirements: Archon with `--workflow-source` and `$PACK_DIR` (checked against Archon 0.14.0 at `f7dfe364b`), the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change.
+Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change.
 
 ```sh
 archon workflow run codagent-implement-change \
