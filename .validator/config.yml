@@ -1,0 +1,53 @@
+# Agent Validator for agent-workflows. Reviews use the CLI and model from your
+# global agent-validator config.
+#
+# Changes are diffed against base_branch. A worktree with no validator_logs
+# state is checked against its full diff from main.
+base_branch: origin/main
+
+# entry_points configured by /validator-setup
+entry_points:
+  # Repository files outside the workflow folders: README, AGENTS.md, LICENSE,
+  # the plugin marketplaces, .gitignore.
+  - path: .
+    exclude:
+      - .validator
+      - human-workflows
+      - factory-workflows
+    reviews:
+      - all-reviewers:
+          builtin: all-reviewers
+
+  # The define-openspec-change plugin and its TypeScript tool server.
+  - path: human-workflows/openspec
+    exclude:
+      # The esbuild bundle of server/src; the check verifies it matches a fresh build.
+      - plugin/server.mjs
+      - server/package-lock.json
+    checks:
+      # Typecheck, bundle-matches-build, and the node:test suite.
+      - openspec-server:
+          command: npm ci --no-audit --no-fund --silent && npm run check
+          working_directory: human-workflows/openspec/server
+      - openspec-server-audit:
+          command: npm audit --audit-level=moderate
+          working_directory: human-workflows/openspec/server
+    reviews:
+      - all-reviewers
+
+  # The Archon factory workflow pack.
+  - path: factory-workflows/archon
+    checks:
+      - archon-validate:
+          command: archon validate workflows
+          working_directory: factory-workflows/archon
+      # Dry runs with stubbed agents; no model calls.
+      - archon-scenarios:
+          command: python3 tests/scenarios.py
+          working_directory: factory-workflows/archon
+          timeout: 900
+      - archon-shell:
+          command: git ls-files -z '*.sh' | xargs -0 -n1 bash -n && for t in skills/wait-ci/scripts/*_test.sh; do bash "$t" || exit 1; done
+          working_directory: factory-workflows/archon
+    reviews:
+      - all-reviewers
