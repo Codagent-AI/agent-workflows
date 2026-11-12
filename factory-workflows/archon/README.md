@@ -26,6 +26,7 @@ Paths are relative to this folder, `factory-workflows/archon/`.
   .shared/verify-behavior.md         how the checklist is written and evidenced
 tests/                               bun tests for .shared/lib, and run-fixtures.ts
 tests/data/changes/                  sample change definitions the fixtures use
+openspec/                            the pack's OpenSpec project: change definitions
 PROVENANCE.md                        where the workflows came from
 package.json, biome.json, .jscpd.json, tsconfig.json  lint tools for development; the pack does not use them
 ```
