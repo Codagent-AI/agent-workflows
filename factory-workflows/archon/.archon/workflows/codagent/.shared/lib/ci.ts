@@ -288,7 +288,9 @@ export function waitForCi(tools: Tools, sleep: Sleep, options: WaitOptions): CiR
   const problem = pollUntilSettled(waiter, run);
   if (problem !== undefined) return failure(result, problem);
   addFailureDetails(waiter, run);
-  const comments = fetchComments(tools.forge, target.ref, target.view.author?.login ?? '');
+  // Stays on gh: the forge's actor record has no account type (bot test needs __typename).
+  const [owner = '', name = ''] = target.repo.path.split('/');
+  const comments = fetchComments(tools.exec, owner, name, target.ref.number);
   if (typeof comments === 'string') return failure(result, comments);
   result.comments = comments;
   result.status = finalStatus(result, comments);

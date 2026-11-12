@@ -16,12 +16,12 @@ import {
   REPO,
   createSandbox,
   failed,
-  inline,
+  pr,
+  reply,
   ok,
   prView,
   requestOf,
   rule,
-  thread,
   user,
 } from './helpers.ts';
 
@@ -132,8 +132,8 @@ interface Scenario {
   base?: string;
   units?: unknown[];
   reviews?: unknown[];
-  threads?: unknown[];
-  comments?: unknown[];
+  /** The gh GraphQL answer for comments and threads. */
+  graph?: FakeResponse | string;
   /** Replaces the scenario's own answer to an operation. */
   overrides?: FakeRule[];
 }
@@ -146,13 +146,20 @@ function installForge(scenario: Scenario) {
     rule(['forge', 'pr.merge-state'], ok('pr.merge-state', { mergeable: scenario.mergeable })),
     rule(['forge', 'checks.state'], ok('checks.state', { units: scenario.units ?? [unit('CodeRabbit', 'green', 'success')] })),
     rule(['forge', 'pr.reviews'], ok('pr.reviews', { items: scenario.reviews ?? [] })),
-    rule(['forge', 'pr.threads'], ok('pr.threads', { threads: scenario.threads ?? [] })),
-    rule(['forge', 'workitem.comments'], ok('workitem.comments', { comments: scenario.comments ?? [] })),
   ]);
+}
+
+const EMPTY_GRAPH = JSON.stringify({ data: { repository: { pullRequest: pr({}) } } });
+
+/** Comments and threads are the one read that stays on gh. */
+function installGh(scenario: Scenario): void {
+  const graph = scenario.graph ?? EMPTY_GRAPH;
+  box.fake('gh', [rule(['api', 'graphql'], typeof graph === 'string' ? reply(graph) : graph)]);
 }
 
 function wait(scenario: Scenario, maxMinutes = 1, intervalSeconds = 30) {
   const tools = installForge(scenario);
+  installGh(scenario);
   let clock = 0;
   const waits: number[] = [];
   const result = waitForCi(
@@ -210,9 +217,17 @@ describe('waitForCi', () => {
       'pr.merge-state': { ref },
       'checks.state': { ref },
       'pr.reviews': { ref },
-      'pr.threads': { ref },
-      'workitem.comments': { subject: { kind: 'pr', ref } },
     });
+  });
+
+  test('reads comments and threads with one gh GraphQL query that asks for the author type', () => {
+    wait({ mergeable: 'clean' });
+    const graphql = box.calls('gh').find(call => call.args[1] === 'graphql');
+    expect(graphql?.args.join(' ')).toContain('__typename');
+    expect(graphql?.args).toContain('owner=owner');
+    expect(graphql?.args).toContain('repo=repo');
+    expect(graphql?.args).toContain('prNumber=7');
+    expect(box.calls('archon').some(call => call.args[1] === 'pr.threads' || call.args[1] === 'workitem.comments')).toBe(false);
   });
 
   test('an unknown mergeable state with no checks is pending', () => {
@@ -282,8 +297,6 @@ describe('waitForCi', () => {
     ['checks.state', 'failed to fetch PR checks: forge checks.state failed (forge_error): rate limited'],
     ['pr.reviews', 'failed to fetch PR reviews: forge pr.reviews failed (forge_error): rate limited'],
     ['pr.merge-state', 'failed to fetch PR merge state: forge pr.merge-state failed (forge_error): rate limited'],
-    ['pr.threads', 'failed to fetch PR review threads: forge pr.threads failed (forge_error): rate limited'],
-    ['workitem.comments', 'failed to fetch PR comments: forge workitem.comments failed (forge_error): rate limited'],
   ])('a failed %s read is an error, not a pass', (op, want) => {
     const { result } = wait({ mergeable: 'clean', overrides: [rule(['forge', op], refused('rate limited'))] });
     expect(result.status).toBe('error');
@@ -291,21 +304,27 @@ describe('waitForCi', () => {
   });
 
   test('a human PR comment makes green CI report comments', () => {
-    const comments = [{ author: user('reviewer'), body: 'Please update this.' }];
-    const { result } = wait({ mergeable: 'clean', comments });
+    const graph = JSON.stringify({
+      data: { repository: { pullRequest: pr({ comments: [{ author: user('reviewer'), body: 'Please update this.' }] }) } },
+    });
+    const { result } = wait({ mergeable: 'clean', graph });
     expect(result.status).toBe('comments');
     expect(result.comments?.issueComments).toEqual([{ author: 'reviewer', body: 'Please update this.' }]);
   });
 
-  test('an unresolved review thread makes green CI report comments', () => {
-    const { result } = wait({ mergeable: 'clean', threads: [thread(false, [inline(user('reviewer'), 'Fix this')])] });
-    expect(result.status).toBe('comments');
-    expect(result.comments?.unresolvedThreads).toHaveLength(1);
+  test.each(['reviewThreads', 'comments'])('more than one page of %s is an error, not passed', field => {
+    const page = { reviewThreads: { nodes: [] }, comments: { nodes: [] } } as Record<string, object>;
+    page[field] = { pageInfo: { hasNextPage: true }, nodes: [] };
+    const graph = JSON.stringify({ data: { repository: { pullRequest: { author: user('pr-author'), ...page } } } });
+    const { result } = wait({ mergeable: 'clean', graph });
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('more than 100 review threads or top-level comments');
   });
 
-  test("the pull request author's own comment is not feedback", () => {
-    const { result } = wait({ mergeable: 'clean', comments: [{ author: user('pr-author'), body: 'Context' }] });
-    expect(result.status).toBe('passed');
+  test('a failed comment fetch is an error', () => {
+    const { result } = wait({ mergeable: 'clean', graph: { status: 1, stderr: 'graphql down\n' } });
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('failed to fetch PR comments: graphql down');
   });
 
   test('head is not moved when local HEAD and the PR head agree', () => {

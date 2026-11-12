@@ -72,14 +72,14 @@ Archon reads this file from the run's own checkout, so an isolated run (a worktr
 
 ### The forge
 
-Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create` and `pr.draft` (the draft state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews`, `pr.threads`, `pr.merge-state` and `workitem.comments`. No script calls `gh`, and no agent prompt tells an agent to write to the pull request. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
+Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create` and `pr.draft` (the draft state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews` and `pr.merge-state`. The one read left on `gh` is the pull request's review threads and conversation comments, a single GraphQL query. No script writes with `gh`, and no agent prompt tells an agent to write to the pull request. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
 
 The first node after `validate-inputs`, `check-forge`, runs `archon forge check` for the host of the branch's remote with exactly those operations, so a missing plugin or credential refuses the run before any agent spends. It makes no call to the forge itself.
 
 - From a source checkout of Archon (and in Docker) the GitHub forge plugin runs from source with the `gh` login, as a source checkout runs its providers. Nothing to install.
 - With a release binary, install it once: `archon plugin add coleam00/Archon/plugins/forge-github`. The credential is `GH_TOKEN` or the `gh` login.
 
-The forge reports no account type, so a comment author counts as a bot when its login ends in `[bot]`, the name GitHub gives every app account. That decides which comments are informational and which review threads a bot's reply defers.
+The comments and threads read stays on `gh` because the forge's actor record has no account type, and GraphQL's `__typename` is what tells a bot from a person. It decides which comments are informational and which review threads a bot's reply defers.
 
 ### Roles
 
@@ -137,6 +137,6 @@ bun run lint            # Biome, jscpd and tsc
 
 Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. A loop's single simulated iteration is the one a fixture covers. The script tests cover the scripts' side of those paths.
 
-**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `archon` and `openspec` commands (the fake `archon` prints forge envelopes; `openspec` output matches OpenSpec 1.17.0); a test that calls the real ones fails.
+**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `archon`, `gh` and `openspec` commands (the fake `archon` prints forge envelopes; `openspec` output matches OpenSpec 1.17.0); a test that calls the real ones fails.
 
 **Lint.** Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more in the TypeScript or workflow YAML; fixtures are exempt. `tsc --noEmit` type-checks the scripts, `.shared/lib` and the tests against `tsconfig.json`. Fix the code rather than raising a limit or adding an ignore comment.

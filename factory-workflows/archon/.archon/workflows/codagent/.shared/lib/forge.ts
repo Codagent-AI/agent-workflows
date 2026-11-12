@@ -20,9 +20,7 @@ export const OPS = {
   checks: 'checks.state',
   logs: 'checks.logs',
   reviews: 'pr.reviews',
-  threads: 'pr.threads',
   mergeState: 'pr.merge-state',
-  comments: 'workitem.comments',
 } as const;
 
 export const FORGE_OPERATIONS: string[] = Object.values(OPS);

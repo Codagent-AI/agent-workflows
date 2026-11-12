@@ -250,19 +250,27 @@ export const prView = (record: Record<string, unknown> = {}, extra: Record<strin
 /** The request an archon call carried in its data file. */
 export const requestOf = (call: FakeCall): Record<string, unknown> => JSON.parse(call.files.data) as Record<string, unknown>;
 
-// Pull request comment fixtures in the shape the forge reports them.
-export type Author = { login: string } | null;
-export const user = (login: string): Author => ({ login });
-export const bot = (name: string): Author => ({ login: `${name}[bot]` });
+// Pull request comment fixtures in the shape of the GraphQL reply.
+export type Author = { login: string; __typename: 'User' | 'Bot' } | null;
+export const user = (login: string): Author => ({ login, __typename: 'User' });
+export const bot = (login: string): Author => ({ login, __typename: 'Bot' });
 
 export interface RawComment {
   author: Author;
   body: string;
+  path?: string;
+  line?: number | null;
+  originalLine?: number | null;
 }
-export const inline = (author: Author, body: string): RawComment => ({ author, body });
-export const thread = (resolved: boolean, comments: RawComment[], path: string | null = 'openspec/foo.md', line: number | null = 3) => ({
-  resolved,
+export const inline = (author: Author, body: string, path = 'openspec/foo.md', line = 3): RawComment => ({
+  author,
+  body,
   path,
   line,
-  comments,
+  originalLine: null,
+});
+export const pr = (options: { threads?: { isResolved: boolean; comments: RawComment[] }[]; comments?: RawComment[] }) => ({
+  author: user('pr-author'),
+  reviewThreads: { nodes: (options.threads ?? []).map(t => ({ isResolved: t.isResolved, comments: { nodes: t.comments } })) },
+  comments: { nodes: options.comments ?? [] },
 });

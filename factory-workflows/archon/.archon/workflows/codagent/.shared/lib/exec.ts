@@ -1,4 +1,4 @@
-// Runs external commands (git, the archon CLI, openspec) for the pack's scripts.
+// Runs external commands (git, gh, the archon CLI, openspec) for the pack's scripts.
 //
 // Every check takes an `Exec` instead of spawning directly, so a test can pass a fake
 // that records the calls and returns canned results.
