@@ -170,6 +170,7 @@ Codex 0.166 also has a portable plugin format: a root `plugin.json` and `mcp.jso
 ```
 human-workflows/openspec/
   README.md
+  openspec/                    OpenSpec changes for this plugin; not part of the plugin
   plugin/                      the installable plugin root
     .claude-plugin/plugin.json
     .codex-plugin/plugin.json  skills, plus .codex-mcp.json for the server
