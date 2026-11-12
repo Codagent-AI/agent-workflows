@@ -1,0 +1,67 @@
+name: codagent-commit-definition
+description: >-
+  Building block of codagent-implement-change. Commit an approved change
+  definition for a workflow without a planning step, and require a clean
+  worktree before implementation starts.
+
+inputs:
+  change_name: { required: true }
+  change_dir: { required: true }
+  change_kind: { required: true }
+
+nodes:
+  # Passes without committing for a spec-driven change.
+  - id: commit-definition
+    script: commit-definition
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: &check
+      type: object
+      properties:
+        ok: { type: boolean }
+        problems: { type: string }
+        message: { type: string }
+      required: [ok, problems, message]
+      additionalProperties: false
+
+  - id: repair-commit-definition
+    depends_on: [commit-definition]
+    when: "$commit-definition.output.ok == 'false'"
+    model: ['@lead', large]
+    context: fresh
+    command: repair-commit-definition
+    with:
+      change_dir: $INPUTS.change_dir
+      problems: $commit-definition.output.problems
+    output_format: &repair
+      type: object
+      properties:
+        blocked: { type: boolean }
+        reason: { type: string }
+      required: [blocked, reason]
+      additionalProperties: false
+
+  - id: recheck-commit-definition
+    depends_on: [repair-commit-definition]
+    script: commit-definition
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+      strict: true
+      blocked: $repair-commit-definition.output.blocked
+      reason: $repair-commit-definition.output.reason
+    output_format: *check
+
+  - id: check-clean-before-implementation
+    depends_on: [commit-definition, recheck-commit-definition]
+    trigger_rule: none_failed_min_one_success
+    script: check-clean-before-implementation
+    runtime: bun

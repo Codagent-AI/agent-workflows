@@ -1,0 +1,24 @@
+# With one round allowed, the round is the last: the real gate finds no converged evidence
+# but does not ask for a fix, and the real finalize step writes a failed handoff that the
+# real handoff check accepts.
+check-forge: "forge ready"
+verify-assumptions-handoff: { ok: true, problems: "" }
+verify-clean-for-pr: { ok: true, problems: "" }
+open-draft-pr: { blocked: false, reason: "" }
+publish-draft-pr: { ok: true, problems: "" }
+verify-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
+acceptance-test: { ci_ready: false, reason: "F-1 remains" }
+acceptance-handoff: "Wrote the handoff; READY."
+exec-code: true
+fixture:
+  expect: completed
+  authored: failed
+  reached: [validate-inputs, reset-round-evidence, acceptance-gate, check-acceptance-progress, write-acceptance-status]
+  inputs:
+    change_name: valid-change
+    changes_root: tests/data/changes
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.
+    skip_implementation_review: "true"
+    stop_unchanged_acceptance: "true"
+    acceptance_rounds: "1"

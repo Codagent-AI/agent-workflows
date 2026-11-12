@@ -1,0 +1,371 @@
+name: codagent-implement-change
+description: >-
+  Implement a defined change in one implementor session against its own
+  checklist of how each spec behavior is verified, have the crosscheck audit
+  the result, then prepare a draft pull request for human acceptance.
+
+# Each agent node names a role alias (@implementor, @crosscheck, @lead,
+# @tester) with a tier fallback; bind the aliases in the launch checkout's
+# .archon/config.yaml. Agents record rulings and the blocked record under
+# $ARTIFACTS_DIR, with the file names the README lists.
+
+# The run's verdict is verify-change's: whether acceptance converged.
+returns: verify-change
+outcome_field: ready
+
+# The change_name is the run's own input. The rest are the pack's settings (.pack/pack.yaml),
+# which this run reads as $INPUTS and passes to the blocks it includes, since a block takes
+# nothing from its pack.
+inputs:
+  change_name:
+    required: true
+    description: Change name (lowercase letters, digits and hyphens).
+
+nodes:
+  - id: validate-inputs
+    script: validate-inputs
+    runtime: bun
+    with:
+      change_name: $INPUTS.change_name
+      change_kind: $INPUTS.change_kind
+      changes_root: $INPUTS.changes_root
+      artifact_validation_instruction: $INPUTS.artifact_validation_instruction
+      acceptance_rounds: $INPUTS.acceptance_rounds
+      acceptance_fix_scope: $INPUTS.acceptance_fix_scope
+      # The same value as max_rounds in codagent-verify-change's validate-inputs node.
+      max_rounds: 10
+    output_format:
+      type: object
+      properties:
+        change_dir: { type: string }
+        artifact_validation_instruction: { type: string }
+      required: [change_dir, artifact_validation_instruction]
+      additionalProperties: false
+
+  # The forge plugin and its credential are checked before any agent spends.
+  - id: check-forge
+    depends_on: [validate-inputs]
+    script: check-forge
+    runtime: bun
+
+  - id: check-definition
+    depends_on: [check-forge]
+    include: codagent-check-definition
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      change_label: $INPUTS.change_label
+      change_kind: $INPUTS.change_kind
+
+  # Without a planning step, commit the approved definition here so the
+  # checklist and implementation commits start from a committed definition.
+  - id: commit-definition
+    depends_on: [check-definition]
+    include: codagent-commit-definition
+    with:
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      change_kind: $INPUTS.change_kind
+
+  # The implementor's session starts here and owns the whole change: its
+  # checklist, the implementation, and fixes.
+  - id: implementor-checklist
+    depends_on: [commit-definition]
+    model: ['@implementor', large]
+    context: fresh
+    command: implementor-checklist
+    with: &change
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+
+  - id: check-implementor-checklist-not-blocked
+    depends_on: [implementor-checklist]
+    script: check-not-blocked
+    runtime: bun
+
+  - id: check-implementor-checklist
+    depends_on: [check-implementor-checklist-not-blocked]
+    script: check-implementor-checklist
+    runtime: bun
+    with:
+      change_dir: $validate-inputs.output.change_dir
+      change_name: $INPUTS.change_name
+      start: "$implementor-checklist.execution.checkoutStart"
+
+  - id: verify-checklist
+    depends_on: [check-implementor-checklist]
+    script: verify-checklist
+    runtime: bun
+    with:
+      change_dir: $validate-inputs.output.change_dir
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: &check
+      type: object
+      properties:
+        ok: { type: boolean }
+        problems: { type: string }
+      required: [ok, problems]
+      additionalProperties: false
+
+  - id: repair-checklist
+    depends_on: [verify-checklist]
+    when: "$verify-checklist.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: implementor-checklist }
+    command: repair-checklist
+    with:
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      problems: $verify-checklist.output.problems
+    output_format: &repair
+      type: object
+      properties:
+        blocked: { type: boolean }
+        reason: { type: string }
+      required: [blocked, reason]
+      additionalProperties: false
+
+  - id: recheck-checklist
+    depends_on: [repair-checklist]
+    script: verify-checklist
+    runtime: bun
+    with:
+      change_dir: $validate-inputs.output.change_dir
+      strict: true
+      blocked: $repair-checklist.output.blocked
+      reason: $repair-checklist.output.reason
+    output_format: *check
+
+  - id: implement
+    depends_on: [verify-checklist, recheck-checklist]
+    trigger_rule: none_failed_min_one_success
+    model: ['@implementor', large]
+    context: { resume: implementor-checklist }
+    command: implement
+    with: &change-and-validation
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
+
+  - id: check-implementation-not-blocked
+    depends_on: [implement]
+    script: check-not-blocked
+    runtime: bun
+
+  # Checks that the checklist is complete, not that it is true; the audit
+  # judges whether the evidence proves each behavior.
+  - id: check-evidence
+    depends_on: [check-implementation-not-blocked]
+    script: check-evidence
+    runtime: bun
+    with:
+      change_dir: $validate-inputs.output.change_dir
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  # Up to two evidence repairs; the second continues the first's session.
+  - id: evidence-repairs
+    depends_on: [check-evidence]
+    when: "$check-evidence.output.ok == 'false'"
+    loop_group:
+      max_iterations: 2
+      on_exhausted: fail
+      until_bash: 'ok=$evidence-recheck.output.ok; [ "$ok" = true ]'
+      nodes:
+        - id: complete-evidence
+          model: ['@implementor', large]
+          context: { resume: implement }
+          command: complete-evidence
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $validate-inputs.output.change_dir
+            lead_in: The
+            commit_prefix: complete-evidence
+          output_format: *repair
+        - id: evidence-recheck
+          depends_on: [complete-evidence]
+          script: check-evidence
+          runtime: bun
+          with:
+            change_dir: $validate-inputs.output.change_dir
+            blocked: $complete-evidence.output.blocked
+            reason: $complete-evidence.output.reason
+            strict: false
+          output_format: *check
+
+  - id: audit
+    depends_on: [check-evidence, evidence-repairs]
+    trigger_rule: none_failed_min_one_success
+    model: ['@crosscheck', large]
+    context: fresh
+    command: audit
+    with: *change
+    output_type: findings
+
+  - id: resolve-findings
+    depends_on: [audit]
+    model: ['@implementor', large]
+    context: { resume: implement }
+    command: resolve-findings
+    with:
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
+      findings: $audit.output
+
+  - id: check-findings-not-blocked
+    depends_on: [resolve-findings]
+    script: check-not-blocked
+    runtime: bun
+
+  # As check-evidence, after the findings are fixed: a planned row may change
+  # only where an audit finding names its ID.
+  - id: recheck-evidence
+    depends_on: [check-findings-not-blocked]
+    script: recheck-evidence
+    runtime: bun
+    with:
+      change_dir: $validate-inputs.output.change_dir
+      findings: $audit.output
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  - id: evidence-repairs-after-review
+    depends_on: [recheck-evidence]
+    when: "$recheck-evidence.output.ok == 'false'"
+    loop_group:
+      max_iterations: 2
+      on_exhausted: fail
+      until_bash: 'ok=$evidence-recheck-after-review.output.ok; [ "$ok" = true ]'
+      nodes:
+        - id: complete-evidence-after-review
+          model: ['@implementor', large]
+          context: { resume: resolve-findings }
+          command: complete-evidence
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $validate-inputs.output.change_dir
+            lead_in: After resolving the audit's findings, the
+            commit_prefix: complete-evidence-after-review
+          output_format: *repair
+        - id: evidence-recheck-after-review
+          depends_on: [complete-evidence-after-review]
+          script: recheck-evidence
+          runtime: bun
+          with:
+            change_dir: $validate-inputs.output.change_dir
+            findings: $audit.output
+            blocked: $complete-evidence-after-review.output.blocked
+            reason: $complete-evidence-after-review.output.reason
+            strict: false
+          output_format: *check
+
+  - id: check-clean
+    depends_on: [recheck-evidence, evidence-repairs-after-review]
+    trigger_rule: none_failed_min_one_success
+    script: check-clean
+    runtime: bun
+    with:
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  - id: repair-clean
+    depends_on: [check-clean]
+    when: "$check-clean.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: resolve-findings }
+    command: repair-clean
+    with:
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      problems: $check-clean.output.problems
+    output_format: *repair
+
+  - id: recheck-clean
+    depends_on: [repair-clean]
+    script: check-clean
+    runtime: bun
+    with:
+      strict: true
+      blocked: $repair-clean.output.blocked
+      reason: $repair-clean.output.reason
+    output_format: *check
+
+  - id: verify-implementation-commits
+    depends_on: [check-clean, recheck-clean]
+    trigger_rule: none_failed_min_one_success
+    script: verify-implementation-commits
+    runtime: bun
+    with:
+      start: "$implement.execution.checkoutStart"
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  - id: repair-implementation-commits
+    depends_on: [verify-implementation-commits]
+    when: "$verify-implementation-commits.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: resolve-findings }
+    command: repair-implementation-commits
+    with:
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      change_dir: $validate-inputs.output.change_dir
+      start: "$implement.execution.checkoutStart"
+      problems: $verify-implementation-commits.output.problems
+    output_format: *repair
+
+  - id: recheck-implementation-commits
+    depends_on: [repair-implementation-commits]
+    script: verify-implementation-commits
+    runtime: bun
+    with:
+      start: "$implement.execution.checkoutStart"
+      strict: true
+      blocked: $repair-implementation-commits.output.blocked
+      reason: $repair-implementation-commits.output.reason
+    output_format: *check
+
+  # The agent writes $ARTIFACTS_DIR/session-report.md, which the acceptance
+  # tester reads.
+  - id: session-report
+    depends_on: [verify-implementation-commits, recheck-implementation-commits]
+    trigger_rule: none_failed_min_one_success
+    model: ['@implementor', large]
+    context: { resume: resolve-findings }
+    command: session-report
+    with: *change
+
+  # The implementor's maintainability pass replaces verify-change's own
+  # assumption review and simplification. stop_unchanged_acceptance ends the
+  # acceptance rounds when a fix changes nothing and asks for no retest.
+  - id: verify-change
+    depends_on: [session-report]
+    include: codagent-verify-change
+    with:
+      change_name: $INPUTS.change_name
+      change_kind: $INPUTS.change_kind
+      changes_root: $INPUTS.changes_root
+      change_label: $INPUTS.change_label
+      artifact_validation_instruction: $INPUTS.artifact_validation_instruction
+      acceptance_rounds: $INPUTS.acceptance_rounds
+      acceptance_fix_scope: $INPUTS.acceptance_fix_scope
+      skip_implementation_review: "true"
+      stop_unchanged_acceptance: "true"

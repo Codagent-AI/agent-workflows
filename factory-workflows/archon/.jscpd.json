@@ -1,0 +1,10 @@
+{
+  "path": [".archon", "tests"],
+  "format": ["typescript", "yaml"],
+  "ignore": ["**/fixtures/**"],
+  "minTokens": 50,
+  "exitCode": 1,
+  "reporters": ["console"],
+  "gitignore": true,
+  "noSymlinks": true
+}

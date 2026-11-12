@@ -1,0 +1,88 @@
+name: codagent-check-definition
+description: >-
+  Building block of codagent-implement-change. Validate an approved change
+  definition, with up to three autonomous lead repairs of reported conformance
+  problems.
+
+inputs:
+  change_name: { required: true }
+  change_dir: { required: true }
+  change_label: { required: true }
+  change_kind: { required: true }
+
+nodes:
+  - id: validate-definition
+    script: validate-definition
+    runtime: bun
+    with:
+      strict: false
+      blocked: false
+      reason: ""
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+    output_format: &check
+      type: object
+      properties:
+        ok: { type: boolean }
+        problems: { type: string }
+      required: [ok, problems]
+      additionalProperties: false
+
+  # Up to three repairs. Each starts a fresh session and is given the problems
+  # again; the recheck after it ends the loop once the definition is valid, and
+  # exhausting the loop fails the run.
+  - id: definition-repairs
+    depends_on: [validate-definition]
+    when: "$validate-definition.output.ok == 'false'"
+    loop_group:
+      max_iterations: 3
+      on_exhausted: fail
+      until_bash: 'ok=$definition-recheck.output.ok; [ "$ok" = true ]'
+      nodes:
+        - id: repair-definition
+          model: ['@lead', large]
+          context: fresh
+          command: repair-definition
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            validation_output: $validate-definition.output.problems
+            latest_validation_output: $LOOP_PREV.definition-recheck.output.problems
+          output_format: &repair
+            type: object
+            properties:
+              blocked: { type: boolean }
+              reason: { type: string }
+            required: [blocked, reason]
+            additionalProperties: false
+
+        - id: definition-recheck
+          depends_on: [repair-definition]
+          script: validate-definition
+          runtime: bun
+          with:
+            change_name: $INPUTS.change_name
+            change_dir: $INPUTS.change_dir
+            change_kind: $INPUTS.change_kind
+            strict: false
+            blocked: $repair-definition.output.blocked
+            reason: $repair-definition.output.reason
+          output_format: *check
+
+  # The block's success sink. A node that depends on an include waits on the block's
+  # sinks, and the loop above is skipped when the definition is already valid.
+  - id: verify-definition
+    depends_on: [validate-definition, definition-repairs]
+    trigger_rule: none_failed_min_one_success
+    script: validate-definition
+    runtime: bun
+    with:
+      strict: true
+      blocked: false
+      reason: ""
+      change_name: $INPUTS.change_name
+      change_dir: $INPUTS.change_dir
+      change_kind: $INPUTS.change_kind
+    output_format: *check
