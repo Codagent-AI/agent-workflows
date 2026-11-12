@@ -22,7 +22,7 @@ Top-level folders are named by purpose. The folders under them are named by what
 | Folder | What it holds |
 |---|---|
 | [`human-workflows/openspec/`](human-workflows/openspec/) | `define-openspec-change`, a Claude Code and Codex plugin that defines an OpenSpec change step by step in your own session |
-| `factory-workflows/archon/` | Codagent's factory workflows for the Archon engine (not on `main` yet) |
+| [`factory-workflows/archon/`](factory-workflows/archon/) | Codagent's factory workflows for the Archon engine |
 
 The repository root is also a plugin marketplace for both CLIs:
 
