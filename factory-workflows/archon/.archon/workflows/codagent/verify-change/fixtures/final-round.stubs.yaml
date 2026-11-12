@@ -1,10 +1,11 @@
 # With one round allowed, the round is the last: the real gate finds no converged evidence
 # but does not ask for a fix, and the real finalize step writes a failed handoff that the
 # real handoff check accepts.
+check-forge: "forge ready"
 verify-assumptions-handoff: { ok: true, problems: "" }
 verify-clean-for-pr: { ok: true, problems: "" }
 open-draft-pr: { blocked: false, reason: "" }
-update-pr-body: { ok: true, problems: "" }
+publish-draft-pr: { ok: true, problems: "" }
 verify-draft-pr: { ok: true, problems: "", pr_url: "https://github.com/example/greeter/pull/7" }
 acceptance-test: { ci_ready: false, reason: "F-1 remains" }
 acceptance-handoff: "Wrote the handoff; READY."

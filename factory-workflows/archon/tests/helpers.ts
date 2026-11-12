@@ -1,11 +1,13 @@
-// Shared fixtures for the check-module tests: temp git repos, fake gh/openspec binaries
-// and a no-op Sleep. Nothing here reaches the real gh or the network.
+// Shared fixtures for the check-module tests: temp git repos, fake archon/openspec binaries
+// and a no-op Sleep. Nothing here reaches a forge or the network.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { type Exec, runCommand } from '../.archon/workflows/codagent/.shared/lib/exec.ts';
+import { createForge } from '../.archon/workflows/codagent/.shared/lib/forge.ts';
+import type { Tools } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 
 export interface FakeResponse {
   status?: number;
@@ -22,7 +24,7 @@ export interface FakeRule {
 
 export interface FakeCall {
   args: string[];
-  /** Contents of any `name=@file` argument, read when the fake ran. */
+  /** Contents of any `name=@file` argument, and of the `--data-file` one as `data`, read when the fake ran. */
   files: Record<string, string>;
 }
 
@@ -47,6 +49,9 @@ for (const arg of args) {
   const match = /^([^=]+)=@(.+)$/.exec(arg);
   if (match && existsSync(match[2])) files[match[1]] = readFileSync(match[2], 'utf8');
 }
+args.forEach((arg, i) => {
+  if (arg === '--data-file' && existsSync(args[i + 1])) files.data = readFileSync(args[i + 1], 'utf8');
+});
 appendFileSync(join(dir, name + '.calls.jsonl'), JSON.stringify({ args, files }) + '\\n');
 const index = rules.findIndex(r => r.args.every((token, i) => args[i] === token));
 if (index < 0) {
@@ -63,7 +68,7 @@ process.exit(response.status ?? 0);
 `;
 
 /** Commands a test must fake: the real ones reach GitHub or the network. */
-const GUARDED = new Set(['gh', 'openspec']);
+const GUARDED = new Set(['gh', 'openspec', 'archon']);
 
 export const noSleep = (): void => {};
 
@@ -180,6 +185,21 @@ export class Sandbox {
     return runCommand(command, args, options);
   };
 
+  /**
+   * Git and the forge for a pull request test: `origin` is a local bare repository whose
+   * default branch is main, and the fake archon CLI answers `resolve` with a GitHub repository
+   * and everything else by the rules. Nothing reaches a network.
+   */
+  forgeTools(rules: FakeRule[]): Tools {
+    if (!this.git('remote').split('\n').includes('origin')) {
+      const bare = this.addBareOrigin();
+      this.git('push', '-q', 'origin', 'feature:main');
+      this.gitIn(bare, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+    }
+    this.fake('archon', [...rules, rule(['forge', 'resolve'], ok('resolve', RESOLVED))]);
+    return { exec: this.exec, forge: createForge(this.exec, [join(this.binDir, 'archon')]) };
+  }
+
   calls(name: string): FakeCall[] {
     const log = join(this.binDir, `${name}.calls.jsonl`);
     if (!existsSync(log)) return [];
@@ -192,27 +212,57 @@ export class Sandbox {
 
 export const createSandbox = (git = true): Sandbox => new Sandbox({ git });
 
-// Pull request comment fixtures in the shape of the GraphQL reply.
-export type Author = { login: string; __typename: 'User' | 'Bot' } | null;
-export const user = (login: string): Author => ({ login, __typename: 'User' });
-export const bot = (login: string): Author => ({ login, __typename: 'Bot' });
+// Forge fixtures: the envelopes `archon forge` prints and the records inside them.
+export const REPO = { host: 'github.com', path: 'owner/repo' };
+const RESOLVED = { kind: 'resolved', forge: 'github', repo: REPO, plugin: { name: 'github', version: '1.0.0' } };
+
+/** A successful envelope for one operation. */
+export const ok = (op: string, value: unknown): FakeResponse =>
+  reply(JSON.stringify({ operationId: 'test', ok: true, result: { op, value } }));
+
+/** A failed envelope, with the write outcome of a mutation when given. */
+export const failed = (kind: string, message: string, mutation?: { outcome: string; leaveBehind?: string }): FakeResponse =>
+  reply(JSON.stringify({ operationId: 'test', ok: false, error: { kind, message }, ...(mutation ? { mutation } : {}) }), 1);
+
+/** A `pr.view` answer: the record with the given fields overridden. */
+export const prView = (record: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+  pr: {
+    repo: REPO,
+    number: 7,
+    schemaVersion: 1,
+    url: 'https://github.com/owner/repo/pull/7',
+    head: 'feature',
+    base: 'main',
+    is_draft: true,
+    state: 'open',
+    head_repo: REPO,
+    head_revision: 'abc123',
+    base_revision: 'def456',
+    maintainer_can_modify: null,
+    ...record,
+  },
+  title: 'A change',
+  body: '',
+  author: { host: 'github.com', id: '1', login: 'pr-author' },
+  ...extra,
+});
+
+/** The request an archon call carried in its data file. */
+export const requestOf = (call: FakeCall): Record<string, unknown> => JSON.parse(call.files.data) as Record<string, unknown>;
+
+// Pull request comment fixtures in the shape the forge reports them.
+export type Author = { login: string } | null;
+export const user = (login: string): Author => ({ login });
+export const bot = (name: string): Author => ({ login: `${name}[bot]` });
 
 export interface RawComment {
   author: Author;
   body: string;
-  path?: string;
-  line?: number | null;
-  originalLine?: number | null;
 }
-export const inline = (author: Author, body: string, path = 'openspec/foo.md', line = 3): RawComment => ({
-  author,
-  body,
+export const inline = (author: Author, body: string): RawComment => ({ author, body });
+export const thread = (resolved: boolean, comments: RawComment[], path: string | null = 'openspec/foo.md', line: number | null = 3) => ({
+  resolved,
   path,
   line,
-  originalLine: null,
-});
-export const pr = (options: { threads?: { isResolved: boolean; comments: RawComment[] }[]; comments?: RawComment[] }) => ({
-  author: user('pr-author'),
-  reviewThreads: { nodes: (options.threads ?? []).map(t => ({ isResolved: t.isResolved, comments: { nodes: t.comments } })) },
-  comments: { nodes: options.comments ?? [] },
+  comments,
 });

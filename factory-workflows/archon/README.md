@@ -34,7 +34,7 @@ Every check is a TypeScript script node run by bun. Agents read the two `.shared
 
 ## Running
 
-Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `gh` authenticated with push access to the target repository, and the `openspec` CLI for an OpenSpec change (tested with OpenSpec 1.17.0).
+Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `git` with push access to the target repository, the Archon forge plugin for its host (see [The forge](#the-forge)), and the `openspec` CLI for an OpenSpec change (tested with OpenSpec 1.17.0).
 
 ```sh
 archon workflow run codagent-implement-change \
@@ -70,6 +70,17 @@ Archon reads this file from the run's own checkout, so an isolated run (a worktr
 
 `codagent-verify-change` run on its own reads the same settings and takes `change_name`, plus `skip_implementation_review` (default `false`; `true` skips the assumption review and simplification) and `stop_unchanged_acceptance` (default `false`; `true` ends the rounds when a fix changes nothing and asks for no retest). `codagent-implement-change` sets both to `true`. They are inputs of the caller, not settings, because they describe how the caller composed the workflow and not the project.
 
+### The forge
+
+Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create` and `pr.draft` (the draft state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews`, `pr.threads`, `pr.merge-state` and `workitem.comments`. No script calls `gh`, and no agent prompt tells an agent to write to the pull request. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
+
+The first node after `validate-inputs`, `check-forge`, runs `archon forge check` for the host of the branch's remote with exactly those operations, so a missing plugin or credential refuses the run before any agent spends. It makes no call to the forge itself.
+
+- From a source checkout of Archon (and in Docker) the GitHub forge plugin runs from source with the `gh` login, as a source checkout runs its providers. Nothing to install.
+- With a release binary, install it once: `archon plugin add coleam00/Archon/plugins/forge-github`. The credential is `GH_TOKEN` or the `gh` login.
+
+The forge reports no account type, so a comment author counts as a bot when its login ends in `[bot]`, the name GitHub gives every app account. That decides which comments are informational and which review threads a bot's reply defers.
+
 ### Roles
 
 Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@crosscheck', large]`, `['@lead', large]`, and `['@tester', medium]`. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
@@ -101,7 +112,9 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
 | `acceptance-retest-reason.txt` | lead | Why a fix that changed nothing still needs a retest. |
-| `pr-body.md` | open-draft-pr | The pull request description, without markers. The update-pr-body script adds the markers and puts it in the body. |
+| `pr-title.txt` | open-draft-pr | The pull request title, used only when the pull request does not exist yet. |
+| `pr-body.md` | open-draft-pr | The pull request description, without markers. The publish-draft-pr script adds the markers and puts it in the body. |
+| `pull-request.json` | check-draft-pr script | The branch's open pull request as last checked: url, number, base, draft state and head revision. The tester compares its head with local HEAD. |
 | `ci/round-<n>.md` | wait-ci script | Each round's CI result, failed-check logs and pull request comments. |
 
 ### Checks, repairs and limits
@@ -112,7 +125,7 @@ A failed check goes to one agent repair, then the same check runs again in stric
 
 ## Tests
 
-Run these from this folder after `bun install`. None of them makes model calls or contacts GitHub.
+Run these from this folder after `bun install`. None of them makes model calls or contacts a forge.
 
 ```sh
 bun run test:fixtures   # the workflows' dry-run fixtures
@@ -120,10 +133,10 @@ bun test tests/         # the script tests
 bun run lint            # Biome, jscpd and tsc
 ```
 
-**Dry-run fixtures** are the workflow tests. Each workflow's `fixtures/*.stubs.yaml` is one case for `archon workflow test`: it stubs the agent nodes and the scripts that push or call GitHub, states the outcome and the nodes the run must reach, and for a workflow that declares a verdict, the authored outcome (`fixture.authored`). A fixture with `exec-code: true` also runs the scripts it does not stub for real, in a scratch checkout; the others stub every script they reach. Archon looks for them in a `fixtures/` folder next to the workflow. Archon finds `.archon/` only at a git repository's root, so `tests/run-fixtures.ts` runs them from a committed copy of this folder with a throwaway Archon home. Set `ARCHON` to use an Archon other than the one on PATH, such as `bun <archon checkout>/packages/cli/src/cli.ts`.
+**Dry-run fixtures** are the workflow tests. Each workflow's `fixtures/*.stubs.yaml` is one case for `archon workflow test`: it stubs the agent nodes and the scripts that push or call the forge, states the outcome and the nodes the run must reach, and for a workflow that declares a verdict, the authored outcome (`fixture.authored`). A fixture with `exec-code: true` also runs the scripts it does not stub for real, in a scratch checkout; the others stub every script they reach. Archon looks for them in a `fixtures/` folder next to the workflow. Archon finds `.archon/` only at a git repository's root, so `tests/run-fixtures.ts` runs them from a committed copy of this folder with a throwaway Archon home. Set `ARCHON` to use an Archon other than the one on PATH, such as `bun <archon checkout>/packages/cli/src/cli.ts`.
 
 Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot reach a loop's exit, a second or third repair, the exhaustion of a repair loop, or acceptance round 2 and later. A loop's single simulated iteration is the one a fixture covers. The script tests cover the scripts' side of those paths.
 
-**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `gh` and `openspec` commands (their output matches OpenSpec 1.17.0); a test that calls the real ones fails.
+**Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `archon` and `openspec` commands (the fake `archon` prints forge envelopes; `openspec` output matches OpenSpec 1.17.0); a test that calls the real ones fails.
 
 **Lint.** Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more in the TypeScript or workflow YAML; fixtures are exempt. `tsc --noEmit` type-checks the scripts, `.shared/lib` and the tests against `tsconfig.json`. Fix the code rather than raising a limit or adding an ignore comment.

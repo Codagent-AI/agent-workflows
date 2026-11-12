@@ -7,10 +7,11 @@ import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { renderReport } from '../../.shared/lib/ci-report.ts';
 import { waitForCi } from '../../.shared/lib/ci.ts';
-import { runCommand, sleep } from '../../.shared/lib/exec.ts';
+import { sleep } from '../../.shared/lib/exec.ts';
+import { defaultTools } from '../../.shared/lib/forge.ts';
 
 const round = required(process.env.INPUTS_ROUND, 'round');
-const result = waitForCi(runCommand, sleep, {
+const result = waitForCi(defaultTools(), sleep, {
   maxMinutes: Number(required(process.env.INPUTS_MAX_MINUTES, 'max_minutes')),
   intervalSeconds: Number(required(process.env.INPUTS_INTERVAL_SECONDS, 'interval_seconds')),
 });

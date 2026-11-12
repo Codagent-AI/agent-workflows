@@ -20,6 +20,8 @@ export const ARTIFACTS = {
   retestReason: 'acceptance-retest-reason.txt',
   findings: 'acceptance-findings.md',
   prBody: 'pr-body.md',
+  prTitle: 'pr-title.txt',
+  pullRequest: 'pull-request.json',
 } as const;
 
 /** A regular file with content. */

@@ -1,9 +1,8 @@
 // The CI report the wait-ci node writes for the tester's handoff.
 import type { Comment, Thread } from './ci-comments.ts';
-import { type Check, type CiResult, failedRunIds } from './ci.ts';
+import type { Check, CiResult } from './ci.ts';
 
-const checkLine = (check: Check): string =>
-  `- **${check.name}** (${check.state})${check.link ? `\n  Link: ${check.link}` : ''}`;
+const checkLine = (check: Check): string => `- **${check.name}** (${check.detail})`;
 const threadLine = (thread: Thread): string =>
   `- **${thread.author}** on \`${thread.file}\` line ${String(thread.line ?? '?')}: ${thread.body}`;
 const commentLine = (comment: Comment, kind = ''): string => `- **${comment.author}**${kind}: ${comment.body}`;
@@ -21,8 +20,7 @@ export function renderReport(result: CiResult): string {
   section(
     'Failed Checks',
     result.failedChecks.map(check => {
-      const runId = failedRunIds([check])[0];
-      const log = result.failedLogs.find(entry => entry.runId === runId)?.log;
+      const log = result.failedLogs.find(entry => entry.name === check.name)?.log;
       return log ? `${checkLine(check)}\n  Logs:\n  \`\`\`\n${log}\n  \`\`\`` : checkLine(check);
     })
   );
@@ -37,7 +35,7 @@ export function renderReport(result: CiResult): string {
     section('Deferred Threads', comments.deferredThreads.map(threadLine));
     section('Informational Bot Comments', comments.informationalBotComments.map(comment => commentLine(comment)));
   }
-  section('Passing Checks', result.passedChecks.map(check => `- ${check.name} (${check.state})`));
-  section('Still Running', result.pendingChecks.map(check => `- ${check.name} (${check.state})`));
+  section('Passing Checks', result.passedChecks.map(check => `- ${check.name} (${check.detail})`));
+  section('Still Running', result.pendingChecks.map(check => `- ${check.name} (${check.detail})`));
   return `${lines.join('\n')}\n`;
 }

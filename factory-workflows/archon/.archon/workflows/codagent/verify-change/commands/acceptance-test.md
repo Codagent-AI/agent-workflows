@@ -23,7 +23,7 @@ Do not fix defects, modify tracked files, commit, push, or change the pull reque
 
 Record every clear defect or impediment in `$ARTIFACTS_DIR/acceptance-findings.md` as the instructions require, and any `HT-*` as instructions reserved for the user.
 
-This step ends before CI: the workflow waits for current-head CI itself and then returns to you to hand off. When you have written the exploration log, the findings, and the tested revision, set `ci_ready` to true only when no clear defect or impediment remains, no tracked file has uncommitted changes, and local `HEAD` is pushed and equals the head of the branch's open pull request (`gh pr view --json headRefOid`). Otherwise set `ci_ready` to false and give the reason; the workflow then does not wait for CI. Do not write `acceptance-handoff.md` or `acceptance-round-status.txt` yet.
+This step ends before CI: the workflow waits for current-head CI itself and then returns to you to hand off. When you have written the exploration log, the findings, and the tested revision, set `ci_ready` to true only when no clear defect or impediment remains, no tracked file has uncommitted changes, and local `HEAD` is pushed and equals the `head_revision` in `$ARTIFACTS_DIR/pull-request.json`, which the workflow wrote when it last checked the branch's open pull request. Otherwise set `ci_ready` to false and give the reason; the workflow then does not wait for CI. Do not write `acceptance-handoff.md` or `acceptance-round-status.txt` yet.
 
 # Acceptance preparation instructions
 

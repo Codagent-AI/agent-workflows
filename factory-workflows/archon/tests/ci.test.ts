@@ -1,15 +1,29 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  type Check,
   type CiResult,
   blockingReviews,
-  failedRunIds,
   finalStatus,
   waitForCi,
 } from '../.archon/workflows/codagent/.shared/lib/ci.ts';
 import type { PrComments } from '../.archon/workflows/codagent/.shared/lib/ci-comments.ts';
 import { renderReport } from '../.archon/workflows/codagent/.shared/lib/ci-report.ts';
-import { type FakeResponse, type FakeRule, type Sandbox, createSandbox, pr, reply, rule, user } from './helpers.ts';
+import {
+  type FakeResponse,
+  type FakeRule,
+  type Sandbox,
+  REPO,
+  createSandbox,
+  failed,
+  inline,
+  ok,
+  prView,
+  requestOf,
+  rule,
+  thread,
+  user,
+} from './helpers.ts';
 
 let box: Sandbox;
 beforeEach(() => {
@@ -17,52 +31,69 @@ beforeEach(() => {
 });
 afterEach(() => box.dispose());
 
+const check = (name: string, state: string, detail = state): Check => ({
+  name,
+  state,
+  detail,
+  unit: { kind: 'check', id: '1', name },
+});
+
+/** A check as `checks.state` reports it. */
+const unit = (name: string, state: string, nativeResult: string | null = null) => ({
+  unit: { kind: 'check', id: `id-${name}`, name },
+  nativeState: nativeResult === null ? 'in_progress' : 'completed',
+  nativeResult,
+  phase: nativeResult === null ? 'running' : 'completed',
+  result: null,
+  state,
+});
+
 // ---------------------------------------------------------------------------------------
 // Small pure helpers
 
 describe('blockingReviews', () => {
-  const review = (login: string, state: string, body = '') => ({ user: { login }, state, body });
+  const review = (login: string, state: string, body = '', extra: { createdAt?: string; kind?: string } = {}) => ({
+    kind: extra.kind ?? 'review',
+    author: { login },
+    state,
+    createdAt: extra.createdAt ?? '2026-01-01T00:00:00Z',
+    body,
+  });
 
   test('keeps the latest non-pending review per reviewer that requests changes', () => {
     expect(
       blockingReviews([
         review('alice', 'CHANGES_REQUESTED', 'fix it'),
         review('bob', 'CHANGES_REQUESTED', 'no'),
-        review('bob', 'APPROVED'),
+        review('bob', 'APPROVED', '', { createdAt: '2026-01-02T00:00:00Z' }),
         review('carol', 'COMMENTED'),
       ])
     ).toEqual([{ login: 'alice', state: 'CHANGES_REQUESTED', body: 'fix it' }]);
   });
 
   test('a pending review does not replace an earlier one', () => {
-    expect(blockingReviews([review('alice', 'CHANGES_REQUESTED', 'fix'), review('alice', 'PENDING')])).toHaveLength(1);
-  });
-
-  test('a later request for changes replaces an approval', () => {
-    expect(blockingReviews([review('alice', 'APPROVED'), review('alice', 'CHANGES_REQUESTED', 'now no')])).toEqual([
-      { login: 'alice', state: 'CHANGES_REQUESTED', body: 'now no' },
-    ]);
-  });
-});
-
-describe('failedRunIds', () => {
-  test('extracts distinct run ids from check links', () => {
-    const link = (id: string, job: string) => `https://github.com/o/r/actions/runs/${id}/job/${job}`;
     expect(
-      failedRunIds([
-        { name: 'a', state: 'FAILURE', link: link('123', '1') },
-        { name: 'b', state: 'FAILURE', link: link('123', '2') },
-        { name: 'c', state: 'FAILURE', link: link('456', '3') },
-        { name: 'd', state: 'FAILURE', link: 'https://example.com/other' },
-        { name: 'e', state: 'FAILURE' },
+      blockingReviews([review('alice', 'CHANGES_REQUESTED', 'fix'), review('alice', 'PENDING', '', { createdAt: '2026-01-03T00:00:00Z' })])
+    ).toHaveLength(1);
+  });
+
+  test('a later request for changes replaces an approval, whatever the order listed', () => {
+    expect(
+      blockingReviews([
+        review('alice', 'CHANGES_REQUESTED', 'now no', { createdAt: '2026-01-02T00:00:00Z' }),
+        review('alice', 'APPROVED', '', { createdAt: '2026-01-01T00:00:00Z' }),
       ])
-    ).toEqual(['123', '456']);
+    ).toEqual([{ login: 'alice', state: 'CHANGES_REQUESTED', body: 'now no' }]);
+  });
+
+  test('a dismissed review does not block, and a diff comment is not a review', () => {
+    expect(blockingReviews([review('alice', 'DISMISSED'), review('bob', 'CHANGES_REQUESTED', 'x', { kind: 'review_comment' })])).toEqual([]);
   });
 });
 
 describe('finalStatus', () => {
-  const base = { failedChecks: [], blockingReviews: [], pendingChecks: [], mergeable: 'MERGEABLE' };
-  const check = { name: 'ci', state: 'FAILURE' };
+  const base = { failedChecks: [], blockingReviews: [], pendingChecks: [], mergeable: 'clean' };
+  const failing = check('ci', 'red', 'failure');
   const comments = (hasComments: boolean): PrComments => ({
     hasComments,
     unresolvedThreads: [],
@@ -77,64 +108,55 @@ describe('finalStatus', () => {
   });
 
   test('a failed check, blocking review or conflict fails, even with comments', () => {
-    expect(finalStatus({ ...base, failedChecks: [check] }, comments(true))).toBe('failed');
+    expect(finalStatus({ ...base, failedChecks: [failing] }, comments(true))).toBe('failed');
     expect(finalStatus({ ...base, blockingReviews: [{ login: 'a', state: 'CHANGES_REQUESTED', body: '' }] }, undefined)).toBe('failed');
-    expect(finalStatus({ ...base, mergeable: 'CONFLICTING' }, undefined)).toBe('failed');
+    expect(finalStatus({ ...base, mergeable: 'conflict' }, undefined)).toBe('failed');
   });
 
   test('comments beat pending', () => {
-    expect(finalStatus({ ...base, pendingChecks: [check] }, comments(true))).toBe('comments');
+    expect(finalStatus({ ...base, pendingChecks: [failing] }, comments(true))).toBe('comments');
   });
 
   test('pending checks or an unknown mergeable state are pending', () => {
-    expect(finalStatus({ ...base, pendingChecks: [check] }, comments(false))).toBe('pending');
-    expect(finalStatus({ ...base, mergeable: 'UNKNOWN' }, comments(false))).toBe('pending');
+    expect(finalStatus({ ...base, pendingChecks: [failing] }, comments(false))).toBe('pending');
+    expect(finalStatus({ ...base, mergeable: 'unknown' }, comments(false))).toBe('pending');
   });
 });
 
 // ---------------------------------------------------------------------------------------
 // waitForCi (check-ci_test.sh)
 
-const GREEN = '[{"name":"CodeRabbit","state":"SUCCESS","bucket":"pass","link":"https://example.com"}]';
-const EMPTY_GRAPH = JSON.stringify({ data: { repository: { pullRequest: { author: user('pr-author'), reviewThreads: { nodes: [] }, comments: { nodes: [] } } } } });
-
 interface Scenario {
   mergeable: string;
   head?: string;
   base?: string;
-  checks?: FakeResponse | string;
-  reviews?: string;
-  graph?: FakeResponse | string;
-  extra?: FakeRule[];
+  units?: unknown[];
+  reviews?: unknown[];
+  threads?: unknown[];
+  comments?: unknown[];
+  /** Replaces the scenario's own answer to an operation. */
+  overrides?: FakeRule[];
 }
 
-function installGh(scenario: Scenario): void {
-  const view = JSON.stringify({
-    number: 86,
-    url: 'https://github.com/owner/repo/pull/86',
-    headRefName: 'branch',
-    headRefOid: scenario.head ?? 'abc123',
-    baseRefOid: scenario.base ?? 'def456',
-    mergeable: scenario.mergeable,
-  });
-  const checks = scenario.checks ?? GREEN;
-  box.fake('gh', [
-    rule(['pr', 'view', '--json', 'number,url,headRefOid,baseRefOid,mergeable'], reply(view)),
-    rule(['pr', 'view', '--json', 'mergeable,baseRefOid'], reply(view)),
-    rule(['pr', 'view', '--json', 'headRefOid'], reply(view)),
-    rule(['repo', 'view'], reply('{"owner":{"login":"owner"},"name":"repo"}')),
-    rule(['pr', 'checks'], typeof checks === 'string' ? reply(checks) : checks),
-    rule(['api', '--paginate'], reply(scenario.reviews ?? '')),
-    rule(['api', 'graphql'], typeof scenario.graph === 'object' ? scenario.graph : reply(scenario.graph ?? EMPTY_GRAPH)),
-    ...(scenario.extra ?? []),
+function installForge(scenario: Scenario) {
+  const view = prView({ head_revision: scenario.head ?? 'abc123', base_revision: scenario.base ?? 'def456' });
+  return box.forgeTools([
+    ...(scenario.overrides ?? []),
+    rule(['forge', 'pr.view'], ok('pr.view', view)),
+    rule(['forge', 'pr.merge-state'], ok('pr.merge-state', { mergeable: scenario.mergeable })),
+    rule(['forge', 'checks.state'], ok('checks.state', { units: scenario.units ?? [unit('CodeRabbit', 'green', 'success')] })),
+    rule(['forge', 'pr.reviews'], ok('pr.reviews', { items: scenario.reviews ?? [] })),
+    rule(['forge', 'pr.threads'], ok('pr.threads', { threads: scenario.threads ?? [] })),
+    rule(['forge', 'workitem.comments'], ok('workitem.comments', { comments: scenario.comments ?? [] })),
   ]);
 }
 
-function wait(maxMinutes = 1, intervalSeconds = 30) {
+function wait(scenario: Scenario, maxMinutes = 1, intervalSeconds = 30) {
+  const tools = installForge(scenario);
   let clock = 0;
   const waits: number[] = [];
   const result = waitForCi(
-    box.exec,
+    tools,
     ms => {
       waits.push(ms);
       clock += ms;
@@ -144,70 +166,99 @@ function wait(maxMinutes = 1, intervalSeconds = 30) {
   return { result, waits };
 }
 
+const refused = (message: string): FakeResponse => failed('forge_error', message);
+
 describe('waitForCi', () => {
-  test('CONFLICTING with green checks fails and lists the conflicting files', () => {
+  test('a conflict with green checks fails and lists the conflicting files', () => {
     const base = box.commitFix('base\n');
     box.git('checkout', '-q', '-b', 'topic', 'HEAD~1');
     const head = box.commitFix('topic\n');
-    installGh({ mergeable: 'CONFLICTING', head, base });
-    const { result, waits } = wait();
+    const { result, waits } = wait({ mergeable: 'conflict', head, base });
     expect(result.status).toBe('failed');
-    expect(result.mergeable).toBe('CONFLICTING');
+    expect(result.mergeable).toBe('conflict');
     expect(result.conflictingFiles).toEqual(['file.txt']);
     expect(waits).toEqual([]);
   });
 
-  test('UNKNOWN with green checks is not passed and waits for the deadline', () => {
-    installGh({ mergeable: 'UNKNOWN' });
-    const { result, waits } = wait(1, 30);
-    expect(result.status).not.toBe('passed');
+  test('an unknown mergeable state with green checks is not passed and waits for the deadline', () => {
+    const { result, waits } = wait({ mergeable: 'unknown' }, 1, 30);
     expect(result.status).toBe('pending');
-    expect(result.mergeable).toBe('UNKNOWN');
+    expect(result.mergeable).toBe('unknown');
     expect(waits).toEqual([30_000, 30_000]);
   });
 
-  test('MERGEABLE with green checks passes at once', () => {
-    installGh({ mergeable: 'MERGEABLE' });
-    const { result, waits } = wait();
+  test('a clean pull request with green checks passes at once', () => {
+    const { result, waits } = wait({ mergeable: 'clean' });
     expect(result.status).toBe('passed');
-    expect(result.mergeable).toBe('MERGEABLE');
+    expect(result.mergeable).toBe('clean');
     expect(result.hadChecks).toBe(true);
-    expect(result.passedChecks).toHaveLength(1);
-    expect(result.prUrl).toBe('https://github.com/owner/repo/pull/86');
+    expect(result.passedChecks.map(entry => entry.name)).toEqual(['CodeRabbit']);
+    expect(result.prUrl).toBe('https://github.com/owner/repo/pull/7');
     expect(waits).toEqual([]);
   });
 
-  test('UNKNOWN with no checks is pending', () => {
-    installGh({ mergeable: 'UNKNOWN', checks: '[]' });
-    const { result } = wait();
+  test('asks for everything about the pull request the branch resolves to', () => {
+    wait({ mergeable: 'clean' });
+    const requests = Object.fromEntries(
+      box
+        .calls('archon')
+        .filter(call => call.args[1] !== 'resolve' && call.args[1] !== 'pr.view')
+        .map(call => [call.args[1], requestOf(call)])
+    );
+    const ref = { repo: REPO, number: 7 };
+    expect(requests).toEqual({
+      'pr.merge-state': { ref },
+      'checks.state': { ref },
+      'pr.reviews': { ref },
+      'pr.threads': { ref },
+      'workitem.comments': { subject: { kind: 'pr', ref } },
+    });
+  });
+
+  test('an unknown mergeable state with no checks is pending', () => {
+    const { result } = wait({ mergeable: 'unknown', units: [] });
     expect(result.status).toBe('pending');
-    expect(result.mergeable).toBe('UNKNOWN');
     expect(result.hadChecks).toBe(false);
   });
 
-  test('CONFLICTING without local git objects has no conflicting files', () => {
-    installGh({ mergeable: 'CONFLICTING' });
-    const { result } = wait();
+  test('a conflict without local git objects has no conflicting files', () => {
+    const { result } = wait({ mergeable: 'conflict' });
     expect(result.status).toBe('failed');
     expect(result.conflictingFiles).toEqual([]);
   });
 
-  test('a failed check fails and fetches the failed run log', () => {
-    const failed = '[{"name":"build","state":"FAILURE","bucket":"fail","link":"https://github.com/o/r/actions/runs/555/job/1"}]';
-    installGh({
-      mergeable: 'MERGEABLE',
-      checks: failed,
-      extra: [rule(['run', 'view', '555', '--log-failed'], reply('error: build broke\n'))],
-    });
-    const { result } = wait();
+  test('a failed check fails and fetches its log', () => {
+    const logs = rule(
+      ['forge', 'checks.logs'],
+      ok('checks.logs', { log: { kind: 'text', text: 'error: build broke\n', truncated: false, totalBytes: 19 } })
+    );
+    const { result } = wait({ mergeable: 'clean', units: [unit('build', 'red', 'failure')], overrides: [logs] });
     expect(result.status).toBe('failed');
-    expect(result.failedChecks.map(check => check.name)).toEqual(['build']);
-    expect(result.failedLogs).toEqual([{ runId: '555', log: 'error: build broke\n' }]);
+    expect(result.failedChecks.map(entry => entry.name)).toEqual(['build']);
+    expect(result.failedLogs).toEqual([{ name: 'build', log: 'error: build broke\n' }]);
+    const call = box.calls('archon').find(entry => entry.args[1] === 'checks.logs');
+    expect(call && requestOf(call)).toEqual({ repo: REPO, unit: { kind: 'check', id: 'id-build', name: 'build' } });
   });
 
-  test('a pending check keeps polling until the deadline', () => {
-    installGh({ mergeable: 'MERGEABLE', checks: '[{"name":"slow","state":"PENDING","bucket":"pending"}]' });
-    const { result, waits } = wait(1, 30);
+  test('a failed check with no log says why', () => {
+    const logs = rule(['forge', 'checks.logs'], ok('checks.logs', { log: { kind: 'none', reason: 'log_unavailable' } }));
+    const { result } = wait({ mergeable: 'clean', units: [unit('lint', 'red', 'failure')], overrides: [logs] });
+    expect(result.failedLogs).toEqual([{ name: 'lint', log: 'no log (log_unavailable)' }]);
+  });
+
+  test('a failed log read is reported in place of the log', () => {
+    const logs = rule(['forge', 'checks.logs'], refused('gone'));
+    const { result } = wait({ mergeable: 'clean', units: [unit('lint', 'red', 'failure')], overrides: [logs] });
+    expect(result.status).toBe('failed');
+    expect(result.failedLogs[0].log).toBe('forge checks.logs failed (forge_error): gone');
+  });
+
+  test.each([
+    ['pending', 'pending'],
+    ['gated', 'gated'],
+    ['unknown', 'unknown'],
+  ])('a %s check keeps polling until the deadline', (_name, state) => {
+    const { result, waits } = wait({ mergeable: 'clean', units: [unit('slow', state)] }, 1, 30);
     expect(result.status).toBe('pending');
     expect(result.pendingChecks).toHaveLength(1);
     expect(waits).toEqual([30_000, 30_000]);
@@ -215,90 +266,72 @@ describe('waitForCi', () => {
   });
 
   test('a blocking review fails', () => {
-    installGh({
-      mergeable: 'MERGEABLE',
-      reviews: '{"user":{"login":"alice"},"state":"CHANGES_REQUESTED","body":"fix it"}\n',
-    });
-    const { result } = wait();
+    const reviews = [{ kind: 'review', author: { login: 'alice' }, state: 'CHANGES_REQUESTED', createdAt: null, body: 'fix it' }];
+    const { result } = wait({ mergeable: 'clean', reviews });
     expect(result.status).toBe('failed');
     expect(result.blockingReviews).toEqual([{ login: 'alice', state: 'CHANGES_REQUESTED', body: 'fix it' }]);
   });
 
-  test('"no checks reported" is a valid empty state', () => {
-    installGh({ mergeable: 'MERGEABLE', checks: { status: 1, stderr: 'no checks reported on the branch\n' } });
-    const { result } = wait();
+  test('a pull request with no checks is a valid empty state', () => {
+    const { result } = wait({ mergeable: 'clean', units: [] });
     expect(result.status).toBe('passed');
     expect(result.hadChecks).toBe(false);
   });
 
-  test('another pr checks failure is an error', () => {
-    installGh({ mergeable: 'MERGEABLE', checks: { status: 1, stderr: 'rate limited\n' } });
-    const { result } = wait();
+  test.each([
+    ['checks.state', 'failed to fetch PR checks: forge checks.state failed (forge_error): rate limited'],
+    ['pr.reviews', 'failed to fetch PR reviews: forge pr.reviews failed (forge_error): rate limited'],
+    ['pr.merge-state', 'failed to fetch PR merge state: forge pr.merge-state failed (forge_error): rate limited'],
+    ['pr.threads', 'failed to fetch PR review threads: forge pr.threads failed (forge_error): rate limited'],
+    ['workitem.comments', 'failed to fetch PR comments: forge workitem.comments failed (forge_error): rate limited'],
+  ])('a failed %s read is an error, not a pass', (op, want) => {
+    const { result } = wait({ mergeable: 'clean', overrides: [rule(['forge', op], refused('rate limited'))] });
     expect(result.status).toBe('error');
-    expect(result.error).toContain('failed to fetch PR checks: rate limited');
+    expect(result.error).toBe(want);
   });
 
   test('a human PR comment makes green CI report comments', () => {
-    const graph = JSON.stringify({
-      data: { repository: { pullRequest: pr({ comments: [{ author: user('reviewer'), body: 'Please update this.' }] }) } },
-    });
-    installGh({ mergeable: 'MERGEABLE', graph });
-    const { result } = wait();
+    const comments = [{ author: user('reviewer'), body: 'Please update this.' }];
+    const { result } = wait({ mergeable: 'clean', comments });
     expect(result.status).toBe('comments');
     expect(result.comments?.issueComments).toEqual([{ author: 'reviewer', body: 'Please update this.' }]);
   });
 
-  test('requests the comment query with author type names', () => {
-    installGh({ mergeable: 'MERGEABLE' });
-    wait();
-    const graphql = box.calls('gh').find(call => call.args[1] === 'graphql');
-    expect(graphql?.args.join(' ')).toContain('__typename');
-    expect(graphql?.args).toContain('owner=owner');
-    expect(graphql?.args).toContain('prNumber=86');
+  test('an unresolved review thread makes green CI report comments', () => {
+    const { result } = wait({ mergeable: 'clean', threads: [thread(false, [inline(user('reviewer'), 'Fix this')])] });
+    expect(result.status).toBe('comments');
+    expect(result.comments?.unresolvedThreads).toHaveLength(1);
   });
 
-  test.each(['reviewThreads', 'comments'])('more than one page of %s is an error, not passed', field => {
-    const page = { reviewThreads: { nodes: [] }, comments: { nodes: [] } } as Record<string, object>;
-    page[field] = { pageInfo: { hasNextPage: true }, nodes: [] };
-    const graph = JSON.stringify({ data: { repository: { pullRequest: { author: user('pr-author'), ...page } } } });
-    installGh({ mergeable: 'MERGEABLE', graph });
-    const { result } = wait();
-    expect(result.status).toBe('error');
-    expect(result.error).toContain('more than 100 review threads or top-level comments');
-  });
-
-  test('a failed comment fetch is an error', () => {
-    installGh({ mergeable: 'MERGEABLE', graph: { status: 1, stderr: 'graphql down\n' } });
-    const { result } = wait();
-    expect(result.status).toBe('error');
-    expect(result.error).toBe('failed to fetch PR comments: graphql down');
+  test("the pull request author's own comment is not feedback", () => {
+    const { result } = wait({ mergeable: 'clean', comments: [{ author: user('pr-author'), body: 'Context' }] });
+    expect(result.status).toBe('passed');
   });
 
   test('head is not moved when local HEAD and the PR head agree', () => {
-    installGh({ mergeable: 'MERGEABLE', head: box.head() });
-    expect(wait().result.headMoved).toBe(false);
+    expect(wait({ mergeable: 'clean', head: box.head() }).result.headMoved).toBe(false);
   });
 
   test('head is moved when local HEAD differs from the PR head', () => {
-    installGh({ mergeable: 'MERGEABLE', head: '0123456789012345678901234567890123456789' });
-    const { result } = wait();
+    const { result } = wait({ mergeable: 'clean', head: '0123456789012345678901234567890123456789' });
     expect(result.headSha).toBe('0123456789012345678901234567890123456789');
     expect(result.headMoved).toBe(true);
   });
 
   test('no PR for the branch is an error', () => {
-    box.fake('gh', [rule(['pr', 'view'], reply('', 1, 'no pull requests found'))]);
-    const { result } = wait();
+    const { result } = wait({ mergeable: 'clean', overrides: [rule(['forge', 'pr.view'], ok('pr.view', null))] });
     expect(result.status).toBe('error');
     expect(result.error).toBe('no PR found for the current branch');
   });
 
-  test('a failed repository lookup is an error', () => {
-    box.fake('gh', [
-      rule(['pr', 'view'], reply(JSON.stringify({ number: 1, url: 'u', headRefOid: 'abc', mergeable: 'MERGEABLE' }))),
-      rule(['repo', 'view'], reply('', 1, 'denied')),
-    ]);
-    expect(wait().result.error).toBe('failed to fetch repository info');
+  test('a failed lookup is an error that names the forge failure', () => {
+    const { result } = wait({ mergeable: 'clean', overrides: [rule(['forge', 'pr.view'], failed('authorization', 'bad credentials'))] });
+    expect(result.error).toBe('forge pr.view failed (authorization): bad credentials');
+  });
+
+  test('a pull request without a head revision is an error', () => {
+    const view = ok('pr.view', prView({ head_revision: null }));
+    expect(wait({ mergeable: 'clean', overrides: [rule(['forge', 'pr.view'], view)] }).result.error).toBe('the PR head SHA is missing');
   });
 });
 
@@ -318,33 +351,32 @@ describe('renderReport', () => {
     pendingChecks: [],
     blockingReviews: [],
     failedLogs: [],
-    mergeable: 'MERGEABLE',
+    mergeable: 'clean',
     conflictingFiles: [],
     comments: undefined,
     elapsedMinutes: 2,
   });
 
   test('a green report has the header lines and passing checks', () => {
-    const text = renderReport({ ...base(), passedChecks: [{ name: 'build', state: 'SUCCESS' }] });
+    const text = renderReport({ ...base(), passedChecks: [check('build', 'green', 'success')] });
     expect(text).toContain('## CI Status: passed');
     expect(text).toContain('**PR:** https://github.com/o/r/pull/1');
     expect(text).toContain('**Head:** abc123\n');
     expect(text).toContain('**Elapsed:** ~2 minutes');
-    expect(text).toContain('### Passing Checks\n- build (SUCCESS)');
+    expect(text).toContain('### Passing Checks\n- build (success)');
     expect(text).not.toContain('### Failed Checks');
     expect(text.endsWith('\n')).toBe(true);
   });
 
-  test('a failed check shows its link and log', () => {
-    const link = 'https://github.com/o/r/actions/runs/9/job/1';
+  test('a failed check shows its log', () => {
     const text = renderReport({
       ...base(),
       status: 'failed',
-      failedChecks: [{ name: 'build', state: 'FAILURE', link }],
-      failedLogs: [{ runId: '9', log: 'boom' }],
+      failedChecks: [check('build', 'red', 'failure')],
+      failedLogs: [{ name: 'build', log: 'boom' }],
     });
     expect(text).toContain('### Failed Checks');
-    expect(text).toContain(`- **build** (FAILURE)\n  Link: ${link}`);
+    expect(text).toContain('- **build** (failure)');
     expect(text).toContain('  Logs:\n  ```\nboom\n  ```');
   });
 
@@ -362,14 +394,14 @@ describe('renderReport', () => {
   });
 
   test('comments, deferred threads and informational bot comments get their own sections', () => {
-    const thread = { file: 'a.ts', line: 4, author: 'bot[bot]', body: 'Unused' };
+    const unresolved = { file: 'a.ts', line: 4, author: 'bot[bot]', body: 'Unused' };
     const text = renderReport({
       ...base(),
       status: 'comments',
       comments: {
         hasComments: true,
-        unresolvedThreads: [thread],
-        deferredThreads: [{ ...thread, line: null, body: 'Later' }],
+        unresolvedThreads: [unresolved],
+        deferredThreads: [{ ...unresolved, line: null, body: 'Later' }],
         issueComments: [{ author: 'reviewer', body: 'Please update this.' }],
         informationalBotComments: [{ author: 'qodo[bot]', body: 'Summary' }],
       },
@@ -389,7 +421,7 @@ describe('renderReport', () => {
   });
 
   test('still running checks are listed', () => {
-    const text = renderReport({ ...base(), status: 'pending', pendingChecks: [{ name: 'slow', state: 'PENDING' }] });
-    expect(text).toContain('### Still Running\n- slow (PENDING)');
+    const text = renderReport({ ...base(), status: 'pending', pendingChecks: [check('slow', 'pending', 'in_progress')] });
+    expect(text).toContain('### Still Running\n- slow (in_progress)');
   });
 });

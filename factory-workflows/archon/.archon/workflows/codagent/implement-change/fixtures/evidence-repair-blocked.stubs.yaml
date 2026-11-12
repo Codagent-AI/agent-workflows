@@ -1,5 +1,6 @@
 # An evidence repair that reports itself blocked fails its recheck, which fails the loop.
 validate-inputs: { change_dir: tests/data/changes/valid-change, artifact_validation_instruction: "Validate any changed spec artifact." }
+check-forge: "forge ready"
 check-definition__validate-definition: { ok: true, problems: "" }
 check-definition__verify-definition: { ok: true, problems: "" }
 commit-definition__commit-definition: { ok: true, problems: "", message: "a spec-driven change commits its definition in its planning step" }

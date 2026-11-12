@@ -42,8 +42,14 @@ nodes:
       required: [change_dir, artifact_validation_instruction]
       additionalProperties: false
 
-  - id: check-definition
+  # The forge plugin and its credential are checked before any agent spends.
+  - id: check-forge
     depends_on: [validate-inputs]
+    script: check-forge
+    runtime: bun
+
+  - id: check-definition
+    depends_on: [check-forge]
     include: codagent-check-definition
     with:
       change_name: $INPUTS.change_name

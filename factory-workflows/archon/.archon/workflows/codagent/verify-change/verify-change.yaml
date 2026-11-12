@@ -54,8 +54,14 @@ nodes:
       required: [change_dir, artifact_validation_instruction, rounds, review, stop_unchanged]
       additionalProperties: false
 
-  - id: review-assumptions
+  # The forge plugin and its credential are checked before any agent spends.
+  - id: check-forge
     depends_on: [validate-inputs]
+    script: check-forge
+    runtime: bun
+
+  - id: review-assumptions
+    depends_on: [validate-inputs, check-forge]
     when: "$validate-inputs.output.review == 'true'"
     model: ['@lead', large]
     context: fresh
@@ -66,7 +72,7 @@ nodes:
       change_dir: $validate-inputs.output.change_dir
 
   - id: verify-assumptions-handoff
-    depends_on: [validate-inputs, review-assumptions]
+    depends_on: [validate-inputs, check-forge, review-assumptions]
     trigger_rule: none_failed_min_one_success
     script: verify-assumptions-handoff
     runtime: bun
@@ -162,11 +168,12 @@ nodes:
     with: *change
     output_format: *repair
 
-  # open-draft-pr writes the description to pr-body.md; this adds the generated-body
-  # markers and puts it into the pull request's body. A blocked open-draft-pr fails here.
-  - id: update-pr-body
+  # open-draft-pr writes the title and description to pr-title.txt and pr-body.md; this
+  # opens the pull request as a draft, or puts the description into the open one's body
+  # between the generated-body markers. A blocked open-draft-pr fails here.
+  - id: publish-draft-pr
     depends_on: [open-draft-pr]
-    script: update-pr-body
+    script: publish-draft-pr
     runtime: bun
     with:
       strict: true
@@ -177,7 +184,7 @@ nodes:
   # A brief GitHub lag retries inside the check instead of rerunning
   # open-draft-pr.
   - id: verify-draft-pr
-    depends_on: [update-pr-body]
+    depends_on: [publish-draft-pr]
     script: check-draft-pr
     runtime: bun
     with:
@@ -205,9 +212,9 @@ nodes:
     with: *change
     output_format: *repair
 
-  - id: update-reopened-pr-body
+  - id: publish-reopened-draft-pr
     depends_on: [reopen-draft-pr]
-    script: update-pr-body
+    script: publish-draft-pr
     runtime: bun
     with:
       strict: true
@@ -216,7 +223,7 @@ nodes:
     output_format: *check
 
   - id: recheck-draft-pr
-    depends_on: [update-reopened-pr-body]
+    depends_on: [publish-reopened-draft-pr]
     script: check-draft-pr
     runtime: bun
     with:
@@ -392,8 +399,21 @@ nodes:
             reason: $repair-acceptance-push.output.reason
           output_format: *check
 
-        - id: verify-acceptance-pr
+        # The push does not change the pull request's draft state; a refusal by the forge
+        # fails the run, since no agent can resolve it.
+        - id: restore-draft-pr
           depends_on: [acceptance-push, recheck-acceptance-push]
+          trigger_rule: none_failed_min_one_success
+          script: restore-draft-pr
+          runtime: bun
+          with:
+            strict: true
+            blocked: false
+            reason: ""
+          output_format: *check
+
+        - id: verify-acceptance-pr
+          depends_on: [restore-draft-pr]
           trigger_rule: none_failed_min_one_success
           script: check-draft-pr
           runtime: bun
