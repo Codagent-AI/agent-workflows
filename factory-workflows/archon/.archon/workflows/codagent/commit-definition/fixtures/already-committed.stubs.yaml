@@ -1,0 +1,9 @@
+# A committed definition needs no new commit.
+exec-code: true
+fixture:
+  expect: completed
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_kind: openspec
+  reached: [commit-definition, check-clean-before-implementation]

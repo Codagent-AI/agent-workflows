@@ -1,0 +1,15 @@
+# The lead cannot repair the definition without a human decision, so the recheck after the
+# repair fails the run with the lead's reason, without validating again.
+repair-definition: { blocked: true, reason: "the proposal contradicts the specification and only a maintainer can pick one" }
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: [definition-recheck, definition-repairs]
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/invalid-change
+    change_label: spec-driven change
+    change_kind: spec-driven
+  reached: [repair-definition]
+  resolved-text-contains:
+    repair-definition: "lacks SHALL or MUST language"

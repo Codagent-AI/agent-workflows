@@ -1,0 +1,14 @@
+# A failed commit reaches a fresh lead repair, and the strict recheck passes.
+commit-definition: { ok: false, problems: "commit-change-plan: git commit failed: hook rejected the message", message: "" }
+repair-commit-definition: { blocked: false, reason: "" }
+recheck-commit-definition: { ok: true, problems: "", message: "committed tests/data/changes/valid-change" }
+check-clean-before-implementation: "no tracked changes"
+fixture:
+  expect: completed
+  inputs:
+    change_name: greet-by-name
+    change_dir: tests/data/changes/valid-change
+    change_kind: openspec
+  reached: [repair-commit-definition, recheck-commit-definition, check-clean-before-implementation]
+  resolved-text-contains:
+    repair-commit-definition: "hook rejected the message"

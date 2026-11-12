@@ -1,0 +1,12 @@
+# acceptance_rounds is checked up front, so a bad value fails before the definition is
+# validated and not after the whole implementation.
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: validate-inputs
+  inputs:
+    change_name: valid-change
+    changes_root: tests/data/changes
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.
+    acceptance_rounds: "11"

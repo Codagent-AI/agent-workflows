@@ -46,16 +46,23 @@ entry_points:
   # The Archon factory workflow pack.
   - path: factory-workflows/archon
     checks:
-      - archon-validate:
-          command: archon validate workflows
-          working_directory: factory-workflows/archon
-      # Dry runs with stubbed agents; no model calls.
-      - archon-scenarios:
-          command: python3 tests/scenarios.py
+      # Validates the workflows and replays their dry-run fixtures (stubbed
+      # agents, no model calls). Set ARCHON to use an Archon other than the one
+      # on PATH, such as `bun <archon checkout>/packages/cli/src/cli.ts`.
+      - archon-workflows:
+          command: bun run test:fixtures
           working_directory: factory-workflows/archon
           timeout: 900
-      - archon-shell:
-          command: git ls-files -z '*.sh' | xargs -0 -n1 bash -n && for t in skills/wait-ci/scripts/*_test.sh; do bash "$t" || exit 1; done
+      # Biome lint (complexity, function and file size) and jscpd duplication
+      # over the TypeScript and workflow YAML.
+      - archon-lint:
+          command: bun run lint:ci
           working_directory: factory-workflows/archon
+      # The TypeScript check modules, against temporary git repositories and
+      # fake gh and openspec commands.
+      - archon-scripts:
+          command: bun test tests/
+          working_directory: factory-workflows/archon
+          timeout: 600
     reviews:
       - all-reviewers

@@ -1,0 +1,10 @@
+# A change name with uppercase letters fails the input check before any other node.
+exec-code: true
+fixture:
+  expect: failed
+  fail-node: validate-inputs
+  inputs:
+    change_name: Greet-By-Name
+    changes_root: tests/data/changes
+    change_kind: spec-driven
+    artifact_validation_instruction: Validate any changed spec artifact.
