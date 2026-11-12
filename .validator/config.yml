@@ -29,12 +29,12 @@ entry_points:
       # This check and the next both install into server/node_modules, so they
       # run one after the other.
       - openspec-server-lint:
-          command: npm ci --no-audit --no-fund --silent && npm run lint
+          command: npm run lint:ci
           working_directory: human-workflows/openspec/server
           parallel: false
       # Typecheck, bundle-matches-build, and the node:test suite.
       - openspec-server:
-          command: npm ci --no-audit --no-fund --silent && npm run check
+          command: npm run check:ci
           working_directory: human-workflows/openspec/server
           parallel: false
       - openspec-server-audit:
