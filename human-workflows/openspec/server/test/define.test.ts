@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
-import { allowsCallAgent, loadWorkflow, parseWorkflow, stepIds, WorkflowError } from "../src/steps.js";
+import { allowsCallAgent, loadWorkflow, parseWorkflow, renderStep, stepIds, WorkflowError } from "../src/steps.js";
 import {
   CHANGE,
   DEFAULT_CONFIG,
@@ -316,6 +316,30 @@ test("a malformed workflow.yaml is rejected with a clear message", () => {
   assert.match(malformed(VALID.replace("[call_agent]", "[shell]")), /steps\[0\]\.tools\[0\]: is not a supported tool\. Only \[call_agent\]/);
   assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{unknown}}")), /has an unknown placeholder \{\{unknown\}\}/);
   assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{skills_dir}}")), /unknown placeholder \{\{skills_dir\}\}/);
+  assert.match(malformed(`${VALID}shared_prompts:\n  every-step: Typo.\n`), /shared_prompts: .*every-step/);
+  assert.match(malformed(`${VALID}shared_prompts:\n  every_step: Use {{unknown}}.\n`), /shared_prompts\.every_step: has an unknown placeholder/);
+});
+
+test("shared prompts are added once after a step's own prompt, the call_agent text only where call_agent works", () => {
+  const workflow = parseWorkflow(`${VALID}shared_prompts:\n  call_agent: Review rules for {{change_name}}.\n  every_step: Keep it interactive.\n`);
+  const render = (step: string) =>
+    renderStep({ workflow, pluginRoot: "/plugin", changeName: "demo-change", step, mode: "continue", completed: [] });
+  assert.match(
+    render("one"),
+    /Do demo-change with \/plugin\/reviews\.\n\nReview rules for demo-change\.\n\nKeep it interactive\.\n\nWhen you or the user determine/,
+  );
+  const two = render("two");
+  assert.match(two, /Finish\.\n\nKeep it interactive\.\n\nWhen you or the user determine/);
+  assert.doesNotMatch(two, /Review rules/);
+});
+
+test("the shipped workflow writes its shared step text once, outside the step prompts", () => {
+  const workflow = loadWorkflow(PLUGIN_ROOT);
+  assert.match(workflow.sharedPrompts.callAgent ?? "", /verification and user-facing reporting rules/);
+  assert.match(workflow.sharedPrompts.everyStep ?? "", /without asking the user to review/);
+  for (const step of workflow.steps) {
+    assert.doesNotMatch(step.prompt, /reporting rules|interactive/, step.id);
+  }
 });
 
 test("a state file is checked whole: its workflow name, starts, and calls", async () => {

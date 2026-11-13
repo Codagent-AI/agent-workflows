@@ -24,6 +24,17 @@ The system SHALL replace `{{change_name}}` and `{{reviews_dir}}` in each step pr
 - **WHEN** a step is returned
 - **THEN** the text holds the change name and the absolute path of the plugin's reviews folder
 
+### Requirement: Shared step text is written once and added to each step
+The system SHALL add the workflow file's `shared_prompts` after a step's own prompt: the `call_agent` text for a step with `tools: [call_agent]`, then the `every_step` text for every step.
+
+#### Scenario: A review step
+- **WHEN** a step with `tools: [call_agent]` is returned
+- **THEN** its text holds the step's own prompt, the `call_agent` text, and the `every_step` text, in that order, each once, before the instruction to call `next_step`
+
+#### Scenario: Any other step
+- **WHEN** a step without `tools: [call_agent]` is returned
+- **THEN** its text holds the step's own prompt and the `every_step` text, and not the `call_agent` text
+
 ### Requirement: Each step ends with an instruction to call next_step
 The system SHALL tell the agent, with every step it returns, to call `next_step` when the step is complete.
 
@@ -39,7 +50,7 @@ The system SHALL tell the agent, with every step it returns, to call `next_step`
 The system SHALL refuse to start, and say what is wrong, when `workflow.yaml` is missing, is not valid YAML, or breaks the workflow rules.
 
 #### Scenario: A malformed workflow
-- **WHEN** the file has no name, no description, no steps, a repeated step id, a step with no prompt, a tool other than `call_agent`, or a placeholder other than the two supported ones
+- **WHEN** the file has no name, no description, no steps, a repeated step id, a step with no prompt, a tool other than `call_agent`, a key under `shared_prompts` other than `call_agent` and `every_step`, or a placeholder other than the two supported ones
 - **THEN** the server exits with a message naming the file and the problem
 
 ### Requirement: Start creates the change folder

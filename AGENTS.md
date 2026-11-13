@@ -6,14 +6,4 @@
 - Folders under them are named by what they depend on: `human-workflows/openspec/`, `factory-workflows/archon/`.
 - New work goes under the purpose folder it serves. Add a dependency folder when the dependency differs.
 - Keep the README's layout table current when you add a folder.
-
-## human-workflows/openspec
-
-- `plugin/` is the installable plugin root. Codex, and Claude Code for a Git marketplace, copy only that folder into the plugin cache, so nothing outside it is reachable at run time. Keep `node_modules` and sources out of it.
-- `plugin/workflow.yaml` holds the step order and the step prompts, so they are not hard-coded in the server. The artifact check for a step stays in `server/src/checks.ts`, keyed by step id. When you rename or add a step, update that table and the test that pins the step ids.
-- `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.
-- After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run lint` (Biome and jscpd) and `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.
-- Add tests to the existing suites in `server/test/`.
-- The skills in `plugin/skills/` and `plugin/workflow.yaml` are the source of truth for define. `plugin/PROVENANCE.md` is the only place that names where they were copied from. Record what changed in a copied file there.
-- Do not name the tools these files were copied from anywhere else in this folder, such as in READMEs, code comments, tests, skills, or the workflow prompts.
-- The plugin's version is set in `plugin/.claude-plugin/plugin.json`. Keep it the same in `plugin/.codex-plugin/plugin.json` and `server/package.json`; `npm run build` stops if they differ. The server reports the manifest's version, injected at build time. The Claude marketplace entry has no version, so the plugin manifest wins. Keep the plugin name the same in the manifests and both marketplace files.
+- Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.

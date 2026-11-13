@@ -44175,10 +44175,17 @@ var stepSchema = external_exports.object(
   },
   { error: "must be a mapping with an id and a prompt" }
 ).transform((step) => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
+var sharedPromptsSchema = external_exports.strictObject(
+  { call_agent: promptSchema.optional(), every_step: promptSchema.optional() },
+  {
+    error: (issue2) => issue2.code === "unrecognized_keys" ? `has an unknown key ${issue2.keys.join(", ")}. Only call_agent and every_step are supported` : "must be a mapping with call_agent or every_step"
+  }
+).transform((shared) => ({ callAgent: shared.call_agent, everyStep: shared.every_step }));
 var workflowSchema = external_exports.object(
   {
     name: required2("a name"),
     description: required2("a description"),
+    shared_prompts: sharedPromptsSchema.optional(),
     steps: external_exports.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step")
   },
   { error: "must be a mapping with name, description, and steps" }
@@ -44190,7 +44197,14 @@ var workflowSchema = external_exports.object(
     }
     seen.add(step.id);
   }
-}).transform((workflow2) => ({ name: workflow2.name.trim(), description: workflow2.description.trim(), steps: workflow2.steps }));
+}).transform(
+  (workflow2) => ({
+    name: workflow2.name.trim(),
+    description: workflow2.description.trim(),
+    sharedPrompts: workflow2.shared_prompts ?? {},
+    steps: workflow2.steps
+  })
+);
 function parseWorkflow(source) {
   let raw;
   try {
@@ -44254,8 +44268,9 @@ function changeDirFor(changeName) {
   return `openspec/changes/${changeName}`;
 }
 function stepBody(workflow2, pluginRoot2, step, changeName) {
-  const prompt = workflow2.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
-  return prompt.replaceAll("{{change_name}}", changeName).replaceAll("{{reviews_dir}}", join2(pluginRoot2, "reviews")).trim();
+  const own2 = workflow2.steps.find((candidate) => candidate.id === step);
+  const { callAgent, everyStep } = workflow2.sharedPrompts;
+  return [own2?.prompt, own2?.callAgent ? callAgent : void 0, everyStep].filter((part) => part !== void 0).map((part) => part.trim()).join("\n\n").replaceAll("{{change_name}}", changeName).replaceAll("{{reviews_dir}}", join2(pluginRoot2, "reviews"));
 }
 function renderStep(input2) {
   const { workflow: workflow2, changeName, step, mode } = input2;

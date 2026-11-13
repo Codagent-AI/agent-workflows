@@ -15,9 +15,18 @@ export interface WorkflowStep {
   callAgent: boolean;
 }
 
+/** Text written once in the workflow file and added after a step's own prompt. */
+export interface SharedPrompts {
+  /** Added after the prompt of each step with `tools: [call_agent]`. */
+  callAgent?: string | undefined;
+  /** Added after every step's prompt. */
+  everyStep?: string | undefined;
+}
+
 export interface Workflow {
   name: string;
   description: string;
+  sharedPrompts: SharedPrompts;
   steps: WorkflowStep[];
 }
 
@@ -46,11 +55,24 @@ const stepSchema = z
   )
   .transform((step): WorkflowStep => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
 
+const sharedPromptsSchema = z
+  .strictObject(
+    { call_agent: promptSchema.optional(), every_step: promptSchema.optional() },
+    {
+      error: (issue) =>
+        issue.code === "unrecognized_keys"
+          ? `has an unknown key ${issue.keys.join(", ")}. Only call_agent and every_step are supported`
+          : "must be a mapping with call_agent or every_step",
+    },
+  )
+  .transform((shared): SharedPrompts => ({ callAgent: shared.call_agent, everyStep: shared.every_step }));
+
 const workflowSchema = z
   .object(
     {
       name: required("a name"),
       description: required("a description"),
+      shared_prompts: sharedPromptsSchema.optional(),
       steps: z.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step"),
     },
     { error: "must be a mapping with name, description, and steps" },
@@ -64,7 +86,14 @@ const workflowSchema = z
       seen.add(step.id);
     }
   })
-  .transform((workflow): Workflow => ({ name: workflow.name.trim(), description: workflow.description.trim(), steps: workflow.steps }));
+  .transform(
+    (workflow): Workflow => ({
+      name: workflow.name.trim(),
+      description: workflow.description.trim(),
+      sharedPrompts: workflow.shared_prompts ?? {},
+      steps: workflow.steps,
+    }),
+  );
 
 /** Checks the shape of a workflow.yaml text and returns it. Throws WorkflowError when it is malformed. */
 export function parseWorkflow(source: string): Workflow {
@@ -155,13 +184,16 @@ export interface RenderInput {
   completed: StepId[];
 }
 
-/** Fills a step prompt's placeholders. */
+/** A step's own prompt, then the shared text that applies to it, with the placeholders filled. */
 function stepBody(workflow: Workflow, pluginRoot: string, step: StepId, changeName: string): string {
-  const prompt = workflow.steps.find((candidate) => candidate.id === step)?.prompt ?? "";
-  return prompt
+  const own = workflow.steps.find((candidate) => candidate.id === step);
+  const { callAgent, everyStep } = workflow.sharedPrompts;
+  return [own?.prompt, own?.callAgent ? callAgent : undefined, everyStep]
+    .filter((part): part is string => part !== undefined)
+    .map((part) => part.trim())
+    .join("\n\n")
     .replaceAll("{{change_name}}", changeName)
-    .replaceAll("{{reviews_dir}}", join(pluginRoot, "reviews"))
-    .trim();
+    .replaceAll("{{reviews_dir}}", join(pluginRoot, "reviews"));
 }
 
 /**

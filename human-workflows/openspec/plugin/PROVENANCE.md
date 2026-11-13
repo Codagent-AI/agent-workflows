@@ -74,6 +74,15 @@ Every prompt renames `codagent:<skill>` to `define-openspec-change:<skill>`. Oth
 | `test-plan` | Rename only. |
 | `approach-review` | The child must read and follow the review instructions at `{{reviews_dir}}/review-approach.md` instead of using `codagent:review-approach`. |
 
+Two paragraphs that the prompts repeated are now written once, under `shared_prompts`, and the server
+adds them after a step's own prompt:
+
+- `every_step` replaces the last paragraph of every prompt, which kept the step interactive and moved on
+  without another review of the written files. Its wording now fits every step.
+- `call_agent` replaces the paragraph in the proposal and approach-review prompts on following the
+  call-agent skill's verification and reporting rules. "Do not modify the proposal or any other file"
+  became "Do not modify any file".
+
 The server loads and checks `workflow.yaml` when it starts, and fills `{{change_name}}` and
 `{{reviews_dir}}` (the absolute path of this plugin's `reviews/` folder) when it returns a step.
 

@@ -26,7 +26,7 @@ The plugin runs inside a person's own Claude Code or Codex session. It cannot dr
 
 ### Steps and prompts live in `workflow.yaml`
 
-The workflow file holds the name, description, and an ordered list of steps with an id, a prompt, and optional `tools: [call_agent]`. The server validates it with zod at startup and exits on a bad file. Only `{{change_name}}` and `{{reviews_dir}}` are allowed.
+The workflow file holds the name, description, an ordered list of steps with an id, a prompt, and optional `tools: [call_agent]`, and `shared_prompts`: text written once that the server adds after a step's own prompt, `call_agent` for the steps that run a review and `every_step` for all of them. The server validates it with zod at startup and exits on a bad file. Only `{{change_name}}` and `{{reviews_dir}}` are allowed.
 
 The artifact check for a step stays in `server/src/checks.ts`, in one table keyed by step id. The table also feeds the finish check and the pull request's file list. A test pins the shipped step ids so a rename cannot drop a check.
 
