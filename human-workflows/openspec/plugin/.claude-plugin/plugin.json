@@ -1,0 +1,18 @@
+{
+  "name": "define-openspec-change",
+  "version": "0.1.0",
+  "description": "Define an OpenSpec change step by step (proposal, specs, design, test plan, approach review) with a cross-vendor review, then commit the change documents.",
+  "author": {
+    "name": "Codagent-AI",
+    "url": "https://github.com/Codagent-AI"
+  },
+  "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/human-workflows/openspec",
+  "repository": "https://github.com/Codagent-AI/agent-workflows",
+  "license": "MIT",
+  "keywords": [
+    "openspec",
+    "spec-driven",
+    "workflow",
+    "planning"
+  ]
+}

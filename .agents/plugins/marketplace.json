@@ -1,0 +1,20 @@
+{
+  "name": "agent-workflows",
+  "interface": {
+    "displayName": "Codagent Agent Workflows"
+  },
+  "plugins": [
+    {
+      "name": "define-openspec-change",
+      "source": {
+        "source": "local",
+        "path": "./human-workflows/openspec/plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

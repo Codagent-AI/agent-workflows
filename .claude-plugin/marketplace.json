@@ -1,0 +1,24 @@
+{
+  "name": "agent-workflows",
+  "owner": {
+    "name": "Codagent-AI"
+  },
+  "metadata": {
+    "description": "Codagent workflows: human workflows where you and an agent work together in your own session, and factory workflows."
+  },
+  "plugins": [
+    {
+      "name": "define-openspec-change",
+      "source": "./human-workflows/openspec/plugin",
+      "description": "Define an OpenSpec change step by step (proposal, specs, design, test plan, approach review) with a cross-vendor review, then commit the change documents.",
+      "license": "MIT",
+      "keywords": [
+        "openspec",
+        "spec-driven",
+        "workflow",
+        "planning"
+      ],
+      "repository": "https://github.com/Codagent-AI/agent-workflows"
+    }
+  ]
+}
