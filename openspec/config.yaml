@@ -1,10 +1,14 @@
 schema: spec-driven
 
 context: |
-  Do not name the tools that the plugin's skills and workflow were copied from, or any evaluation
-  repository, in change artifacts. Where files came from is recorded only in plugin/PROVENANCE.md;
-  point to that file instead.
-  Only plugin/ ships. Do not put anything the plugin needs at run time outside it.
+  This one OpenSpec project holds the changes for every project in the repository: the
+  define-openspec-change plugin in human-workflows/openspec/ and the Archon pack in
+  factory-workflows/archon/. Say which project a change is for, and give paths from the repository root.
+  Do not name the tools a project was copied from, or any evaluation repository, in change artifacts.
+  Each project records where its files came from only in its own PROVENANCE.md
+  (human-workflows/openspec/plugin/PROVENANCE.md, factory-workflows/archon/PROVENANCE.md); point to that file instead.
+  For the plugin: only human-workflows/openspec/plugin/ ships. Do not put anything the plugin needs at run time outside it.
+  For the Archon pack: keep artifacts provider-neutral. Agent nodes use role aliases, never a provider or model.
   Use plain, short sentences and no em-dashes.
 
 # Project context (optional)
