@@ -7,3 +7,4 @@
 - New work goes under the purpose folder it serves. Add a dependency folder when the dependency differs.
 - Keep the README's layout table current when you add a folder.
 - Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.
+- OpenSpec changes for every project live in the one OpenSpec project at the repository root, `openspec/`. Do not add an `openspec/` folder inside a project. `openspec/config.yaml` holds the context for all projects.

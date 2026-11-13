@@ -8,7 +8,7 @@ base_branch: origin/main
 # entry_points configured by /validator-setup
 entry_points:
   # Repository files outside the workflow folders: README, AGENTS.md, LICENSE,
-  # the plugin marketplaces, .gitignore.
+  # the plugin marketplaces, .gitignore, and the OpenSpec changes in openspec/.
   - path: .
     exclude:
       - .validator

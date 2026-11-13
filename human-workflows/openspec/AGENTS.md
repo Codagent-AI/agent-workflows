@@ -6,7 +6,6 @@ The define-openspec-change plugin. The README is for people who use it; this fil
 
 ```
 human-workflows/openspec/
-  openspec/                    OpenSpec changes for this plugin; not part of the plugin
   plugin/                      the installable plugin root
     .claude-plugin/plugin.json
     .codex-plugin/plugin.json  skills, plus .codex-mcp.json for the server
