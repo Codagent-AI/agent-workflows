@@ -2,6 +2,15 @@
 
 The `codagent` workflow pack for the Archon engine. See README.md for the layout, how to run a workflow, the files a run writes, and how to test. Paths below are relative to this folder.
 
+## Design balance
+
+Every part of a workflow weighs two goals:
+
+- **The agents reach the right outcome.** Real defects get fixed. Wrong findings get declined, and the declines are accepted. Real disagreements and open questions reach the person with both sides. No agent gives in or holds out for the wrong reason. Give each agent the context, evidence and choices it needs to decide well.
+- **The machinery stays small.** Each node, script, piece of state, loop, special case and failure path is more to test and another way for a run to go wrong.
+
+Add machinery only where it clearly raises the chance of the right outcome. Prefer a bounded loop, a clear instruction, or a hand-off to the person over state that tracks every case. When a rare case would need new state or a new failure path, accept the limit and record it in the change's design. A run that leaves an open question for the person is better than one that fails or one that hides the question.
+
 ## Rules
 
 - Keep the pack under `.archon/workflows/codagent/`. A workflow's commands, scripts and fixtures sit in its own folder. Modules several scripts import go in `.shared/lib/`, and documents several agent nodes read go in `.shared/`, read through `$PACK_DIR`.

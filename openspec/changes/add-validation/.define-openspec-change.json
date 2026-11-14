@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "workflow": "define-openspec-change",
+  "change_name": "add-validation",
+  "change_dir": "openspec/changes/add-validation",
+  "status": "complete",
+  "current_step": null,
+  "steps": {
+    "proposal": {
+      "started_at": "2026-11-13T02:25:39.784Z",
+      "completed_at": "2026-11-13T03:24:32.150Z"
+    },
+    "specs": {
+      "started_at": "2026-11-13T03:24:32.150Z",
+      "completed_at": "2026-11-14T20:02:13.169Z"
+    },
+    "design": {
+      "started_at": "2026-11-14T20:02:13.169Z",
+      "completed_at": "2026-11-14T21:27:24.929Z"
+    },
+    "test-plan": {
+      "started_at": "2026-11-14T21:27:24.929Z",
+      "completed_at": "2026-11-14T21:57:38.435Z"
+    },
+    "approach-review": {
+      "started_at": "2026-11-14T21:57:38.435Z",
+      "completed_at": "2026-11-14T22:54:02.820Z"
+    }
+  },
+  "starts": [
+    {
+      "at": "2026-11-13T02:25:39.784Z",
+      "lead": "claude",
+      "mode": "new",
+      "step": "proposal"
+    }
+  ],
+  "calls": [
+    {
+      "call_id": "call-6ee94a13",
+      "step": "proposal",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-13T02:54:11.164Z",
+      "ended_at": "2026-11-13T02:55:57.931Z"
+    },
+    {
+      "call_id": "call-76e921d8",
+      "step": "approach-review",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-14T21:57:50.444Z",
+      "ended_at": "2026-11-14T22:01:31.729Z"
+    }
+  ],
+  "created_at": "2026-11-13T02:25:39.784Z",
+  "updated_at": "2026-11-14T22:54:02.820Z",
+  "completed_at": "2026-11-14T22:54:02.820Z"
+}
