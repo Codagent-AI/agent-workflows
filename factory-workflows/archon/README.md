@@ -6,8 +6,7 @@ This folder is the workflow source Archon reads: pass it to `--workflow-source`.
 
 ## Workflows
 
-- `codagent-implement-change`, the entry point. It validates and commits the definition, has the implementor write a checklist, implement the change and record evidence, has the crosscheck audit the work and the implementor resolve the findings, checks that the work is committed and the worktree clean, has the implementor write its session report, and then runs `codagent-verify-change` with its own review steps turned off.
-- `codagent-verify-change`. It reviews the implementation's assumptions and simplifies it (unless the caller already did), opens a draft pull request, and runs the acceptance rounds: an independent tester explores the change, the round waits for CI, the tester hands off, and a gate decides whether the change has converged. A round that has not converged gets a fix from the lead, a push, and a retest.
+- `codagent-implement-change`, the entry point. It validates and commits the definition, implements against a checklist, audits the work, checks assumptions, reviews the code, checks the worktree, opens a draft pull request and runs acceptance rounds. The implementor fixes review findings in its own session and handles acceptance fixes; the independent tester and CI check each round.
 - `codagent-check-definition` and `codagent-commit-definition`, building blocks that `codagent-implement-change` includes.
 
 ## Layout
@@ -17,7 +16,6 @@ Paths are relative to this folder, `factory-workflows/archon/`.
 ```
 .archon/workflows/codagent/          the codagent pack
   implement-change/                  codagent-implement-change: the workflow, commands/, scripts/, fixtures/
-  verify-change/                     codagent-verify-change
   check-definition/                  codagent-check-definition
   commit-definition/                 codagent-commit-definition
   .pack/pack.yaml                    the pack settings and their defaults
@@ -53,8 +51,9 @@ With `--no-worktree` the run works on the target checkout's current branch, whic
 | `changes_root` | `openspec/changes` | The folder that holds the changes. An `openspec` change must use the default. |
 | `change_label` | `OpenSpec change` | Human label for the change kind, used in the agents' prompts. |
 | `artifact_validation_instruction` | empty | One sentence telling agents how to validate a changed artifact. Empty means the `openspec validate` sentence naming the change for `openspec`; a `spec-driven` change must set it. |
+| `review_strategy` | `builtin` | `builtin` reviews before the draft and after each acceptance fix; `none` disables all review. |
 | `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
-| `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the lead resolves in each acceptance fix. |
+| `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the implementor resolves in each acceptance fix. |
 
 A project that is not the default sets its values in `.archon/packs/codagent.yaml` in the target checkout, under `settings:` only:
 
@@ -68,7 +67,7 @@ settings:
 
 Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`change_kind` must be `openspec` or `spec-driven`), refuses the run before any node runs.
 
-`codagent-verify-change` run on its own reads the same settings and takes `change_name`, plus `skip_implementation_review` (default `false`; `true` skips the assumption review and simplification) and `stop_unchanged_acceptance` (default `false`; `true` ends the rounds when a fix changes nothing and asks for no retest). `codagent-implement-change` sets both to `true`. They are inputs of the caller, not settings, because they describe how the caller composed the workflow and not the project.
+`codagent-verify-change` has been removed. Launch `codagent-implement-change` instead and drop `skip_implementation_review` and `stop_unchanged_acceptance`. An unchanged acceptance fix with no retest reason always ends the rounds. Existing `@lead` bindings are unused; bind `@reviewer`, or it falls back to `medium`. Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
 
 ### The forge
 
@@ -83,11 +82,11 @@ The comments and threads read stays on `gh` because the forge's actor record has
 
 ### Roles
 
-Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@crosscheck', large]`, `['@lead', large]`, and `['@tester', medium]`. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
+Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@crosscheck', large]`, `['@tester', medium]`, and `['@reviewer', medium]`. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
 
 ```yaml
 aliases:
-  '@lead': { provider: claude, model: <model>, effort: high }
+  '@reviewer': { provider: claude, model: <model>, effort: high }
   '@crosscheck': { provider: codex, model: <model>, effort: high }
   '@implementor': { provider: codex, model: <model>, effort: medium }
   '@tester': { provider: codex, model: <model>, effort: medium }
@@ -104,17 +103,19 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `implementation-blocked.md` | any implementor step | The question only a human can answer. Its existence fails the next check. |
 | `acceptance-assumptions.md` | every agent | Rulings an agent made on questions a human might have decided. |
 | `implementor-decisions.md` | implementor | Ordinary decisions that could change behavior, scope or integration. |
-| `evidence/` | implementor, lead | Saved output each checklist row's evidence names. |
+| `evidence/` | implementor | Saved output each checklist row's evidence names. |
 | `planned-checklist.md`, `evidence-problems.txt` | scripts | The planned checklist, and the evidence check's problem list. |
 | `nodes/audit.md` | Archon | The crosscheck's findings. |
-| `session-report.md` | implementor | The implementor's session report, which the assumption review and the acceptance tester read. |
+| `session-report.md` | implementor | The implementor's session report, which the acceptance tester reads. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
-| `acceptance-retest-reason.txt` | lead | Why a fix that changed nothing still needs a retest. |
+| `acceptance-retest-reason.txt` | implementor | Why a fix that changed nothing still needs a retest. |
 | `pr-title.txt` | open-draft-pr | The pull request title, used only when the pull request does not exist yet. |
 | `pr-body.md` | open-draft-pr | The pull request description, without markers. The publish-draft-pr script adds the markers and puts it in the body. |
 | `pull-request.json` | check-draft-pr script | The branch's open pull request as last checked: url, number, base, draft state and head revision. The tester compares its head with local HEAD. |
+| `review/before-pr.md`, `review/acceptance.md` | review scripts | Latest results for before the draft (including tail) and the latest reviewed acceptance round: ranges, unresolved findings and accepted declines. |
+| `review/state.json` | review scripts | All cycles, unique finding IDs, action history, handoffs and last reviewed revision. |
 | `ci/round-<n>.md` | wait-ci script | Each round's CI result, failed-check logs and pull request comments. |
 
 ### Checks, repairs and limits
@@ -122,6 +123,12 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 A failed check goes to one agent repair, then the same check runs again in strict mode and fails the run if the problem remains. A repair that cannot proceed without a human returns `blocked`, and the run fails with `REPAIR_BLOCKED: <reason>`. The evidence checks allow two repairs and the definition check three, each repair followed by a recheck in a loop that fails the run when its repairs run out.
 
 `acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head.
+
+### Code review
+
+The builtin reviewer inspects changed code for quality, security and error-handling defects, excluding the change definition. It does not repeat the definition audit or review style. It starts fresh per cycle and keeps its session for re-reviews. Before the draft, up to three fixer/re-review rounds run. Each continuing acceptance fix gets one round before push. The implementor may commit a fix, decline with a reason, or reply to a contest. The reviewer confirms/rejects fixes and accepts/contests declines. A second disagreement becomes disputed.
+
+Findings never gate the run. Unfixed high/medium findings and accepted high/medium declines go to `acceptance-assumptions.md` with both sides; low findings remain in review results. A review that cannot produce valid structured output fails the run. A commit after the initial cycle receives a fresh tail review without fix rounds before the draft opens at the reviewed head. Review fixes rerun affected checklist checks or mark them not verified; no extra evidence gate follows them.
 
 ## Tests
 

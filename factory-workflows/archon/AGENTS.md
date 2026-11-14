@@ -15,7 +15,7 @@ Add machinery only where it clearly raises the chance of the right outcome. Pref
 
 - Keep the pack under `.archon/workflows/codagent/`. A workflow's commands, scripts and fixtures sit in its own folder. Modules several scripts import go in `.shared/lib/`, and documents several agent nodes read go in `.shared/`, read through `$PACK_DIR`.
 - Write checks as TypeScript script nodes run by bun, importing from `.shared/lib/`. No shell scripts, and nothing specific to one provider.
-- Every agent node names a role alias with a tier fallback (`['@lead', large]`), never a provider, model or effort, and sets `context` explicitly.
+- Every agent node names a role alias with a tier fallback (`['@implementor', large]`), never a provider, model or effort, and sets `context` explicitly.
 - A `context: fresh` node's command starts with the autonomy preamble ("You are running autonomously with no human in the loop..."), and the fixtures check that it does.
 - Agents and scripts share the `$ARTIFACTS_DIR` files README.md lists. Rename one only everywhere at once.
 - With any change to a check, a repair, or a branch condition, add or change a fixture. With any change to `.shared/lib/`, add or change a bun test. Before committing, run both test layers and the lint as README.md's Tests section describes. None of them makes model calls. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.

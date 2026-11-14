@@ -1,6 +1,5 @@
-// Checks every input the run passes on to verify-change before any other node, so a bad
-// acceptance_rounds fails now and not after the whole implementation. Prints the change's
-// folder and the sentence on validating an artifact, which every later node reads.
+// Validate all inputs before agents run; expose the typed values later nodes read.
 import { readInputs, validateRun } from '../../.shared/lib/params.ts';
 
-validateRun(readInputs(process.env));
+const inputs = readInputs(process.env);
+validateRun(inputs, { rounds: Number(inputs.acceptanceRounds), review: inputs.reviewStrategy !== 'none' });

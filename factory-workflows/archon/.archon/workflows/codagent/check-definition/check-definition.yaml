@@ -1,7 +1,7 @@
 name: codagent-check-definition
 description: >-
   Building block of codagent-implement-change. Validate an approved change
-  definition, with up to three autonomous lead repairs of reported conformance
+  definition, with up to three autonomous implementor repairs of reported conformance
   problems.
 
 inputs:
@@ -41,7 +41,7 @@ nodes:
       until_bash: 'ok=$definition-recheck.output.ok; [ "$ok" = true ]'
       nodes:
         - id: repair-definition
-          model: ['@lead', large]
+          model: ['@implementor', large]
           context: fresh
           command: repair-definition
           with:

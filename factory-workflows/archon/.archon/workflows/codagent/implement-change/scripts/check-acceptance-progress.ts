@@ -1,0 +1,16 @@
+// Ends a round when its fix made no progress and gave no retest reason.
+import { artifactsDir, required } from '../../.shared/lib/check.ts';
+import { checkProgress } from '../../.shared/lib/acceptance.ts';
+import { runCommand } from '../../.shared/lib/exec.ts';
+
+const progress = checkProgress(
+  runCommand,
+  artifactsDir(),
+  required(process.env.INPUTS_FIX, 'fix') === 'true'
+);
+if (!progress.progressed) {
+  process.stderr.write(
+    'the acceptance fix left the tested revision unchanged and gave no retest reason; ending the acceptance rounds\n'
+  );
+}
+process.stdout.write(`${JSON.stringify(progress)}\n`);

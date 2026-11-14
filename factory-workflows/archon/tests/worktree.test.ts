@@ -9,7 +9,7 @@ import {
   head,
   status,
 } from '../.archon/workflows/codagent/.shared/lib/worktree.ts';
-import { ARTIFACTS } from '../.archon/workflows/codagent/.shared/lib/artifacts.ts';
+import { ARTIFACTS, nonEmptyFile } from '../.archon/workflows/codagent/.shared/lib/artifacts.ts';
 import { type Sandbox, createSandbox } from './helpers.ts';
 
 let box: Sandbox;
@@ -108,5 +108,18 @@ describe('changedPaths', () => {
   test('is empty for a clean worktree and undefined when git fails', () => {
     expect(changedPaths(box.exec)).toEqual([]);
     expect(changedPaths(() => ({ status: 128, stdout: '', stderr: 'fatal' }))).toBeUndefined();
+  });
+});
+
+
+describe('assumptions handoff file predicate', () => {
+  test('rejects a missing, empty or directory ledger and accepts a populated ledger', () => {
+    const ledger = box.path(ARTIFACTS.assumptions);
+    expect(nonEmptyFile(ledger)).toBe(false);
+    box.write(ARTIFACTS.assumptions, '');
+    expect(nonEmptyFile(ledger)).toBe(false);
+    box.write(ARTIFACTS.assumptions, 'No unresolved assumptions or context gaps.\n');
+    expect(nonEmptyFile(ledger)).toBe(true);
+    expect(nonEmptyFile(box.dir)).toBe(false);
   });
 });

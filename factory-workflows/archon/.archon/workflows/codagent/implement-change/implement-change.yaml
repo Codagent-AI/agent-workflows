@@ -4,13 +4,13 @@ description: >-
   checklist of how each spec behavior is verified, have the crosscheck audit
   the result, then prepare a draft pull request for human acceptance.
 
-# Each agent node names a role alias (@implementor, @crosscheck, @lead,
+# Each agent node names a role alias (@implementor, @crosscheck, @reviewer,
 # @tester) with a tier fallback; bind the aliases in the launch checkout's
 # .archon/config.yaml. Agents record rulings and the blocked record under
 # $ARTIFACTS_DIR, with the file names the README lists.
 
-# The run's verdict is verify-change's: whether acceptance converged.
-returns: verify-change
+# Acceptance status declares the run's authored outcome.
+returns: write-acceptance-status
 outcome_field: ready
 
 # The change_name is the run's own input. The rest are the pack's settings (.pack/pack.yaml),
@@ -32,14 +32,17 @@ nodes:
       artifact_validation_instruction: $INPUTS.artifact_validation_instruction
       acceptance_rounds: $INPUTS.acceptance_rounds
       acceptance_fix_scope: $INPUTS.acceptance_fix_scope
-      # The same value as max_rounds in codagent-verify-change's validate-inputs node.
-      max_rounds: 10
+      review_strategy: $INPUTS.review_strategy
+      # The acceptance loop's literal ceiling.
+      max_rounds: &max-rounds 10
     output_format:
       type: object
       properties:
         change_dir: { type: string }
         artifact_validation_instruction: { type: string }
-      required: [change_dir, artifact_validation_instruction]
+        rounds: { type: integer }
+        review: { type: boolean }
+      required: [change_dir, artifact_validation_instruction, rounds, review]
       additionalProperties: false
 
   # The forge plugin and its credential are checked before any agent spends.
@@ -353,19 +356,713 @@ nodes:
     command: session-report
     with: *change
 
-  # The implementor's maintainability pass replaces verify-change's own
-  # assumption review and simplification. stop_unchanged_acceptance ends the
-  # acceptance rounds when a fix changes nothing and asks for no retest.
-  - id: verify-change
+  - id: verify-assumptions-handoff
     depends_on: [session-report]
-    include: codagent-verify-change
+    script: verify-assumptions-handoff
+    runtime: bun
     with:
-      change_name: $INPUTS.change_name
-      change_kind: $INPUTS.change_kind
-      changes_root: $INPUTS.changes_root
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  - id: repair-assumptions-handoff
+    depends_on: [verify-assumptions-handoff]
+    when: "$verify-assumptions-handoff.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: session-report }
+    command: repair-assumptions-handoff
+    with:
       change_label: $INPUTS.change_label
-      artifact_validation_instruction: $INPUTS.artifact_validation_instruction
-      acceptance_rounds: $INPUTS.acceptance_rounds
-      acceptance_fix_scope: $INPUTS.acceptance_fix_scope
-      skip_implementation_review: "true"
-      stop_unchanged_acceptance: "true"
+      change_name: $INPUTS.change_name
+      problems: $verify-assumptions-handoff.output.problems
+    output_format: *repair
+
+  - id: recheck-assumptions-handoff
+    depends_on: [repair-assumptions-handoff]
+    script: verify-assumptions-handoff
+    runtime: bun
+    with:
+      strict: true
+      blocked: $repair-assumptions-handoff.output.blocked
+      reason: $repair-assumptions-handoff.output.reason
+    output_format: *check
+
+  - id: prepare-review
+    depends_on: [verify-assumptions-handoff, recheck-assumptions-handoff]
+    trigger_rule: none_failed_min_one_success
+    when: "$validate-inputs.output.review == 'true'"
+    script: prepare-review
+    runtime: bun
+    with: &before-review
+      place: before-pr
+      mode: initial
+      change_dir: $validate-inputs.output.change_dir
+      start: $implementor-checklist.execution.checkoutStart
+      round: 0
+    output_format: &review-range
+      type: object
+      properties:
+        needed: { type: boolean }
+        start: { type: string }
+        end: { type: string }
+        files: { type: string }
+        findings: { type: string }
+        handed_off: { type: string }
+      required: [needed, start, end, files, findings, handed_off]
+      additionalProperties: false
+
+  - id: review-change
+    depends_on: [prepare-review]
+    when: "$validate-inputs.output.review == 'true' && $prepare-review.output.needed == 'true'"
+    model: ['@reviewer', medium]
+    context: fresh
+    mutates_checkout: false
+    command: review-change
+    with: &before-review-command
+      place: before-pr
+      change_dir: $validate-inputs.output.change_dir
+      start: $prepare-review.output.start
+      end: $prepare-review.output.end
+      files: $prepare-review.output.files
+      handed_off: $prepare-review.output.handed_off
+    output_format: &review-output
+      type: object
+      properties:
+        findings:
+          type: array
+          items: &finding
+            type: object
+            properties:
+              title: { type: string }
+              file: { type: string }
+              line: { type: integer }
+              severity: { type: string, enum: [high, medium, low] }
+              category: { type: string, enum: [quality, security, error-handling] }
+              problem: { type: string }
+              fix: { type: string }
+            required: [title, file, line, severity, category, problem, fix]
+            additionalProperties: false
+      required: [findings]
+      additionalProperties: false
+
+  - id: record-review
+    depends_on: [prepare-review, review-change]
+    trigger_rule: none_failed_min_one_success
+    when: "$validate-inputs.output.review == 'true'"
+    script: record-review
+    runtime: bun
+    with:
+      <<: *before-review
+      needed: $prepare-review.output.needed
+      end: $prepare-review.output.end
+      review_name: review-change
+      result: { from: $review-change.output, if_skipped: "" }
+    output_format: &review-settled
+      type: object
+      properties:
+        settled: { type: boolean }
+        findings: { type: string }
+      required: [settled, findings]
+      additionalProperties: false
+
+  - id: review-fixes
+    depends_on: [record-review]
+    when: "$validate-inputs.output.review == 'true' && $record-review.output.settled == 'false'"
+    loop_group:
+      max_iterations: 3
+      on_exhausted: complete
+      until_bash: 'stop=$end-review-round.output.stop; [ "$stop" = true ]'
+      nodes:
+        - id: fix-review-findings
+          model: ['@implementor', large]
+          context: { resume: session-report }
+          command: fix-review-findings
+          with:
+            place: before-pr
+            findings: $record-review.output.findings
+          output_format: &review-fix-output
+            type: object
+            properties:
+              blocked: { type: boolean }
+              reason: { type: string }
+              actions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    action: { type: string, enum: [fixed, declined, replied] }
+                    note: { type: string }
+                  required: [id, action, note]
+                  additionalProperties: false
+            required: [blocked, reason, actions]
+            additionalProperties: false
+
+        - id: record-review-fixes
+          depends_on: [fix-review-findings]
+          script: record-review-fixes
+          runtime: bun
+          with:
+            place: before-pr
+            review_name: fix-review-findings
+            result: $fix-review-findings.output
+          output_format: &review-fix-range
+            type: object
+            properties:
+              blocked: { type: boolean }
+              start: { type: string }
+              end: { type: string }
+              findings: { type: string }
+            required: [blocked, start, end, findings]
+            additionalProperties: false
+
+        - id: re-review
+          depends_on: [record-review-fixes]
+          when: "$record-review-fixes.output.blocked == 'false'"
+          model: ['@reviewer', medium]
+          context: { resume: review-change }
+          mutates_checkout: false
+          command: re-review
+          with:
+            place: before-pr
+            change_dir: $validate-inputs.output.change_dir
+            start: $record-review-fixes.output.start
+            end: $record-review-fixes.output.end
+            findings: $record-review-fixes.output.findings
+          output_format: &re-review-output
+            type: object
+            properties:
+              verdicts:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    verdict: { type: string, enum: [confirmed, rejected, accepted, contested] }
+                    reason: { type: string }
+                  required: [id, verdict, reason]
+                  additionalProperties: false
+              findings:
+                type: array
+                items: *finding
+            required: [verdicts, findings]
+            additionalProperties: false
+
+        - id: end-review-round
+          depends_on: [record-review-fixes, re-review]
+          trigger_rule: none_failed_min_one_success
+          script: end-review-round
+          runtime: bun
+          with:
+            place: before-pr
+            blocked: $record-review-fixes.output.blocked
+            end: $record-review-fixes.output.end
+            review_name: re-review
+            result: { from: $re-review.output, if_skipped: "" }
+          output_format: &review-stop
+            type: object
+            properties:
+              stop: { type: boolean }
+              findings: { type: string }
+            required: [stop, findings]
+            additionalProperties: false
+
+  - id: hand-off-review
+    depends_on: [record-review, review-fixes]
+    trigger_rule: none_failed_min_one_success
+    when: "$validate-inputs.output.review == 'true'"
+    script: hand-off-review
+    runtime: bun
+    with:
+      place: before-pr
+    output_format: &review-handoff
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+      additionalProperties: false
+
+  - id: verify-clean-for-pr
+    depends_on: [hand-off-review, verify-assumptions-handoff, recheck-assumptions-handoff]
+    trigger_rule: none_failed_min_one_success
+    script: verify-clean-for-pr
+    runtime: bun
+    with:
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: *check
+
+  - id: repair-clean-for-pr
+    depends_on: [verify-clean-for-pr]
+    when: "$verify-clean-for-pr.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: session-report }
+    command: repair-clean-for-pr
+    with:
+      change_label: $INPUTS.change_label
+      change_name: $INPUTS.change_name
+      problems: $verify-clean-for-pr.output.problems
+    output_format: *repair
+
+  - id: recheck-clean-for-pr
+    depends_on: [repair-clean-for-pr]
+    script: verify-clean-for-pr
+    runtime: bun
+    with:
+      strict: true
+      blocked: $repair-clean-for-pr.output.blocked
+      reason: $repair-clean-for-pr.output.reason
+    output_format: *check
+
+  - id: prepare-tail-review
+    depends_on: [verify-clean-for-pr, recheck-clean-for-pr]
+    trigger_rule: none_failed_min_one_success
+    when: "$validate-inputs.output.review == 'true'"
+    script: prepare-review
+    runtime: bun
+    with:
+      <<: *before-review
+      mode: tail
+    output_format: *review-range
+
+  - id: tail-review
+    depends_on: [prepare-tail-review]
+    when: "$validate-inputs.output.review == 'true' && $prepare-tail-review.output.needed == 'true'"
+    model: ['@reviewer', medium]
+    context: fresh
+    mutates_checkout: false
+    command: review-change
+    with:
+      <<: *before-review-command
+      start: $prepare-tail-review.output.start
+      end: $prepare-tail-review.output.end
+      files: $prepare-tail-review.output.files
+      handed_off: $prepare-tail-review.output.handed_off
+    output_format: *review-output
+
+  - id: record-tail-review
+    depends_on: [prepare-tail-review, tail-review]
+    trigger_rule: none_failed_min_one_success
+    when: "$validate-inputs.output.review == 'true' && $prepare-tail-review.output.needed == 'true'"
+    script: record-review
+    runtime: bun
+    with:
+      <<: *before-review
+      mode: tail
+      needed: $prepare-tail-review.output.needed
+      end: $prepare-tail-review.output.end
+      review_name: tail-review
+      result: $tail-review.output
+    output_format: *review-settled
+
+  # The pull request forks the implementor session; acceptance fixes continue it.
+  - id: open-draft-pr
+    depends_on: [verify-clean-for-pr, recheck-clean-for-pr, record-tail-review]
+    trigger_rule: none_failed_min_one_success
+    model: ['@implementor', large]
+    context: { resume: session-report }
+    command: open-draft-pr
+    with: *change
+    output_format: *repair
+
+  # open-draft-pr writes the title and description to pr-title.txt and pr-body.md; this
+  # opens the pull request as a draft, or puts the description into the open one's body
+  # between the generated-body markers. A blocked open-draft-pr fails here.
+  - id: publish-draft-pr
+    depends_on: [open-draft-pr]
+    script: publish-draft-pr
+    runtime: bun
+    with:
+      strict: true
+      blocked: $open-draft-pr.output.blocked
+      reason: $open-draft-pr.output.reason
+    output_format: *check
+
+  # A brief GitHub lag retries inside the check instead of rerunning
+  # open-draft-pr.
+  - id: verify-draft-pr
+    depends_on: [publish-draft-pr]
+    script: check-draft-pr
+    runtime: bun
+    with:
+      attempts: 3
+      interval_seconds: 3
+      strict: false
+      blocked: false
+      reason: ""
+    output_format: &pr-check
+      type: object
+      properties:
+        ok: { type: boolean }
+        problems: { type: string }
+        pr_url: { type: string }
+      required: [ok, problems, pr_url]
+      additionalProperties: false
+
+  # Runs open-draft-pr's step again in its session.
+  - id: reopen-draft-pr
+    depends_on: [verify-draft-pr]
+    when: "$verify-draft-pr.output.ok == 'false'"
+    model: ['@implementor', large]
+    context: { resume: open-draft-pr }
+    command: open-draft-pr
+    with: *change
+    output_format: *repair
+
+  - id: publish-reopened-draft-pr
+    depends_on: [reopen-draft-pr]
+    script: publish-draft-pr
+    runtime: bun
+    with:
+      strict: true
+      blocked: $reopen-draft-pr.output.blocked
+      reason: $reopen-draft-pr.output.reason
+    output_format: *check
+
+  - id: recheck-draft-pr
+    depends_on: [publish-reopened-draft-pr]
+    script: check-draft-pr
+    runtime: bun
+    with:
+      attempts: 3
+      interval_seconds: 3
+      strict: true
+      blocked: false
+      reason: ""
+    output_format: *pr-check
+
+  # Each round runs the independent tester, waits for CI, has the tester hand
+  # off, then checks convergence. A round that does not converge is followed by
+  # the implementor's fix, a push, and a PR check, and the next round retests. The
+  # last round ends at the gate, so no fix is ever left untested.
+  # max_iterations is the ceiling for acceptance_rounds; the gate ends the
+  # rounds at acceptance_rounds.
+  - id: acceptance-rounds
+    depends_on: [verify-draft-pr, recheck-draft-pr]
+    trigger_rule: none_failed_min_one_success
+    loop_group:
+      max_iterations: *max-rounds
+      on_exhausted: complete
+      until_bash: 'push=$check-acceptance-progress.output.push; [ "$push" = false ]'
+      nodes:
+        # The gate must judge only evidence written in this round, so the
+        # previous round's status and handoff are cleared.
+        - id: reset-round-evidence
+          script: reset-round-evidence
+          runtime: bun
+          with:
+            previous_round: $LOOP_PREV.reset-round-evidence.output.round
+            rounds: $validate-inputs.output.rounds
+          output_format:
+            type: object
+            properties:
+              round: { type: integer }
+              last: { type: boolean }
+            required: [round, last]
+            additionalProperties: false
+
+        - id: acceptance-test
+          depends_on: [reset-round-evidence]
+          model: ['@tester', medium]
+          context: fresh
+          command: acceptance-test
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            change_dir: $validate-inputs.output.change_dir
+            acceptance_round: $reset-round-evidence.output.round
+            acceptance_rounds: $validate-inputs.output.rounds
+          output_format:
+            type: object
+            properties:
+              ci_ready: { type: boolean }
+              reason: { type: string }
+            required: [ci_ready, reason]
+            additionalProperties: false
+
+        - id: wait-ci
+          depends_on: [acceptance-test]
+          when: "$acceptance-test.output.ci_ready == 'true'"
+          script: wait-ci
+          runtime: bun
+          # The wait polls for max_minutes; the timeout leaves room for the report.
+          timeout: 1200000
+          with:
+            round: $reset-round-evidence.output.round
+            max_minutes: 15
+            interval_seconds: 30
+          output_format:
+            type: object
+            properties:
+              status: { type: string, enum: [passed, failed, pending, comments, error] }
+              had_checks: { type: boolean }
+              head_moved: { type: boolean }
+              report: { type: string }
+            required: [status, had_checks, head_moved, report]
+            additionalProperties: false
+
+        - id: acceptance-handoff
+          depends_on: [acceptance-test, wait-ci]
+          trigger_rule: none_failed_min_one_success
+          model: ['@tester', medium]
+          context: { resume: acceptance-test }
+          command: acceptance-handoff
+          with:
+            ci_status: { from: $wait-ci.output.status, if_skipped: "not run" }
+            ci_report: { from: $wait-ci.output.report, if_skipped: "none" }
+            ci_reason: $acceptance-test.output.reason
+
+        - id: acceptance-gate
+          depends_on: [acceptance-handoff]
+          script: acceptance-gate
+          runtime: bun
+          with:
+            last: $reset-round-evidence.output.last
+          output_format:
+            type: object
+            properties:
+              ready: { type: boolean }
+              fix: { type: boolean }
+              reasons: { type: string }
+            required: [ready, fix, reasons]
+            additionalProperties: false
+
+        # The tester has read any retest reason; a stale one must not keep the
+        # rounds going after the next fix.
+        - id: clear-retest-reason
+          depends_on: [acceptance-gate]
+          when: "$acceptance-gate.output.fix == 'true'"
+          script: clear-retest-reason
+          runtime: bun
+
+        - id: acceptance-fix
+          depends_on: [clear-retest-reason]
+          model: ['@implementor', large]
+          context: { resume: open-draft-pr }
+          command: acceptance-fix
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            acceptance_round: $reset-round-evidence.output.round
+            acceptance_fix_scope: $INPUTS.acceptance_fix_scope
+            artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
+
+        - id: check-acceptance-progress
+          depends_on: [acceptance-gate, acceptance-fix]
+          trigger_rule: none_failed_min_one_success
+          script: check-acceptance-progress
+          runtime: bun
+          with:
+            fix: $acceptance-gate.output.fix
+          output_format:
+            type: object
+            properties:
+              progressed: { type: boolean }
+              push: { type: boolean }
+            required: [progressed, push]
+            additionalProperties: false
+
+        - id: prepare-round-review
+          depends_on: [check-acceptance-progress]
+          when: "$validate-inputs.output.review == 'true' && $check-acceptance-progress.output.push == 'true'"
+          script: prepare-review
+          runtime: bun
+          with: &acceptance-review
+            place: acceptance
+            mode: acceptance
+            start: ""
+            change_dir: $validate-inputs.output.change_dir
+            round: $reset-round-evidence.output.round
+          output_format: *review-range
+
+        - id: round-review
+          depends_on: [prepare-round-review]
+          when: "$validate-inputs.output.review == 'true' && $prepare-round-review.output.needed == 'true'"
+          model: ['@reviewer', medium]
+          context: fresh
+          mutates_checkout: false
+          command: review-change
+          with:
+            place: acceptance
+            change_dir: $validate-inputs.output.change_dir
+            start: $prepare-round-review.output.start
+            end: $prepare-round-review.output.end
+            files: $prepare-round-review.output.files
+            handed_off: $prepare-round-review.output.handed_off
+          output_format: *review-output
+
+        - id: record-round-review
+          depends_on: [prepare-round-review, round-review]
+          trigger_rule: none_failed_min_one_success
+          when: "$validate-inputs.output.review == 'true' && $check-acceptance-progress.output.push == 'true'"
+          script: record-review
+          runtime: bun
+          with:
+            <<: *acceptance-review
+            needed: $prepare-round-review.output.needed
+            end: $prepare-round-review.output.end
+            review_name: round-review
+            result: { from: $round-review.output, if_skipped: "" }
+          output_format: *review-settled
+
+        - id: fix-round-findings
+          depends_on: [record-round-review]
+          when: "$validate-inputs.output.review == 'true' && $record-round-review.output.settled == 'false'"
+          model: ['@implementor', large]
+          context: { resume: acceptance-fix }
+          command: fix-review-findings
+          with:
+            place: acceptance
+            findings: $record-round-review.output.findings
+          output_format: *review-fix-output
+
+        - id: record-round-fixes
+          depends_on: [fix-round-findings]
+          script: record-review-fixes
+          runtime: bun
+          with:
+            place: acceptance
+            review_name: fix-round-findings
+            result: $fix-round-findings.output
+          output_format: *review-fix-range
+
+        - id: round-re-review
+          depends_on: [record-round-fixes]
+          when: "$record-round-fixes.output.blocked == 'false'"
+          model: ['@reviewer', medium]
+          context: { resume: round-review }
+          mutates_checkout: false
+          command: re-review
+          with:
+            place: acceptance
+            change_dir: $validate-inputs.output.change_dir
+            start: $record-round-fixes.output.start
+            end: $record-round-fixes.output.end
+            findings: $record-round-fixes.output.findings
+          output_format: *re-review-output
+
+        - id: end-round-review
+          depends_on: [record-round-fixes, round-re-review]
+          trigger_rule: none_failed_min_one_success
+          script: end-review-round
+          runtime: bun
+          with:
+            place: acceptance
+            blocked: $record-round-fixes.output.blocked
+            end: $record-round-fixes.output.end
+            review_name: round-re-review
+            result: { from: $round-re-review.output, if_skipped: "" }
+          output_format: *review-stop
+
+        - id: hand-off-round-review
+          depends_on: [record-round-review, end-round-review]
+          trigger_rule: none_failed_min_one_success
+          when: "$validate-inputs.output.review == 'true' && $check-acceptance-progress.output.push == 'true'"
+          script: hand-off-review
+          runtime: bun
+          with:
+            place: acceptance
+          output_format: *review-handoff
+
+        - id: acceptance-push
+          depends_on: [check-acceptance-progress, hand-off-round-review]
+          trigger_rule: none_failed_min_one_success
+          when: "$check-acceptance-progress.output.push == 'true'"
+          script: acceptance-push
+          runtime: bun
+          with:
+            strict: false
+            blocked: false
+            reason: ""
+          output_format: *check
+
+        - id: repair-acceptance-push
+          depends_on: [acceptance-push]
+          when: "$acceptance-push.output.ok == 'false'"
+          model: ['@implementor', large]
+          context: { resume: acceptance-fix }
+          command: repair-acceptance-push
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            problems: $acceptance-push.output.problems
+          output_format: *repair
+
+        - id: recheck-acceptance-push
+          depends_on: [repair-acceptance-push]
+          script: acceptance-push
+          runtime: bun
+          with:
+            strict: true
+            blocked: $repair-acceptance-push.output.blocked
+            reason: $repair-acceptance-push.output.reason
+          output_format: *check
+
+        # The push does not change the pull request's draft state; a refusal by the forge
+        # fails the run, since no agent can resolve it.
+        - id: restore-draft-pr
+          depends_on: [acceptance-push, recheck-acceptance-push]
+          trigger_rule: none_failed_min_one_success
+          script: restore-draft-pr
+          runtime: bun
+          with:
+            strict: true
+            blocked: false
+            reason: ""
+          output_format: *check
+
+        - id: verify-acceptance-pr
+          depends_on: [restore-draft-pr]
+          trigger_rule: none_failed_min_one_success
+          script: check-draft-pr
+          runtime: bun
+          with:
+            attempts: 10
+            interval_seconds: 3
+            strict: false
+            blocked: false
+            reason: ""
+          output_format: *pr-check
+
+        - id: repair-acceptance-pr
+          depends_on: [verify-acceptance-pr]
+          when: "$verify-acceptance-pr.output.ok == 'false'"
+          model: ['@implementor', large]
+          context: { resume: acceptance-fix }
+          command: repair-acceptance-pr
+          with:
+            change_label: $INPUTS.change_label
+            change_name: $INPUTS.change_name
+            problems: $verify-acceptance-pr.output.problems
+          output_format: *repair
+
+        - id: recheck-acceptance-pr
+          depends_on: [repair-acceptance-pr]
+          script: check-draft-pr
+          runtime: bun
+          with:
+            attempts: 10
+            interval_seconds: 3
+            strict: true
+            blocked: $repair-acceptance-pr.output.blocked
+            reason: $repair-acceptance-pr.output.reason
+          output_format: *pr-check
+
+  # Writes the status and the handoff and reads both back, failing the run when either
+  # is wrong.
+  - id: write-acceptance-status
+    depends_on: [acceptance-rounds]
+    script: write-acceptance-status
+    runtime: bun
+    with:
+      rounds: $validate-inputs.output.rounds
+    output_format:
+      type: object
+      properties:
+        ready: { type: boolean }
+        status: { type: string, enum: [ACCEPTANCE_COMPLETE, ACCEPTANCE_FAILED] }
+        message: { type: string }
+      required: [ready, status, message]
+      additionalProperties: false
