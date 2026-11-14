@@ -94,6 +94,30 @@ describe('review finding state', () => {
     const states: FindingState[] = ['open', 'fixed', 'declined', 'contested', 'replied', 'closed', 'disputed'];
     for (const status of states) checkInvalidActions(status);
   });
+  test('ignored submissions retain attempted action, actor, note and the actual rejection reason', () => {
+    const state = stateWithFinding();
+    applyActions(state, [{ id: 'unknown', action: 'fixed', note: 'unknown attempt' }]);
+    judge(state, 'confirmed');
+    const first = state.findings[0];
+    if (!first) throw new Error('missing finding');
+    first.handed_off = true;
+    act(state, 'declined');
+    const result = renderResult(state);
+    cycle(state, 1); addFindings(state, [defect()]);
+    cycle(state, 2);
+    applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'earlier cycle' }]);
+    expect(state.ignored.map(entry => [entry.actor, entry.action, entry.note, entry.reason])).toEqual([
+      ['fixer', 'fixed', 'unknown attempt', 'unknown finding ID'],
+      ['reviewer', 'confirmed', 'reviewer confirmed', 'invalid action for finding state open'],
+      ['fixer', 'declined', 'fixer declined', 'finding was already handed off'],
+      ['reviewer', 'accepted', 'earlier cycle', 'finding belongs to a different cycle'],
+    ]);
+    expect(state.ignored[0]).toMatchObject({ cycle: 0, id: 'unknown', round: 1 });
+    expect(result).toContain('Ignored unknown: fixer fixed (unknown attempt); unknown finding ID');
+    expect(result).toContain('Ignored R1: reviewer confirmed (reviewer confirmed); invalid action for finding state open');
+    expect(result).toContain('Ignored R1: fixer declined (fixer declined); finding was already handed off');
+    expect(state.findings.map(entry => entry.state)).toEqual(['open', 'open']);
+  });
   test('contest happens once; second and third turns settle accepted replies or disputed findings', () => {
     for (const verdict of ['accepted', 'contested'] as const) {
       const state = stateWithFinding();
@@ -323,6 +347,31 @@ describe('INT-007 review scripts against real git', () => {
     expect(ledger).toContain('missing credential'); expect(ledger).toContain('Tail defect');
     expect(ledger).not.toContain('## Review finding R3');
     run('hand-off-review'); expect(read('acceptance-assumptions.md')).toBe(ledger);
+  });
+  test('one acceptance fixer turn hands off contested declines with both sides before any reply', () => {
+    record(prepare('initial', box.head()));
+    box.commitFix('acceptance change\n');
+    const prepared = prepare('acceptance', '', 1);
+    record(prepared, [defect(), defect({ severity: 'medium' })]);
+    const fixed = run('record-review-fixes', { review_name: 'fix-round-findings', result: { blocked: false, reason: '',
+      actions: ['R1', 'R2'].map(id => ({ id, action: 'declined', note: `compatibility ${id}` })) } });
+    const ended = run('end-review-round', { end: fixed.end, blocked: false, review_name: 'round-re-review', result: {
+      verdicts: ['R1', 'R2'].map(id => ({ id, verdict: 'contested', reason: `unsafe behavior ${id}` })), findings: [] } });
+    expect(ended.stop).toBe(false);
+    run('hand-off-review');
+    const state = persisted();
+    expect(currentCycle(state).turn).toBe(1);
+    expect(state.findings.map(entry => entry.state)).toEqual(['contested', 'contested']);
+    for (const finding of state.findings) {
+      expect(finding.handed_off).toBe(true);
+      expect(finding.history.map(entry => entry.action)).toEqual(['declined', 'contested']);
+      const ledger = read('acceptance-assumptions.md');
+      for (const expected of [`## Review finding ${finding.id}, acceptance round 1`, finding.problem,
+        finding.fix, `compatibility ${finding.id}`, `unsafe behavior ${finding.id}`, 'review/acceptance.md']) {
+        expect(ledger).toContain(expected);
+      }
+      expect(read('review/acceptance.md')).toContain(`${finding.id}: ${finding.title} [contested]`);
+    }
   });
   test('acceptance includes tracked working tree and re-review uses last covered revision; verdicts and output replacement persist', () => {
     record(prepare('initial', box.head()));

@@ -36,7 +36,7 @@ export interface ReviewState {
   current: number;
   next_id: number;
   last_reviewed: string;
-  ignored: { cycle: number; id: string; reason: string }[];
+  ignored: (History & { cycle: number; id: string; reason: string })[];
 }
 export const emptyState = (): ReviewState => ({
   findings: [], cycles: [], current: -1, next_id: 1, last_reviewed: '', ignored: [],
@@ -69,8 +69,18 @@ export function addFindings(state: ReviewState, defects: Defect[]): void {
 function target(state: ReviewState, id: string): Finding | undefined {
   return currentFindings(state).find(f => f.id === id && !f.handed_off);
 }
-function ignore(state: ReviewState, id: string): void {
-  state.ignored.push({ cycle: state.current, id, reason: 'unknown, handed-off, or invalid action for finding state' });
+function rejectionReason(state: ReviewState, id: string): string {
+  const finding = state.findings.find(entry => entry.id === id);
+  if (!finding) return 'unknown finding ID';
+  if (finding.handed_off) return 'finding was already handed off';
+  if (finding.cycle !== state.current) return 'finding belongs to a different cycle';
+  return `invalid action for finding state ${finding.state}`;
+}
+function ignore(state: ReviewState, submission: Action | Verdict): void {
+  const fixer = 'action' in submission;
+  state.ignored.push({ cycle: state.current, id: submission.id, round: currentCycle(state).turn,
+    actor: fixer ? 'fixer' : 'reviewer', action: fixer ? submission.action : submission.verdict,
+    note: fixer ? submission.note : submission.reason, reason: rejectionReason(state, submission.id) });
 }
 function fixerState(finding: Finding, action: Action['action']): FindingState | undefined {
   if (finding.state === 'open' && (action === 'fixed' || action === 'declined')) return action;
@@ -83,7 +93,7 @@ export function applyActions(state: ReviewState, actions: Action[]): void {
   for (const action of actions) {
     const finding = target(state, action.id);
     const next = finding && fixerState(finding, action.action);
-    if (!(finding && next)) { ignore(state, action.id); continue; }
+    if (!(finding && next)) { ignore(state, action); continue; }
     finding.state = next;
     finding.history.push({ round: cycle.turn, actor: 'fixer', action: action.action, note: action.note });
   }
@@ -101,7 +111,7 @@ export function applyVerdicts(state: ReviewState, verdicts: Verdict[]): void {
   for (const verdict of verdicts) {
     const finding = target(state, verdict.id);
     const next = finding && reviewerState(finding, verdict.verdict);
-    if (!(finding && next)) { ignore(state, verdict.id); continue; }
+    if (!(finding && next)) { ignore(state, verdict); continue; }
     finding.accepted_decline = verdict.verdict === 'accepted';
     finding.state = next;
     if (verdict.verdict === 'contested') finding.contested = true;
@@ -120,7 +130,7 @@ export function renderResult(state: ReviewState): string {
   const visible = findings.filter(f => f.state !== 'closed' || f.accepted_decline);
   const ranges = indices.map(({ c }) => `${c.start}..${c.end}`).join('\n');
   const ignored = state.ignored.filter(a => indices.some(({ i }) => a.cycle === i))
-    .map(a => `Ignored ${a.id}: ${a.reason}`).join('\n');
+    .map(a => `Ignored ${a.id}: ${a.actor} ${a.action} (${a.note}); ${a.reason}`).join('\n');
   const blocked = indices.filter(({ c }) => c.blocked).map(({ c }) => `Fixer blocked: ${c.blocked}`).join('\n');
   return `# Review ${current.place}\n\n${ranges}\n\n${visible.length === 0 ? 'No findings.' : visible.map(findingDetails).join('\n\n')}\n${ignored}\n${blocked}\n`;
 }
