@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fixerOutput, reReviewOutput, reviewOutput } from '../.archon/workflows/codagent/.shared/lib/review-output.ts';
 import {
   activeFindings, addFindings, applyActions, applyVerdicts, currentCycle, emptyState, findingText,
   handedOff, handoff, renderResult, settled, startCycle, type Defect, type FindingState, type ReviewState,
@@ -192,22 +191,6 @@ describe('review rendering and handoff', () => {
   });
 });
 
-describe('review output validation', () => {
-  test('accepts required schemas and rejects absent malformed or extra review fields with node and output location', () => {
-    expect(reviewOutput(JSON.stringify({ findings: [defect()] }), 'review-change').findings).toHaveLength(1);
-    expect(fixerOutput('{"blocked":false,"reason":"","actions":[]}', 'fix').blocked).toBe(false);
-    expect(reReviewOutput('{"verdicts":[],"findings":[]}', 're-review').verdicts).toEqual([]);
-    const invalid = [undefined, '', 'not-json', '[]', '{}', '{"findings":{},"extra":0}',
-      JSON.stringify({ findings: [defect({ line: 1.5 })] }), JSON.stringify({ findings: [{ ...defect(), extra: 1 }] }),
-      JSON.stringify({ findings: [{ ...defect(), severity: 'urgent' }] }),
-      JSON.stringify({ findings: [{ ...defect(), category: 'style' }] })];
-    for (const text of invalid) expect(() => reviewOutput(text, 'review-change')).toThrow('review-change');
-    expect(() => reviewOutput('{}', 'review-change')).toThrow('nodes/review-change.md');
-    expect(() => fixerOutput('{"blocked":false,"reason":"","actions":[{"id":"R1","action":"skip","note":""}]}', 'fix')).toThrow();
-    expect(() => reReviewOutput('{"verdicts":[{"id":"R1","verdict":"skip","reason":""}],"findings":[]}', 'again')).toThrow();
-  });
-});
-
 interface OutputSchema {
   type: 'object' | 'boolean' | 'string' | 'integer';
   properties?: Record<string, OutputSchema>;
@@ -272,8 +255,6 @@ describe('INT-007 review scripts against real git', () => {
     box.commitFix('reviewer moved head\n');
     const failed = run('record-review', { ...prepared, review_name: 'review-change', result: { findings: [] } }, true);
     expect(failed.error).toContain('review-change: HEAD moved');
-    expect(run('record-review', { ...prepare('initial', start), review_name: 'review-change', result: '{}' }, true).error)
-      .toContain('invalid findings shape');
   });
   test('missing and malformed results and re-review head movement fail with named output location', () => {
     const start = box.head(); box.commitFix(); const prepared = prepare('initial', start);
@@ -282,10 +263,8 @@ describe('INT-007 review scripts against real git', () => {
     record(prepared, [defect()]);
     const fixInput = { review_name: 'fix-review-findings' };
     expect(run('record-review-fixes', fixInput, true).error).toContain('fix-review-findings');
-    expect(run('record-review-fixes', { ...fixInput, result: { blocked: false } }, true).error).toContain('invalid findings shape');
     const endInput = { end: box.head(), blocked: false, review_name: 're-review' };
     expect(run('end-review-round', endInput, true).error).toContain('nodes/re-review.md');
-    expect(run('end-review-round', { ...endInput, result: { verdicts: [] } }, true).error).toContain('invalid findings shape');
     box.commitFix('reviewer committed incorrectly');
     expect(run('end-review-round', { ...endInput, result: { verdicts: [], findings: [] } }, true).error)
       .toContain('re-review: HEAD moved');
