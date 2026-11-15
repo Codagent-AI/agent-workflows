@@ -21,7 +21,7 @@ commit that touched the skill.
 | `reviews/proposal-review.md` | `d9c5059` | Moved out of `skills/` and the front matter removed. Only the crosscheck child reads it, by absolute path. |
 | `skills/spec/SKILL.md` | `e9b4dfa` | `codagent:ask-questions` renamed. |
 | `skills/design/SKILL.md` | `d9c5059` | `codagent:ask-questions` renamed. |
-| `skills/test-plan/SKILL.md` | `8605d33` | `codagent:ask-questions` renamed. Added `name: test-plan` to the front matter. |
+| `skills/test-plan/SKILL.md` | `8605d33` | `codagent:ask-questions` renamed. Added `name: test-plan` to the front matter. Permission the user can give in advance, such as live-agent spend or a throwaway repository, is an authorized effect in the envelope, not an `HT-*`. |
 | `reviews/review-approach.md` | `4b0a362` | Moved out of `skills/` and the front matter removed. Only the crosscheck child reads it, by absolute path. |
 | `skills/ask-questions/SKILL.md` | `d9c5059` | Added `user-invocable: false` to the front matter. |
 | `skills/call-agent/SKILL.md` | `6442600` | Rewritten for this plugin's tools. See below. |
