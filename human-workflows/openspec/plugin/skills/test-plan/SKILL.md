@@ -60,10 +60,10 @@ These inform exploration without prescribing it.
 Default human-only testing to `None.` Add an `HT-*` only for judgment or authority unavailable to an
 agent with the product and tools—for example subjective preference, legal approval, physical
 perception, unavailable personal credentials, or an irreversible act only the user may perform.
-Permission the user can give in advance is not human-only. Spending on live agents or services, or
-creating and deleting a throwaway repository or account, is an authorized effect in the envelope, so
-the acceptance pass does that work. Visual and interactive UI testing belongs to the exploratory
-pass. For each `HT-*`, state why an agent cannot perform it, what prior testing must establish,
+If a test needs only the user's permission, such as spending on live agents or creating a throwaway
+repository, ask for it while writing the plan. When the user agrees, write in the envelope that the
+acceptance pass may do it, and the pass does it. It is not an `HT-*`. Visual and interactive UI
+testing belongs to the exploratory pass. For each `HT-*`, state why an agent cannot perform it, what prior testing must establish,
 concise user instructions, and the decision or observation required.
 
 ## Approve and write
