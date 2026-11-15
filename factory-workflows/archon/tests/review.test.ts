@@ -232,9 +232,11 @@ function run(name: string, inputs: Record<string, unknown> = {}, fails = false):
 }
 const read = (file: string): string => readFileSync(join(artifacts, file), 'utf8');
 const persisted = (): ReviewState => JSON.parse(read('review/state.json')) as ReviewState;
+// What Archon binds from `$<node>.execution.checkoutStart` for a clean checkout.
+const observation = (commit: string): string => JSON.stringify({ kind: 'git', commit, worktree: { status: 'clean' } });
 function prepare(mode: string, start = '', round = 0): Record<string, unknown> {
   return run('prepare-review', { mode, place: mode === 'acceptance' ? 'acceptance' : 'before-pr',
-    start, change_dir: 'openspec/changes/demo', round });
+    start: mode === 'initial' ? observation(start) : start, change_dir: 'openspec/changes/demo', round });
 }
 function record(prepared: Record<string, unknown>, findings: Defect[] = [], mode = 'initial'): void {
   const output = run('record-review', { ...prepared, mode, review_name: 'review-change', result: { findings } });
@@ -248,9 +250,11 @@ describe('INT-007 review scripts against real git', () => {
     const prepared = prepare('initial', start);
     expect(Object.keys(prepared).sort()).toEqual(['end', 'files', 'findings', 'handed_off', 'needed', 'start']);
     expect(prepared.needed).toBe(true); expect(prepared.files).toBe('file.txt');
-    for (const bad of ['', 'missing-revision']) {
-      const output = run('prepare-review', { mode: 'initial', place: 'before-pr', start: bad, change_dir: 'openspec/changes/demo' }, true);
-      expect(output.error).toContain(bad ? 'cannot read start revision' : 'start revision is empty');
+    const bad: [string, string][] = [['', 'could not read where the node started'],
+      [JSON.stringify({ kind: 'not_git' }), 'the checkout is not_git'], [observation('0'.repeat(40)), 'cannot read start revision']];
+    for (const [badStart, error] of bad) {
+      const output = run('prepare-review', { mode: 'initial', place: 'before-pr', start: badStart, change_dir: 'openspec/changes/demo' }, true);
+      expect(output.error).toContain(error);
     }
     box.commitFix('reviewer moved head\n');
     const failed = run('record-review', { ...prepared, review_name: 'review-change', result: { findings: [] } }, true);
