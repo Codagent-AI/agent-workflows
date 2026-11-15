@@ -7,7 +7,8 @@
     "lint": "biome lint --error-on-warnings . && jscpd && tsc --noEmit",
     "lint:ci": "bun install --frozen-lockfile --silent && bun run lint",
     "test": "bun test tests/",
-    "test:fixtures": "bun tests/run-fixtures.ts"
+    "test:fixtures": "bun tests/run-fixtures.ts",
+    "live-trial": "bun tests/live-trial.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
