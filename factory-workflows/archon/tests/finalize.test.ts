@@ -92,7 +92,7 @@ test.each(['fix-pr','push repair'])('INT-010 blocked %s ends the cycle and canno
     const r=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:op,...extra}});
     expect(r.status).toBe(0);return JSON.parse(r.stdout);
   };
-  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`}).ok).toBe(false);
+  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`})).toEqual({ok:false,problems:`REPAIR_BLOCKED: ${cause} missing permission`});
   expect(run('end-ci-cycle',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'0'})).toMatchObject({done:true,fix:false});
   expect(run('ci-cycle-status',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'1'}).fix).toBe(false);
   recordFinalizeCheck(box.path('artifacts'),'push-ci-fix',{ok:true,problems:''});

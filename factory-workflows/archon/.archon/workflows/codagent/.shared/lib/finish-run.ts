@@ -70,8 +70,9 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
 }
 function pushOrReady(input: FinishInputs, dir: string): CheckResult {
   if (input.blocked) {
-    const blocked = { ...fail(`REPAIR_BLOCKED: ${input.reason}`), terminal: true };
-    recordFinalizeCheck(dir, input.step, blocked); return blocked;
+    // The node's output is only ok and problems; the terminal mark stays in the run file.
+    const blocked = fail(`REPAIR_BLOCKED: ${input.reason}`);
+    recordFinalizeCheck(dir, input.step, { ...blocked, terminal: true }); return blocked;
   }
   const checked = input.op === 'mark-ready' ? markReady(defaultTools()) : acceptancePush(runCommand, input.result);
   recordFinalizeCheck(dir, input.step, checked); return checked;
