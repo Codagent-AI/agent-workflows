@@ -1,3 +1,4 @@
+import { suspendSpecs, restoreSpecs, restoredSpecPaths, localSpecProblems } from './archive-local.ts';
 // Archive transition, isolated commit and independent verification of the owned delta.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -72,9 +73,10 @@ export function archiveChange(input: ArchiveInput): CheckResult {
   // Capture the full pre-transition diffs and exclude only the final owned paths afterwards.
   const beforeFile = join(input.dir, 'archive/before.json');
   const before = readJson<Record<string, string> | null>(beforeFile, null);
+  const baseline = before ?? capturePaths(input.exec);
+  suspendSpecs(input);
   const specBaseline = join(input.dir, 'archive/specs-before.json');
   writeJson(specBaseline, readJson(specBaseline, specFiles('openspec/specs')));
-  const baseline = before ?? capturePaths(input.exec);
   if (!before) writeJson(beforeFile, baseline);
   try {
     transition(input, state);
@@ -85,6 +87,7 @@ export function archiveChange(input: ArchiveInput): CheckResult {
     state.before = baselineFingerprint(baseline, state.owned_delta);
     state.transition = pass(); writeJson(file, state);
     commitArchive(input, state);
+    restoreSpecs(input);
     return pass();
   } catch (error) {
     state.owned_delta = archivePaths(input, state);
@@ -109,7 +112,8 @@ function commitProblems(input: ArchiveInput, state: ArchiveState): string[] {
   const commits = command(input.exec, 'git', ['log', '--format=', '--name-only', '--no-renames', `${state.start}..HEAD`]).split('\n').filter(Boolean);
   const reused = command(input.exec, 'git', ['ls-tree', '--name-only', 'HEAD', '--', state.archive_dir]) !== '';
   if ((changed.length === 0 && !reused) || [...changed, ...commits].some(path => !owned(path))) problems.push('archive commits do not hold exactly the archive paths');
-  if (command(input.exec, 'git', ['status', '--porcelain', '--', ...state.owned_delta])) problems.push('archive paths remain uncommitted');
+  const permitted = restoredSpecPaths(input).map(path => `:(exclude)${path}`);
+  if (command(input.exec, 'git', ['status', '--porcelain', '--', ...state.owned_delta, ...permitted])) problems.push('archive paths remain uncommitted');
   if (baselineFingerprint(capturePaths(input.exec), state.owned_delta) !== state.before) problems.push('unrelated staged or unstaged changes were altered');
   if (problems.length > 0 && state.commit_error) problems.push(state.commit_error);
   return problems;
@@ -121,13 +125,14 @@ export function verifyArchive(input: ArchiveInput): CheckResult {
   if (existsSync(active(input.name)) || command(input.exec, 'git', ['ls-files', '--', active(input.name)])) problems.push('active change folder remains in worktree or index');
   const folders = archiveFolders(input.name);
   if (folders.length !== 1 || !existsSync(state.archive_dir)) problems.push(`expected one archive folder: ${folders.join(', ') || 'none'}`);
-  problems.push(...commitProblems(input, state));
+  if (!command(input.exec, 'git', ['status', '--porcelain', '--', ...state.owned_delta])) restoreSpecs(input);
+  problems.push(...commitProblems(input, state), ...localSpecProblems(input));
   return problems.length > 0 ? fail(problems) : pass();
 }
 export function recordArchive(input: ArchiveInput): { change_folder: string } {
   const state = readJson<ArchiveState | null>(join(input.dir, 'archive/state.json'), null);
   let result: CheckResult;
-  try { result = verifyArchive(input); } catch (error) { result = fail(String(error)); }
+  try { result = verifyArchive(input); restoreSpecs(input); } catch (error) { result = fail(String(error)); }
   const folders = archiveFolders(input.name);
   const folder = !existsSync(active(input.name)) && folders.length === 1 ? folders[0] : active(input.name);
   recordStep(input.dir, 'archive', { ...result, remaining: result.ok ? '' : `Repair archive; retained paths: ${state?.owned_delta.join(', ') ?? folder}` });

@@ -51,6 +51,7 @@ check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
 repair-archive-delta: {"blocked":false,"reason":"","actions":[]}
 rearchive-change: {"ok":true,"problems":""}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

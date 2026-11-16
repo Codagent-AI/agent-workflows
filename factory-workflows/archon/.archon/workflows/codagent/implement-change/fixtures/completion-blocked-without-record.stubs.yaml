@@ -50,6 +50,7 @@ check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
 judge-completion: {"verdict":"blocked","reason":"reasoned verdict","remaining":""}
 exec-code: true
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: failed
   reached:

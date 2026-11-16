@@ -51,6 +51,7 @@ check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
 fix-pr: {"blocked":false,"reason":"","actions":[]}
 push-ci-fix: {"ok":true,"problems":""}
+end-ci-cycle: {"done":false,"fix":true,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

@@ -6,7 +6,7 @@ import { type Tools, lookupPr, markBlock, spliceBody } from './pull-request.ts';
 import { type Exec, output } from './exec.ts';
 import { readText, writeText, writeJson } from './run-files.ts';
 import { TIERS, type Ranking, type RequiredItem, type Item, type Tier, failedItems } from './review-inventory.ts';
-const TYPES = new Set(['Failure', 'Verification', 'Decision', 'Dispute', 'Late commit', 'Human check']);
+const TYPES = new Set(['Verification', 'Decision', 'Dispute', 'Late commit', 'Human check']);
 export function validItem(item: Item): boolean {
   return typeof item?.type === 'string' && item.type.split(',').every(type => TYPES.has(type.trim())) &&
     typeof item.title === 'string' && item.title.trim() !== '' && typeof item.detail === 'string' && item.detail.trim() !== '' &&
@@ -15,6 +15,12 @@ export function validItem(item: Item): boolean {
 function entries(ranking: Ranking): { tier: Tier; item: Item }[] {
   return TIERS.flatMap(tier => (Array.isArray(ranking[tier]) ? ranking[tier] : []).map(item => ({ tier, item })));
 }
+function requiredItemProblems(expected: RequiredItem, item: Item): string[] {
+    if (!item.type.split(',').map(type => type.trim()).includes(expected.item.type)) return [`wrong type for ${expected.item.source.join(', ')}`];
+    if (expected.item.type !== 'Late commit') return [];
+    const size = expected.item.detail.split('\n')[0];
+    return item.detail.includes(size) && /(?:^|\n|[.!?]\s+)Tests:\s*\S/.test(item.detail) ? [] : [`late commit ${expected.item.title} needs shortstat and Tests:`];
+}
 function requiredProblems(ranking: Ranking, required: RequiredItem[]): string[] {
   const all = entries(ranking);
   return required.flatMap(expected => {
@@ -22,9 +28,7 @@ function requiredProblems(ranking: Ranking, required: RequiredItem[]): string[] 
     if (expected.item.type === 'Failure') return [];
     const found = all.find(({ item }) => expected.item.source.every(source => item.source?.includes(source)));
     if (!found || TIERS.indexOf(found.tier) > TIERS.indexOf(expected.tier)) return [`missing or under-ranked ${expected.item.source.join(', ')}`];
-    if (expected.item.type !== 'Late commit') return [];
-    const size = expected.item.detail.split('\n')[0];
-    return found.item.detail.includes(size) && /(?:^|\n|[.!?]\s+)Tests:\s*\S/.test(found.item.detail) ? [] : [`late commit ${expected.item.title} needs shortstat and Tests:`];
+    return requiredItemProblems(expected, found.item);
   });
 }
 export function checkRanking(ranking: Ranking, required: RequiredItem[]): CheckResult {
@@ -39,6 +43,15 @@ export function checkRanking(ranking: Ranking, required: RequiredItem[]): CheckR
   problems.push(...requiredProblems(ranking, required));
   return problems.length > 0 ? fail(problems) : pass();
 }
+function insertRequired(placed: Ranking, expected: RequiredItem): void {
+    const found = entries(placed).find(({ item }) => expected.item.source.every(source => item.source.includes(source)));
+    if (!found) { placed[expected.tier].push({ ...expected.item, source: [...expected.item.source] }); return; }
+    const tier = TIERS[Math.min(TIERS.indexOf(found.tier), TIERS.indexOf(expected.tier))];
+    placed[found.tier] = placed[found.tier].filter(item => item !== found.item);
+    const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
+    const detail = expected.item.type === 'Late commit' ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
+    placed[tier].push({ ...found.item, type, detail });
+}
 export function placeRanking(ranking: Ranking, required: RequiredItem[]): Ranking {
   const placed: Ranking = { red: [], orange: [], yellow: [], white: [], evidence: ranking?.evidence || 'No testing summary was supplied.' };
   const titles = new Set<string>();
@@ -46,12 +59,10 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[]): Rankin
     if (validItem(item) && !titles.has(item.title)) { placed[tier].push(item); titles.add(item.title); }
   }
   for (const expected of required.filter(row => row.item.type !== 'Failure')) {
-    const found = entries(placed).find(({ item }) => expected.item.source.every(source => item.source.includes(source)));
-    if (!found) { placed[expected.tier].push({ ...expected.item, source: [...expected.item.source] }); continue; }
-    const tier = TIERS[Math.min(TIERS.indexOf(found.tier), TIERS.indexOf(expected.tier))];
-    placed[found.tier] = placed[found.tier].filter(item => item !== found.item);
-    placed[tier].push(expected.item.type === 'Late commit' ? { ...found.item, detail: expected.item.detail } : found.item);
+    insertRequired(placed, expected);
   }
+  const checked = checkRanking(placed, required);
+  if (!checked.ok) throw new Error(`deterministic ranking failed: ${checked.problems}`);
   return placed;
 }
 function itemLink(item: Item, base: string, head: string): string {

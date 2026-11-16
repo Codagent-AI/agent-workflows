@@ -46,6 +46,7 @@ rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
 check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
 exec-code: true
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: failed
   fail-node:

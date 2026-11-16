@@ -51,6 +51,7 @@ check-ranking: {"ok":false,"problems":"missing I-1"}
 publish-review-package: {"succeeded":true}
 repair-ranking: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
 recheck-ranking: {"ok":true,"problems":""}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

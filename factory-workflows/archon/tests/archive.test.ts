@@ -86,3 +86,48 @@ test('INT-008 unrelated preexisting main-spec edits remain outside owned delta',
   expect(box.git('diff','--cached')).toBe(before);expect(box.git('diff')).toBe(unstaged);expect(verifyArchive(input()).ok).toBe(true);
   expect(box.git('show','--format=','--name-only','HEAD')).not.toContain('other/spec.md');
 });
+function localSpecArchive(): { path: string; base: string } {
+  const path='openspec/specs/widget/spec.md';
+  const base=`${Array.from({length:45},(_,i)=>`line ${i}`).join('\n')}\n`;
+  box.write(path,base);box.commit('spec baseline',path);
+  const staged=base.replace('line 30\n','user staged\n');box.write(path,staged);box.git('add',path);
+  box.write(path,staged.replace('line 40\n','user unstaged\n'));
+  const fake=join(box.binDir,'openspec');
+  writeFileSync(fake,`#!${process.execPath}\nimport{renameSync,mkdirSync,readFileSync,writeFileSync}from'node:fs';if(process.argv[2]==='archive'){mkdirSync('openspec/changes/archive',{recursive:true});renameSync('${active}','${archived}');writeFileSync('${path}',readFileSync('${path}','utf8').replace('line 0\\n','archived requirement\\n'));}`);chmodSync(fake,0o755);
+  return {path,base};
+}
+test('INT-008 staged and unstaged edits in the archived spec survive without entering its commit',()=>{
+  const {path,base}=localSpecArchive();
+  expect(archive().ok).toBe(true);
+  expect(box.git('show',`HEAD:${path}`)).toBe(base.replace('line 0\n','archived requirement\n').trimEnd());
+  expect(box.git('show',`:${path}`)).toContain('user staged');expect(box.git('show',`:${path}`)).not.toContain('user unstaged');
+  expect(box.read(path)).toContain('user unstaged');expect(box.read(path)).toContain('archived requirement');
+  expect(verifyArchive(input()).ok).toBe(true);
+  box.write(path,box.read(path).replace('user unstaged','tampered'));expect(verifyArchive(input()).problems).toContain('restored staged or unstaged');
+});
+test.each(['demo','abc-123-demo'])('INT-009 log commit message is exact for %s',name=>{
+  box.write(`openspec/changes/${name}/proposal.md`,'proposal');
+  expect(commitLogs(box.exec,box.path('artifacts'),name).ok).toBe(true);
+  expect(box.git('log','-1','--format=%s')).toBe(name==='demo'?'[logs] chore: add the decision and dispute logs for demo':'ABC-123: Add decision and dispute logs');
+});
+test('INT-008 same-file local layers survive archive commit rejection and repair',()=>{
+  const {path}=localSpecArchive();
+  box.write('hooks/commit-msg','#!/bin/sh\necho rejected >&2\nexit 1\n');chmodSync(box.path('hooks/commit-msg'),0o755);box.git('config','core.hooksPath',box.path('hooks'));
+  archive();expect(verifyArchive(input()).ok).toBe(false);
+  box.git('config','core.hooksPath','/dev/null');box.commit(archiveMessage('demo'),'--only','--',active,archived,path);
+  expect(verifyArchive(input()).ok).toBe(true);expect(box.git('show',`HEAD:${path}`)).not.toContain('user staged');expect(box.git('show',`:${path}`)).toContain('user staged');expect(box.read(path)).toContain('user unstaged');
+});
+test('INT-008 failed validation restores suspended local spec patches at final recording',()=>{
+  const path='openspec/specs/widget/spec.md';box.write(path,'old\nstaged\n');box.git('add',path);box.write(path,'old\nstaged\nunstaged\n');
+  const index=box.git('diff','--cached');const worktree=box.git('diff');
+  box.fake('openspec',[{args:['validate'],responses:[{status:1,stderr:'validation failed'}]}]);
+  expect(archiveChange(input()).ok).toBe(false);recordArchive(input());
+  expect(box.git('diff','--cached')).toBe(index);expect(box.git('diff')).toBe(worktree);expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
+});
+test('INT-008 conflicting spec restoration fails verification and retains original patches',()=>{
+  const path='openspec/specs/widget/spec.md';box.write(path,'local change');box.git('add',path);
+  archive();recordArchive(input());
+  expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
+  const local=JSON.parse(box.read('artifacts/archive/local-specs.json'));
+  expect(local.staged).toContain('local change');expect(local.error).toContain('original patches retained');expect(box.git('show',`HEAD:${path}`)).toBe('new');
+});

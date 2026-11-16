@@ -46,6 +46,7 @@ rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
 check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":false}
 write-acceptance-status: {"ready":false,"status":"ACCEPTANCE_FAILED","message":"blocked"}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   reached:

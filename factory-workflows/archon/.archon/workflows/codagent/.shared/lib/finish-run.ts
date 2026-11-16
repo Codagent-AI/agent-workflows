@@ -8,7 +8,7 @@ import { archiveChange, verifyArchive, recordArchive } from './archive.ts';
 import { commitLogs } from './logs.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank } from './ci.ts';
-import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck } from './finalize.ts';
+import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
 import { inventory, type Ranking } from './review-inventory.ts';
 import { checkRanking, placeRanking, publishPackage } from './review-package.ts';
 import { readJson, writeJson, recordStep, readText, writeText } from './run-files.ts';
@@ -27,20 +27,25 @@ function archiveNode(input: FinishInputs, dir: string): unknown {
   if (input.op === 'archive-change') return archiveChange(args);
   return { ...verifyArchive(args), archive_state: readText(join(dir, 'archive/state.json')) };
 }
-function ciNode(input: FinishInputs, dir: string): unknown {
-  const previous = Number(input.previous); const cycle = Number.isFinite(previous) ? previous + 1 : 1;
-  if (input.op === 'ci-cycle-status') return ciGate(input.status, input.blocked, cycle);
+function runCiWait(input: FinishInputs, dir: string, cycle: number): unknown {
   const tools = defaultTools();
-  if (input.op === 'record-finalize') return recordFinalize(tools, dir);
-  if (input.blocked) {
-    recordFinalizeCheck(dir, input.step, fail(`REPAIR_BLOCKED: ${input.reason}`));
-    return { status: 'error', had_checks: false, head_moved: false, report: '', ci_report: input.reason, cycle };
-  }
   const args = { tools, sleep, dir, report: `ci/finalize-${cycle}.md` };
   const result = input.op === 'final-ci' ? finalCi(args) : waitFinalize(args);
   if (result.status === 'error') recordFinalizeCheck(dir, input.step, fail(result.error));
   else recordFinalizeCheck(dir, input.step, pass());
   return { status: result.status, had_checks: result.hadChecks, head_moved: result.headMoved, report: readText(join(dir, 'ci/latest-report.txt')) || join(dir, args.report), ci_report: renderReport(result), cycle };
+}
+function ciNode(input: FinishInputs, dir: string): unknown {
+  const previous = Number(input.previous); const cycle = Number.isFinite(previous) ? previous + 1 : 1;
+  if (input.op === 'end-ci-cycle') return endCiCycle(dir, input.status, cycle);
+  if (input.op === 'ci-cycle-status') return ciGate(input.status, input.blocked || finalizationBlocked(dir), cycle);
+  const tools = defaultTools();
+  if (input.op === 'record-finalize') return recordFinalize(tools, dir);
+  if (input.blocked || (input.op === 'wait-finalize-ci' && finalizationBlocked(dir))) {
+    recordFinalizeCheck(dir, input.step, { ...fail(`REPAIR_BLOCKED: ${input.reason || 'an earlier finalize repair is blocked'}`), terminal: true });
+    return { status: 'error', had_checks: false, head_moved: false, report: '', ci_report: input.reason, cycle };
+  }
+  return runCiWait(input, dir, cycle);
 }
 function rankingNode(input: FinishInputs, dir: string): unknown {
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
@@ -56,7 +61,7 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
 }
 function pushOrReady(input: FinishInputs, dir: string): CheckResult {
   if (input.blocked) {
-    const blocked = fail(`REPAIR_BLOCKED: ${input.reason}`);
+    const blocked = { ...fail(`REPAIR_BLOCKED: ${input.reason}`), terminal: true };
     recordFinalizeCheck(dir, input.step, blocked); return blocked;
   }
   const checked = input.op === 'mark-ready' ? markReady(defaultTools()) : acceptancePush(runCommand, input.result);
@@ -65,7 +70,7 @@ function pushOrReady(input: FinishInputs, dir: string): CheckResult {
 function dispatch(input: FinishInputs, dir: string): unknown {
   if (input.op === 'commit-logs') return commitLogs(runCommand, dir, input.name);
   if (['archive-change', 'verify-archive-commit', 'record-archive'].includes(input.op)) return archiveNode(input, dir);
-  if (['wait-finalize-ci', 'ci-cycle-status', 'final-ci', 'record-finalize'].includes(input.op)) return ciNode(input, dir);
+  if (['wait-finalize-ci', 'ci-cycle-status', 'end-ci-cycle', 'final-ci', 'record-finalize'].includes(input.op)) return ciNode(input, dir);
   if (['mark-ready', 'finalize-push'].includes(input.op)) return pushOrReady(input, dir);
   return rankingNode(input, dir);
 }

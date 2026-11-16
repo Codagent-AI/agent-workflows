@@ -52,6 +52,7 @@ publish-review-package: {"succeeded":true}
 judge-completion: {"verdict":"continue","reason":"reasoned verdict","remaining":"finish the missing path"}
 continue-implementation: {"blocked":false,"reason":"","actions":[]}
 save-continue-response: "saved"
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

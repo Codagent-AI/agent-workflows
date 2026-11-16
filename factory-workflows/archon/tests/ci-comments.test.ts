@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyComments } from '../.archon/workflows/codagent/.shared/lib/ci-comments.ts';
-import { bot, inline, pr, user } from './helpers.ts';
+import { classifyComments, fetchComments } from '../.archon/workflows/codagent/.shared/lib/ci-comments.ts';
+import { bot, inline, pr, user, createSandbox, rule, reply } from './helpers.ts';
 
 describe('classifyComments', () => {
   test('only bot comments are informational and do not count as comments', () => {
@@ -117,4 +117,25 @@ test('INT-013 marked bot replies defer even when bot identity equals the finding
   const actor=bot('run-bot');
   const result=classifyComments(pr({threads:[{isResolved:false,comments:[inline(actor,'finding'),inline(actor,'reply\n<!-- codagent-reply -->')]}]}));
   expect(result.deferredThreads).toHaveLength(1);expect(result.hasComments).toBe(false);
+});
+test('INT-013 paginated thread replies include a human objection after a marked tenth reply',()=>{
+  const box=createSandbox();
+  try{
+    const comments=Array.from({length:10},(_,i)=>inline(user('pr-author'),i===9?'run reply\n<!-- codagent-reply -->':`comment ${i}`));
+    const first={data:{repository:{pullRequest:{reviewThreads:{nodes:[{id:'thread',isResolved:false,comments:{nodes:comments,pageInfo:{hasNextPage:true,endCursor:'page-1'}}}]},comments:{nodes:[]}}}}};
+    const next={data:{node:{comments:{nodes:[inline(user('reviewer'),'Still a defect after the run reply')],pageInfo:{hasNextPage:false,endCursor:'page-2'}}}}};
+    box.fake('gh',[rule(['api','graphql'],reply(JSON.stringify(first)),reply(JSON.stringify(next)))]);
+    const result=fetchComments(box.exec,'owner','repo',7);expect(typeof result).not.toBe('string');
+    if(typeof result==='string')throw new Error(result);
+    expect(result.hasComments).toBe(true);expect(result.unresolvedThreads).toHaveLength(1);expect(result.deferredThreads).toEqual([]);
+    expect(box.calls('gh')).toHaveLength(2);expect(box.calls('gh')[1].args).toContain('cursor=page-1');
+  }finally{box.dispose();}
+});
+test.each(['missing cursor','read failed'])('INT-013 incomplete thread pagination %s cannot pass',cause=>{
+  const box=createSandbox();
+  try{
+    const first={data:{repository:{pullRequest:{reviewThreads:{nodes:[{id:'thread',isResolved:false,comments:{nodes:[inline(user('author'),'reply\n<!-- codagent-reply -->')],pageInfo:{hasNextPage:true,endCursor:cause==='missing cursor'?null:'next'}}}]}}}}};
+    box.fake('gh',[rule(['api','graphql'],reply(JSON.stringify(first)),reply('',1,'permission denied'))]);
+    const result=fetchComments(box.exec,'owner','repo',7);expect(typeof result).toBe('string');expect(String(result)).toContain(cause==='missing cursor'?'cursor':'permission denied');
+  }finally{box.dispose();}
 });

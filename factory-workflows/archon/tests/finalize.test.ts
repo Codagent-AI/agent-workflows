@@ -2,7 +2,7 @@ import { checkForgeAccess } from '../.archon/workflows/codagent/.shared/lib/forg
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ciGate, finalCi, finalizeProblems, waitFinalize, recordFinalize } from '../.archon/workflows/codagent/.shared/lib/finalize.ts';
+import { ciGate, finalCi, finalizeProblems, waitFinalize, recordFinalize, recordFinalizeCheck } from '../.archon/workflows/codagent/.shared/lib/finalize.ts';
 import { blank, type CiResult } from '../.archon/workflows/codagent/.shared/lib/ci.ts';
 import { markReady, acceptancePush } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 import { createSandbox, type Sandbox, noSleep, ok, rule, prView, reply, failed } from './helpers.ts';
@@ -27,7 +27,8 @@ test.each(['check','pending','review','conflict','comment','head','error','unkno
   if(kind==='unknown')result.mergeable='unknown';
   if(kind==='comment')result.comments={hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'author',body:'fix'}],informationalBotComments:[]};
   if(kind==='head')result.headSha='stale';if(kind==='error')result.error='missing credential';
-  expect(finalizeProblems(result,box.head()).length).toBeGreaterThan(0);
+  const expected: Record<string,string> = {'check': 'failed check: lint', 'pending': 'pending check: build', 'review': 'blocking review: reviewer', 'conflict': 'merge state: conflict', 'comment': 'review comments remain actionable', 'head': 'CI report does not cover the final head', 'error': 'missing credential', 'unknown': 'merge state: unknown'};
+  expect(finalizeProblems(result,box.head())).toContain(expected[kind]);
 });
 test('INT-010 clean and no-CI heads pass; missing reports fail',()=>{
   expect(finalizeProblems(report(),box.head())).toEqual([]);expect(finalizeProblems(null,box.head())).toEqual(['final CI report is missing']);
@@ -71,4 +72,26 @@ test('INT-012 forge preflight requests pr.ready and reports its absence before a
   const result=checkForgeAccess(box.exec,{ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])});
   expect(result.ok).toBe(false);expect(result.problems).toContain('pr.ready unavailable');
   const call=box.calls('archon').find(c=>c.args[1]==='check');expect(call).toBeDefined();expect(JSON.parse(call?.files.data ?? '{}').operations).toContain('pr.ready');
+});
+test.each(['fix-pr','push repair'])('INT-010 blocked %s ends the cycle and cannot be overwritten by later success',cause=>{
+  const api=tools();box.write('artifacts/ci/latest.json',JSON.stringify(report()));
+  const script=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const env={...process.env,ARTIFACTS_DIR:box.path('artifacts'),ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])};
+  const run=(op:string,extra={})=>{
+    const r=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:op,...extra}});
+    expect(r.status).toBe(0);return JSON.parse(r.stdout);
+  };
+  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`}).ok).toBe(false);
+  expect(run('end-ci-cycle',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'0'})).toMatchObject({done:true,fix:false});
+  expect(run('ci-cycle-status',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'1'}).fix).toBe(false);
+  recordFinalizeCheck(box.path('artifacts'),'push-ci-fix',{ok:true,problems:''});
+  const final=recordFinalize(api,box.path('artifacts'));expect(final.ok).toBe(false);expect(final.problems).toContain(`${cause} missing permission`);
+});
+test('INT-010 final diagnostics name every simultaneous blocker',()=>{
+  const result=report();result.status='failed';result.headSha='old';result.error='forge permission denied';
+  result.failedChecks=[{name:'lint',state:'red',detail:'failure',unit:{kind:'check',id:'lint',name:'lint'}}];
+  result.pendingChecks=[{name:'build',state:'pending',detail:'running',unit:{kind:'check',id:'build',name:'build'}}];
+  result.blockingReviews=[{login:'alice',state:'CHANGES_REQUESTED',body:'fix'}];result.mergeable='conflict';
+  result.comments={hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'bob',body:'fix'}],informationalBotComments:[]};
+  expect(finalizeProblems(result,box.head())).toEqual(['forge permission denied','CI report does not cover the final head','failed check: lint','pending check: build','blocking review: alice','merge state: conflict','review comments remain actionable','final CI status: failed']);
 });

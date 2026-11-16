@@ -108,3 +108,10 @@ test('INT-007 malformed JSON and malformed remaining get the required verdict di
   const result=spawnSync(process.execPath,[join(scripts,'check-completion-verdict.ts')],{cwd:box.dir,encoding:'utf8',env:{...process.env,ARTIFACTS_DIR:input.dir,INPUTS_CHANGE_DIR:input.changeDir,INPUTS_START:JSON.stringify({kind:'git',commit:input.start}),INPUTS_ITERATION:'1',INPUTS_RESULT:'{bad'}});
   expect(result.status).toBe(1);expect(result.stderr).toContain('judge returned no valid verdict');
 });
+test('INT-007 valid blocked judge record stops the actual verifier with its question',()=>{
+  box.write('artifacts/implementation-blocked.md','Question: which fallback is approved?\nDecision needed: choose the fallback.');
+  box.write('artifacts/completion-check.json',JSON.stringify({passed:false,only_unverified_with_reason:false}));
+  const result=spawnSync(process.execPath,[join(scripts,'check-completion-verdict.ts')],{cwd:box.dir,encoding:'utf8',env:{...process.env,ARTIFACTS_DIR:input.dir,INPUTS_CHANGE_DIR:input.changeDir,INPUTS_START:JSON.stringify({kind:'git',commit:input.start}),INPUTS_ITERATION:'1',INPUTS_RESULT:JSON.stringify({verdict:'blocked',reason:'human choice',remaining:''})}});
+  expect(result.status).toBe(1);expect(result.stdout).toBe('');expect(result.stderr).toContain('which fallback is approved?');expect(result.stderr).toContain('Update the definition and start a new run');expect(result.stderr).not.toContain('without record');
+  expect(JSON.parse(box.read('artifacts/completion-verdict.json')).verdict).toBe('blocked');
+});

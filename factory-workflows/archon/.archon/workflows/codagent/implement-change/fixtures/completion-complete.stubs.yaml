@@ -50,6 +50,7 @@ rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
 check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
 judge-completion: {"verdict":"complete","reason":"reasoned verdict","remaining":""}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

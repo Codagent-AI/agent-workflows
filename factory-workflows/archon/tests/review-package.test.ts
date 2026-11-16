@@ -1,7 +1,8 @@
+import { commitLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { join } from 'node:path';
 import { markBlock } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { inventory, emptyRanking, type Item, type RequiredItem } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { inventory, emptyRanking, failedItems, type Item, type RequiredItem } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { checkRanking, placeRanking, renderPackage, publishPackage } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
 import { createSandbox, type Sandbox, rule, ok, failed, prView, } from './helpers.ts';
 let box: Sandbox; let accepted: string;
@@ -99,4 +100,48 @@ test('INT-011 finish entry points prepare reject place and publish with fake for
   expect(run('place-ranking',emptyRanking()).ok).toBe(true);
   expect(run('publish-review-package').succeeded).toBe(true);
   expect(box.read('artifacts/review-package.md')).toContain('Review first');
+});
+test('INT-011 an agent Failure cannot hide a failed checklist row during publication',()=>{
+  const ranking=emptyRanking();ranking.red=[item('Failure')];
+  expect(checkRanking(ranking,[required()[0]]).ok).toBe(false);
+  const placed=placeRanking(ranking,[required()[0]]);expect(placed.red).toHaveLength(1);expect(placed.red[0].type).toBe('Verification');
+  const body=renderPackage({ranking:placed,failures:[],summary:'summary',decisions:'',disputes:'',base:'url',head:accepted});expect(body).toContain('Verification:');expect(body).toContain('I-1');
+});
+test('INT-011 wrong source type is rejected and deterministic placement repairs it',()=>{
+  const ranking=emptyRanking();ranking.red=[item('Decision')];
+  expect(checkRanking(ranking,[required()[0]]).problems).toContain('wrong type');
+  expect(checkRanking(placeRanking(ranking,[required()[0]]),[required()[0]]).ok).toBe(true);
+});
+test('INT-011 grouped late commits retain every size tests and merged symptom after placement',()=>{
+  const source=inv();const one=box.commitFix('first change');const two=box.commitFix('second\nchange\nwith more lines');
+  const commits=inventory({exec:box.exec,dir:box.path('artifacts'),changeFolder:folder}).required.filter(row=>row.item.type==='Late commit');
+  const ranking=emptyRanking();ranking.yellow=[{...item('Late commit, Decision','D-01'),title:'Grouped changes',detail:'Original symptom: integration changed.\nTests: regression.',source:[one,two,'D-01']}];
+  const placed=placeRanking(ranking,[...source.required,...commits]);expect(checkRanking(placed,[...source.required,...commits]).ok).toBe(true);
+  const group=placed.orange.find(entry=>entry.source.includes(one)&&entry.source.includes(two));expect(group?.detail).toContain('Original symptom');expect(group?.detail).toContain('Tests: regression.');
+  for(const expected of commits){expect(group?.detail).toContain(expected.item.title);expect(group?.detail).toContain(expected.item.detail.split('\n')[0]);}
+});
+test('INT-011 merge conflict resolution is inventoried and OpenSpec-only merges are excluded',()=>{
+  const base=box.head();box.git('checkout','-qb','side');box.commitFix('side');box.git('checkout','feature');box.commitFix('main');
+  const merge=box.exec('git',['merge','side','--no-ff','-m','merge']);expect(merge.status).not.toBe(0);
+  box.write('file.txt','product conflict resolution');box.git('add','file.txt');const merged=box.commit('merge resolved');
+  const found=inv().later_commits.find(entry=>entry.title===merged);expect(found).toBeDefined();expect(found?.detail).toContain('1 file changed');
+  box.git('checkout','-qb','spec-side');box.write('openspec/specs/new/spec.md','spec');box.git('add','openspec/specs/new/spec.md');box.commit('spec');box.git('checkout','feature');box.git('merge','spec-side','--no-ff','-m','spec merge');
+  expect(inv().later_commits.map(entry=>entry.title)).not.toContain(box.head());expect(base).toBe(accepted);
+});
+test('INT-011 actual blocked acceptance is linked to its numbered committed decision',()=>{
+  box.write('artifacts/decision-log.md','## Fallback choice\nQuestion: choose the fallback.\nRequirement: approved fallback.\nDecision pending from user: choose.\n');
+  const file=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/check-acceptance-progress.ts');
+  const result=Bun.spawnSync([process.execPath,file],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:box.path('artifacts'),INPUTS_BLOCKED:'true',INPUTS_FIX:'true',INPUTS_REASON:'choose the fallback'}});
+  expect(result.exitCode).toBe(0);expect(commitLogs(box.exec,box.path('artifacts'),'demo').ok).toBe(true);
+  const failure=failedItems(box.path('artifacts')).find(entry=>entry.source.includes('failure:acceptance'));
+  expect(failure?.detail).toContain('D-01: Fallback choice');expect(failure?.detail).toContain('choose the fallback');
+});
+test.each([false,true])('INT-011 actual failed acceptance push reports subsequent finalize push %s',pushAgain=>{
+  const dir=box.path('artifacts');
+  const push=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/acceptance-push.ts');
+  const failedPush=Bun.spawnSync([process.execPath,push],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:dir,INPUTS_ON_FAILURE:'report',INPUTS_STRICT:'true',INPUTS_BLOCKED:'false'}});
+  expect(failedPush.exitCode).toBe(0);expect(JSON.parse(failedPush.stdout.toString()).ok).toBe(false);
+  if(pushAgain){box.addBareOrigin();const finish=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');const pushed=Bun.spawnSync([process.execPath,finish],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:dir,INPUTS_OP:'finalize-push',INPUTS_STEP:'finalize-push',INPUTS_RESULT:'the round fixes'}});expect(JSON.parse(pushed.stdout.toString()).ok).toBe(true);}
+  const failure=failedItems(dir).find(entry=>entry.source.includes('failure:acceptance'));
+  expect(failure?.detail).toContain(pushAgain?'Finalize subsequently pushed':"lacks the round's fix unless finalize pushes it");
 });

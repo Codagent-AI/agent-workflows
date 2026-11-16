@@ -137,3 +137,26 @@ Do NOT resolve threads for comments you didn't fix.
 When done, return a structured report:
 
 ```
+## Fixer Subagent Report
+
+### CI Failures Fixed
+- [check-name] — brief description of fix
+
+### CI Failures Not Fixed
+- [check-name] — reason (flaky test, infra issue, unclear root cause)
+
+### Review Comments Fixed and Resolved
+- [file:line] — brief description of what was fixed
+
+### Review Comments Replied Without Fixing
+- [file:line] — brief reason why not fixed
+
+### Files Changed
+- <file1>
+- <file2>
+
+### Summary
+<1-2 sentence summary of what was done>
+```
+
+If you encounter a blocker (merge conflict, unclear failure, missing context), stop and explain it clearly in the report. Do NOT guess at fixes for unclear failures. When you stop for a blocker, also set `blocked` to true and give the blocker as the reason; otherwise set `blocked` to false.

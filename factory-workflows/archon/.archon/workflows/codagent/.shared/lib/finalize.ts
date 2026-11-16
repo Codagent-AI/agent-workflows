@@ -54,7 +54,16 @@ export function recordFinalize(tools: Tools, dir: string): { ok: boolean; proble
   recordStep(dir, 'finalize', { ...final, remaining: final.ok ? '' : 'Resolve the listed blockers before merging.' });
   return final;
 }
-export function recordFinalizeCheck(dir: string, step: string, result: { ok: boolean; problems: string }): void {
+export interface FinalizeCheck { ok: boolean; problems: string; terminal?: boolean; }
+export function finalizationBlocked(dir: string): boolean {
+  return Object.values(readJson<Record<string, FinalizeCheck>>(join(dir, 'finalize-results.json'), {})).some(result => result.terminal);
+}
+export function endCiCycle(dir: string, status: string, cycle: number): ReturnType<typeof ciGate> {
+  return ciGate(status, finalizationBlocked(dir), cycle);
+}
+export function recordFinalizeCheck(dir: string, step: string, result: FinalizeCheck): void {
   const file = join(dir, 'finalize-results.json');
-  writeJson(file, { ...readJson<Record<string, unknown>>(file, {}), [step]: result });
+  const prior = readJson<Record<string, FinalizeCheck>>(file, {});
+  if (prior[step]?.terminal) return;
+  writeJson(file, { ...prior, [step]: result });
 }

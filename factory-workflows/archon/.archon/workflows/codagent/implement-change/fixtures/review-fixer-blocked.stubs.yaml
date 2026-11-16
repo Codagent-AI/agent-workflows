@@ -52,6 +52,7 @@ prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","la
 rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
 check-ranking: {"ok":true,"problems":""}
 publish-review-package: {"succeeded":true}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded

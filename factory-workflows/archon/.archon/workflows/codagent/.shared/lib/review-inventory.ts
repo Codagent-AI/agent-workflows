@@ -29,13 +29,21 @@ function disputeItems(folder: string): RequiredItem[] {
     return [{ tier: 'orange' as const, item: { type: 'Dispute', title: `${match[1]}: ${match[2]}`, detail: match[3].trim(), link: `${folder}/dispute-log.md:${text.slice(0, match.index).split('\n').length}`, source: [match[1]] } }];
   });
 }
+function acceptancePushResult(dir: string, result: StepResult): StepResult {
+  if (!result.problems.startsWith('Acceptance push failed:')) return result;
+  const finalize = readJson<Record<string, { ok: boolean }>>(join(dir, 'finalize-results.json'), {});
+  const pushed = finalize['finalize-push']?.ok === true;
+  const detail = pushed ? "Finalize subsequently pushed the round's committed fixes to the pull request; acceptance still did not converge." : "The pull request lacks the round's fix unless finalize pushes it.";
+  return { ...result, problems: result.problems.replace(/ The PR lacks.*$/, ''), remaining: `${result.remaining}\n${detail}` };
+}
 export function failedItems(dir: string): Item[] {
   const results = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
   if (readText(join(dir, 'acceptance-preparation-status.txt')).trim() === 'ACCEPTANCE_FAILED' && !results.acceptance) {
     results.acceptance = { ok: false, problems: 'Acceptance did not converge.', remaining: readText(join(dir, 'acceptance-handoff.md')) };
   }
   return ['acceptance', 'archive', 'finalize'].flatMap(step => {
-    const result = results[step];
+    const recorded = results[step];
+    const result = step === 'acceptance' && recorded ? acceptancePushResult(dir, recorded) : recorded;
     return result && !result.ok ? [{ type: 'Failure', title: `${step} failed`, detail: `${result.problems}\nMerge blocked. ${result.remaining}`, link: join(dir, 'step-results.json'), source: [`failure:${step}`] }] : [];
   });
 }
@@ -51,10 +59,10 @@ export function laterCommits(input: InventoryInput, start: string): Item[] {
   const revisions = output(input.exec, 'git', ['rev-list', '--reverse', `${start}..HEAD`]);
   if (revisions === undefined) throw new Error('could not list commits after acceptance');
   return revisions.split('\n').filter(Boolean).flatMap(sha => {
-    const files = output(input.exec, 'git', ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', sha]);
+    const files = output(input.exec, 'git', ['diff-tree', '--root', '--first-parent', '-m', '--no-commit-id', '--name-only', '-r', sha]);
     if (files === undefined) throw new Error(`could not inspect ${sha}`);
     if (files.split('\n').filter(Boolean).every(file => file.startsWith('openspec/'))) return [];
-    const size = output(input.exec, 'git', ['show', '--format=', '--shortstat', sha]) ?? '';
+    const size = output(input.exec, 'git', ['show', '--first-parent', '--format=', '--shortstat', sha]) ?? '';
     return [{ type: 'Late commit', title: sha, detail: `${size}\nTests: none named.`, link: sha, source: [sha] }];
   });
 }

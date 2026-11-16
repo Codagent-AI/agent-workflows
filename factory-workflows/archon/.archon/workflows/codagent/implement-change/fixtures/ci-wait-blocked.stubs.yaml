@@ -52,6 +52,7 @@ publish-review-package: {"succeeded":false}
 repair-ci-wait: {"blocked":true,"reason":"missing tool","actions":[]}
 mark-ready-after-repair: {"ok":false,"problems":"blocked"}
 rewait-finalize-ci: {"status":"error","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: failed

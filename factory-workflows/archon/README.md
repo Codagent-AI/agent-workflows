@@ -102,7 +102,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `implementation-complete.md` | implementor | Completed work and the location of its verification evidence. |
 | `completion-problems.txt`, `completion-check.json`, `completion-verdict.json`, `completion-loop.jsonl`, `completion-state.json` | completion scripts | Independent completion checks, retained judgments and bounded-loop counters. |
 | `continue-snapshot.json`, `implementation-remaining.md`, `implementor-response.md` | completion scripts | Progress comparison and judge/implementor handoff. |
-| `archive/state.json`, `archive/before.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
+| `archive/state.json`, `archive/before.json`, `archive/specs-before.json`, `archive/local-specs.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
 | `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
 | `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
 | `review-attention.json`, `review-package.md` | package scripts | Checked ranking and published review package. |
@@ -137,9 +137,9 @@ Findings never gate the run. Unfixed high/medium findings go to `dispute-log.md`
 
 Before the audit, a fresh tester judges incomplete implementation records. At most three continue passes and two consecutive record fixes are allowed; a stalled pass fails. The post-audit evidence repairs remain limited to two.
 
-After acceptance ends, the logs are committed and OpenSpec validates and archives the change, even if acceptance failed. Delta repair and archive-commit repair each run once. Archive commits preserve unrelated staged and unstaged work. A failed log commit is carried by the archive; archive failure retains files and still proceeds to finalize.
+After acceptance ends, the logs are committed and OpenSpec validates and archives the change, even if acceptance failed. Delta repair and archive-commit repair each run once. Archive commits preserve unrelated staged and unstaged work, including edits in a spec file the archive updates: local spec patches are suspended before the transition and restored after its isolated commit. Conflicting restoration fails verification and retains the original patches in the archive state. A failed log commit is carried by the archive; archive failure retains files and still proceeds to finalize.
 
-Finalize pushes without force, marks the PR ready, and runs up to three CI/fix cycles, each with a 15-minute wait. A final check reuses a settled report for the same head or waits again. Every check must pass (or no CI be configured), with no blocking review, conflict or actionable comment. Wait errors get one code-free repair. Fixes remain within approved scope.
+Finalize pushes without force, marks the PR ready, and runs up to three CI/fix cycles, each with a 15-minute wait. A gate after each fix/push ends the cycles on any blocked fixer or repair; terminal failures remain recorded even if a later check succeeds. A final check reuses a settled report for the same head or waits again. Every check must pass (or no CI be configured), with no blocking review, conflict or actionable comment. Wait errors get one code-free repair. Fixes remain within approved scope.
 
 A fresh reviewer ranks evidence, decisions and disputes. The script enforces red failed/unverified rows and failed steps, and at least orange non-PR disputes and later code commits. One ranking repair precedes deterministic placement. Review first lists the run's state, all red items and up to five orange items; remaining items, evidence and both logs are collapsed below the summary. Human text outside generated-body markers survives.
 

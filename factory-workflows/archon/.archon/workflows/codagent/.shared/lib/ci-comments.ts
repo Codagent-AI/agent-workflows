@@ -35,11 +35,13 @@ interface GraphComment {
   originalLine?: number | null;
 }
 
+interface CommentPage { pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }; nodes?: GraphComment[]; }
+interface GraphThread { id?: string; isResolved: boolean; comments?: CommentPage; }
 interface GraphPullRequest {
   author?: GraphAuthor | null;
   reviewThreads?: {
     pageInfo?: { hasNextPage?: boolean };
-    nodes?: { isResolved: boolean; comments?: { nodes?: GraphComment[] } }[];
+    nodes?: GraphThread[];
   };
   comments?: { pageInfo?: { hasNextPage?: boolean }; nodes?: GraphComment[] };
 }
@@ -58,7 +60,7 @@ function significantComments(comments: GraphComment[]): GraphComment[] {
   return comments.slice(0, end);
 }
 
-/** Whether the latest significant comment is from the PR author or from another bot. */
+/** Whether the latest significant comment is a marked run reply or another bot reply. */
 function isDeferred(significant: GraphComment[], findingAuthor: string, _prAuthor: string): boolean {
   const latest = significant.at(-1);
   if (latest === undefined) return false;
@@ -84,7 +86,7 @@ const asComment = (comment: GraphComment): Comment => ({
 /**
  * Classifies the PR's comments. An unresolved thread is deferred, and does not block, when
  * the latest significant comment (after dropping the finding bot's trailing acks) is from
- * the PR author, or from a different bot than the one that raised it.
+ * a marked run reply, or from a different bot than the one that raised it.
  */
 export function classifyComments(pr: GraphPullRequest, prAuthorLogin = ''): PrComments {
   const prAuthor = prAuthorLogin || pr.author?.login || '';
@@ -118,8 +120,9 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
       reviewThreads(first: 100) {
         pageInfo { hasNextPage }
         nodes {
+          id
           isResolved
-          comments(first: 10) { nodes { author { __typename login } body path line originalLine } }
+          comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { author { __typename login } body path line originalLine } }
         }
       }
       comments(first: 100) {
@@ -129,6 +132,45 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
     }
   }
 }`;
+
+const THREAD_QUERY = `query($threadId: ID!, $cursor: String!) {
+  node(id: $threadId) { ... on PullRequestReviewThread {
+    comments(first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { author { __typename login } body path line originalLine }
+    }
+  } }
+}`;
+function readThreadPage(exec: Exec, threadId: string, cursor: string): CommentPage | string {
+  const result = exec('gh', ['api', 'graphql', '-f', `query=${THREAD_QUERY}`, '-f', `threadId=${threadId}`, '-f', `cursor=${cursor}`]);
+  if (result.status !== 0) return `failed to fetch review-thread replies: ${result.stderr.trim()}`;
+  const response = JSON.parse(result.stdout) as { data?: { node?: { comments?: CommentPage } } };
+  const page = response.data?.node?.comments;
+  return page?.nodes && page.pageInfo ? page : 'review-thread reply page is missing';
+}
+function completeThread(exec: Exec, thread: GraphThread): string | undefined {
+  let page = thread.comments; const seen = new Set<string>();
+  const comments = [...(page?.nodes ?? [])];
+  while (page?.pageInfo?.hasNextPage) {
+    const cursor = page.pageInfo.endCursor;
+    if (!(thread.id && cursor ) || seen.has(cursor)) return 'cannot paginate review-thread comments: missing or repeated cursor';
+    seen.add(cursor);
+    const fetched = readThreadPage(exec, thread.id, cursor);
+    if (typeof fetched === 'string') return fetched;
+    page = fetched;
+    comments.push(...(page.nodes ?? []));
+  }
+  thread.comments = { nodes: comments };
+  return undefined;
+}
+function completeThreads(exec: Exec, pr: GraphPullRequest): string | undefined {
+  for (const thread of pr.reviewThreads?.nodes ?? []) {
+    if (thread.isResolved) continue;
+    const problem = completeThread(exec, thread);
+    if (problem) return problem;
+  }
+  return undefined;
+}
 
 /** The PR's classified comments, or a problem message when they cannot all be read. */
 export function fetchComments(exec: Exec, owner: string, repo: string, number: number): PrComments | string {
@@ -151,5 +193,6 @@ export function fetchComments(exec: Exec, owner: string, repo: string, number: n
   if (pr.reviewThreads?.pageInfo?.hasNextPage || pr.comments?.pageInfo?.hasNextPage) {
     return 'the PR has more than 100 review threads or top-level comments; read them on GitHub';
   }
-  return classifyComments(pr);
+  const unread = completeThreads(exec, pr);
+  return unread ?? classifyComments(pr);
 }

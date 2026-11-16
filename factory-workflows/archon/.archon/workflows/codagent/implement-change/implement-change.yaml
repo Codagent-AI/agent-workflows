@@ -1198,7 +1198,7 @@ nodes:
     loop_group:
       max_iterations: 3
       on_exhausted: complete
-      until_bash: 'done=$ci-cycle-status.output.done; [ "$done" = true ]'
+      until_bash: 'done=$end-ci-cycle.output.done; [ "$done" = true ]'
       nodes:
         - id: "wait-finalize-ci"
           depends_on: []
@@ -1206,7 +1206,7 @@ nodes:
           script: "finish"
           runtime: "bun"
           timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.ci-cycle-status.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":"$LOOP_PREV.fix-pr.output.blocked","op":"wait-finalize-ci"}
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":"$LOOP_PREV.fix-pr.output.blocked","op":"wait-finalize-ci"}
           output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
 
         - id: "repair-ci-wait"
@@ -1236,7 +1236,7 @@ nodes:
           script: "finish"
           runtime: "bun"
           timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"$LOOP_PREV.ci-cycle-status.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":false,"op":"wait-finalize-ci"}
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":false,"op":"wait-finalize-ci"}
           when: "$wait-finalize-ci.output.status == 'error'"
           output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
 
@@ -1246,7 +1246,7 @@ nodes:
           script: "finish"
           runtime: "bun"
           timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.ci-cycle-status.output.cycle","status":{"from":"$rewait-finalize-ci.output.status","if_skipped":"$wait-finalize-ci.output.status"},"step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":{"from":"$rewait-finalize-ci.output.status","if_skipped":"$wait-finalize-ci.output.status"},"step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
           output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
 
         - id: "fix-pr"
@@ -1277,7 +1277,7 @@ nodes:
           context: {"resume":"session-report"}
           command: "repair-push"
           with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","pushed":"the CI fixes","problems":"$push-ci-fix.output.problems"}
-          when: "$push-ci-fix.output.ok == 'false'"
+          when: "$fix-pr.output.blocked == 'false' && $push-ci-fix.output.ok == 'false'"
 
           output_format: *implementor-result
 
@@ -1290,6 +1290,14 @@ nodes:
           with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-push-ci-fix.output.blocked","reason":"$repair-push-ci-fix.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
           when: "$push-ci-fix.output.ok == 'false'"
           output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+        - id: end-ci-cycle
+          depends_on: [ci-cycle-status, fix-pr, push-ci-fix, recheck-push-ci-fix]
+          trigger_rule: none_failed_min_one_success
+          script: finish
+          runtime: bun
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":{"from":"$rewait-finalize-ci.output.status","if_skipped":"$wait-finalize-ci.output.status"},"step":"end-ci-cycle","previous_blocked":false,"op":"end-ci-cycle"}
+          output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
 
   - id: "final-ci"
     depends_on: ["mark-ready","ci-cycles"]
