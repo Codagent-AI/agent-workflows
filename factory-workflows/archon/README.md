@@ -69,7 +69,7 @@ settings:
 
 Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`change_kind` must be `openspec` or `spec-driven`), refuses the run before any node runs.
 
-`codagent-verify-change` has been removed. Launch `codagent-implement-change` instead and drop `skip_implementation_review` and `stop_unchanged_acceptance`. An unchanged acceptance fix with no retest reason always ends the rounds. Existing `@lead` bindings are unused; bind `@reviewer`, or it falls back to `medium`. Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
+Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
 
 ### The forge
 
@@ -124,7 +124,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 
 A failed check goes to one agent repair, then the same check runs again in strict mode and fails the run if the problem remains. A repair that cannot proceed without a human returns `blocked`, and the run fails with `REPAIR_BLOCKED: <reason>`. The evidence checks allow two repairs and the definition check three, each repair followed by a recheck in a loop that fails the run when its repairs run out.
 
-`acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head.
+`acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head. An acceptance fix that changes nothing and writes no retest reason ends the rounds.
 
 ### Code review
 
