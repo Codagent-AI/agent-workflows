@@ -132,7 +132,7 @@ export function renderResult(state: ReviewState): string {
   const ignored = state.ignored.filter(a => indices.some(({ i }) => a.cycle === i))
     .map(a => `Ignored ${a.id}: ${a.actor} ${a.action} (${a.note}); ${a.reason}`).join('\n');
   const blocked = indices.filter(({ c }) => c.blocked).map(({ c }) => `Fixer blocked: ${c.blocked}`).join('\n');
-  return `# Review ${current.place}\n\n${ranges}\n\n${visible.length === 0 ? 'No findings.' : visible.map(findingDetails).join('\n\n')}\n${ignored}\n${blocked}\n`;
+  return `# Review ${current.place}\n\n${ranges}\n\n${visible.length === 0 ? 'No open findings.' : visible.map(findingDetails).join('\n\n')}\n${ignored}\n${blocked}\n`;
 }
 function handoffSection(state: ReviewState, finding: Finding): string {
   const cycle = state.cycles[finding.cycle];

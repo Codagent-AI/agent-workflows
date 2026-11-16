@@ -150,9 +150,9 @@ describe('review finding state', () => {
 });
 
 describe('review rendering and handoff', () => {
-  test('empty review says exactly No findings and result shows ranges, ignored actions and blocked reason', () => {
+  test('empty review says exactly No open findings and result shows ranges, ignored actions and blocked reason', () => {
     const state = emptyState(); cycle(state);
-    expect(renderResult(state)).toContain('\nNo findings.\n');
+    expect(renderResult(state)).toContain('\nNo open findings.\n');
     addFindings(state, [defect()]); act(state, 'declined'); judge(state, 'contested');
     act(state, 'replied'); judge(state, 'contested'); act(state, 'fixed');
     currentCycle(state).blocked = 'credential missing';
@@ -289,10 +289,10 @@ describe('INT-007 review scripts against real git', () => {
     expect(persisted().findings[0]).toMatchObject({ state: 'disputed', handed_off: true });
     box.commitFix('later'); expect(prepare('acceptance', '', 1).handed_off).toContain('R1:');
   });
-  test('empty range needs no reviewer and records No findings at exact head', () => {
+  test('empty range needs no reviewer and records No open findings at exact head', () => {
     const prepared = prepare('initial', box.head()); expect(prepared.needed).toBe(false);
     record(prepared);
-    expect(read('review/before-pr.md')).toContain('No findings.');
+    expect(read('review/before-pr.md')).toContain('No open findings.');
     expect(persisted().last_reviewed).toBe(box.head());
     const tail = prepare('tail'); expect(tail.needed).toBe(false);
     run('hand-off-review'); expect(existsSync(join(artifacts, 'acceptance-assumptions.md'))).toBe(false);

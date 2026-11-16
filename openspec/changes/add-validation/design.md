@@ -209,7 +209,7 @@ The tail review and each round's first review get, from `review/state.json`, the
 
 Under `$ARTIFACTS_DIR/review/`:
 
-- `before-pr.md` and `acceptance.md`: the place's result, rendered from the state file. `before-pr.md` covers the cycle before the pull request and the tail. `acceptance.md` covers the latest round's cycle and is rewritten in each round that reviews. Each names the revisions it covered, lists the open and disputed findings or says `No findings.`, lists each accepted decline with its reason, lists the ignored actions, and gives the fixer's blocked reason if any.
+- `before-pr.md` and `acceptance.md`: the place's result, rendered from the state file. `before-pr.md` covers the cycle before the pull request and the tail. `acceptance.md` covers the latest round's cycle and is rewritten in each round that reviews. Each names the revisions it covered, lists the open and disputed findings or says `No open findings.`, lists each accepted decline with its reason, lists the ignored actions, and gives the fixer's blocked reason if any.
 - `state.json`: the state the scripts share, for the whole run. Nothing in it is replaced.
 
 `.shared/lib/artifacts.ts` gains the three paths. The README's files table lists them.
