@@ -52,6 +52,7 @@ With `--no-worktree` the run works on the target checkout's current branch, whic
 | `review_strategy` | `builtin` | `builtin` reviews before the draft and after each acceptance fix; `none` disables all review. |
 | `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
 | `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the implementor resolves in each acceptance fix. |
+| `stop_after` | `finish` | `finish` commits the logs, archives the change, finalizes the pull request and publishes the review package after acceptance; `acceptance` ends the run after the acceptance rounds, with the pull request a draft and the change unarchived, as an eval of the implementation needs. |
 
 A project overrides defaults in `.archon/packs/codagent.yaml` under `settings:`:
 
@@ -63,7 +64,7 @@ settings:
 
 Only OpenSpec changes are supported. Remove `change_kind`, `changes_root`, `change_label` and `artifact_validation_instruction` from existing project settings: Archon refuses these undeclared keys at launch. Agents receive the OpenSpec validation sentence derived from the change name.
 
-Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`review_strategy` must be `builtin` or `none`), refuses the run before any node runs.
+Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`review_strategy` must be `builtin` or `none`, `stop_after` `finish` or `acceptance`), refuses the run before any node runs.
 
 `codagent-verify-change` has been removed. Launch `codagent-implement-change` instead and drop `skip_implementation_review` and `stop_unchanged_acceptance`. An unchanged acceptance fix with no retest reason always ends the rounds. Existing `@lead` bindings are unused; bind `@reviewer`, or it falls back to `medium`. Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
 

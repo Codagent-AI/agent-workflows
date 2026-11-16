@@ -15,3 +15,12 @@ inputs:
     description: >-
       builtin: the pack's reviewer reviews the change before the draft pull request
       and after each acceptance fix. none: no review runs.
+  stop_after:
+    type: enum
+    values: [finish, acceptance]
+    default: finish
+    description: >-
+      finish: after acceptance the run commits the logs, archives the change, finalizes the
+      pull request and publishes the review package. acceptance: the run ends after the
+      acceptance rounds, leaving the pull request a draft and the change unarchived, as an
+      eval of the implementation needs.

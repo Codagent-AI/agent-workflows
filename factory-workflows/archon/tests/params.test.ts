@@ -95,17 +95,21 @@ describe('fixed OpenSpec values', () => {
 });
 
 describe('inputProblems', () => {
-  const valid = { changeName: 'demo', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything', reviewStrategy: 'builtin' };
+  const valid = { changeName: 'demo', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything', reviewStrategy: 'builtin', stopAfter: 'finish' };
 
   test('accepts valid inputs with either strategy', () => {
     expect(inputProblems(valid)).toEqual([]);
     expect(inputProblems({ ...valid, reviewStrategy: 'none' })).toEqual([]);
   });
 
+  test('accepts either stop_after value', () => {
+    expect(inputProblems({ ...valid, stopAfter: 'acceptance' })).toEqual([]);
+  });
+
   test('reports every problem at once', () => {
-    const problems = inputProblems({ ...valid, changeName: 'Demo', acceptanceRounds: '0', acceptanceFixScope: ' ', reviewStrategy: 'bad' });
-    expect(problems).toHaveLength(4);
-    for (const name of ['change_name', 'acceptance_rounds', 'acceptance_fix_scope', 'review_strategy']) expect(problems.join('\n')).toContain(name);
+    const problems = inputProblems({ ...valid, changeName: 'Demo', acceptanceRounds: '0', acceptanceFixScope: ' ', reviewStrategy: 'bad', stopAfter: 'archive' });
+    expect(problems).toHaveLength(5);
+    for (const name of ['change_name', 'acceptance_rounds', 'acceptance_fix_scope', 'review_strategy', 'stop_after']) expect(problems.join('\n')).toContain(name);
   });
 });
 
@@ -194,6 +198,7 @@ describe('pack settings reach the included blocks', () => {
         'acceptance_fix_scope',
         'acceptance_rounds',
         'review_strategy',
+        'stop_after',
       ].sort()
     );
   });
@@ -261,6 +266,7 @@ describe('merged workflow contracts', () => {
       inputs: Record<string, { type: string; values: string[]; default: string }>;
     }).inputs;
     expect(settings.review_strategy).toMatchObject({ type: 'enum', values: ['builtin', 'none'], default: 'builtin' });
+    expect(settings.stop_after).toMatchObject({ type: 'enum', values: ['finish', 'acceptance'], default: 'finish' });
     expect(settings.change_kind).toBeUndefined();
   });
 

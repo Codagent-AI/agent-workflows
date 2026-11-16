@@ -43,6 +43,7 @@ export interface WorkflowInputs {
   maxRounds: number;
   acceptanceFixScope: string;
   reviewStrategy: string;
+  stopAfter: string;
 }
 
 /** Problems with any of the inputs, empty when they are all valid. */
@@ -50,6 +51,7 @@ export function inputProblems(inputs: WorkflowInputs): Problems {
   return [
     ...changeNameProblems(inputs.changeName),
     ...(inputs.reviewStrategy === 'builtin' || inputs.reviewStrategy === 'none' ? [] : ['review_strategy must be builtin or none']),
+    ...(inputs.stopAfter === 'finish' || inputs.stopAfter === 'acceptance' ? [] : ['stop_after must be finish or acceptance']),
     ...nonEmptyProblems('acceptance_fix_scope', inputs.acceptanceFixScope),
     ...acceptanceRoundsProblems(inputs.acceptanceRounds, inputs.maxRounds),
   ];
@@ -79,5 +81,6 @@ export function readInputs(env: NodeJS.ProcessEnv): WorkflowInputs {
     acceptanceRounds: required(env.INPUTS_ACCEPTANCE_ROUNDS, 'acceptance_rounds'),
     acceptanceFixScope: required(env.INPUTS_ACCEPTANCE_FIX_SCOPE, 'acceptance_fix_scope'),
     reviewStrategy: required(env.INPUTS_REVIEW_STRATEGY, 'review_strategy'),
+    stopAfter: required(env.INPUTS_STOP_AFTER, 'stop_after'),
   };
 }

@@ -15,6 +15,21 @@ Every value other than `change_name` SHALL come from a pack setting with a defau
 - **WHEN** `review_strategy` is neither `builtin` nor `none`
 - **THEN** the run is refused before any node runs
 
+#### Scenario: Invalid stop point
+- **WHEN** `stop_after` is neither `finish` nor `acceptance`
+- **THEN** the run is refused before any node runs
+
+### Requirement: A run can end after the acceptance rounds
+With `stop_after: acceptance`, the workflow SHALL end after the acceptance rounds, without committing the logs, archiving the change, finalizing the pull request or publishing the review package, and its outcome SHALL be succeeded exactly when acceptance converged. With the default, `finish`, every step SHALL run.
+
+#### Scenario: Acceptance converges
+- **WHEN** a launch sets `stop_after: acceptance` and acceptance converges
+- **THEN** the run succeeds, with its pull request a draft and the change unarchived
+
+#### Scenario: Acceptance does not converge
+- **WHEN** a launch sets `stop_after: acceptance` and acceptance does not converge
+- **THEN** the run's outcome is failed, and no review package is written
+
 ### Requirement: The change folder is fixed by the change name
 The workflow SHALL use `openspec/changes/<change_name>` as the change's folder.
 

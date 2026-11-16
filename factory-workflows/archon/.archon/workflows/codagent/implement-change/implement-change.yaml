@@ -30,6 +30,7 @@ nodes:
       acceptance_rounds: $INPUTS.acceptance_rounds
       acceptance_fix_scope: $INPUTS.acceptance_fix_scope
       review_strategy: $INPUTS.review_strategy
+      stop_after: $INPUTS.stop_after
       # The acceptance loop's literal ceiling.
       max_rounds: &max-rounds 10
     output_format:
@@ -39,7 +40,8 @@ nodes:
         artifact_validation_instruction: { type: string }
         rounds: { type: integer }
         review: { type: boolean }
-      required: [change_dir, artifact_validation_instruction, rounds, review]
+        finish: { type: boolean }
+      required: [change_dir, artifact_validation_instruction, rounds, review, finish]
       additionalProperties: false
 
   # The forge plugin and its credential are checked before any agent spends.
@@ -1071,10 +1073,12 @@ nodes:
       required: [ready, status, message]
       additionalProperties: false
 
-  # Finish always records failures and continues to the review package.
+  # Finish always records failures and continues to the review package. With stop_after:
+  # acceptance it is skipped, and with it every step through the ranking.
   - id: "commit-logs"
     depends_on: ["write-acceptance-status"]
     trigger_rule: "none_failed_min_one_success"
+    when: "$validate-inputs.output.finish == 'true'"
     script: "finish"
     runtime: "bun"
     timeout: 1200000
@@ -1407,11 +1411,21 @@ nodes:
     when: "$recheck-ranking.output.ok == 'false'"
     output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
+  # With stop_after: acceptance the run ends here, its pull request a draft and its change
+  # unarchived, and publish-review-package declares the outcome from acceptance alone.
+  - id: "end-after-acceptance"
+    depends_on: ["write-acceptance-status"]
+    script: "finish"
+    runtime: "bun"
+    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"end-after-acceptance","previous_blocked":false,"op":"end-after-acceptance","stop_after":"$INPUTS.stop_after"}
+    when: "$validate-inputs.output.finish == 'false'"
+    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
   - id: "publish-review-package"
-    depends_on: ["check-ranking","recheck-ranking","place-ranking"]
+    depends_on: ["check-ranking","recheck-ranking","place-ranking","end-after-acceptance"]
     trigger_rule: "none_failed_min_one_success"
     script: "finish"
     runtime: "bun"
     timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$rank-review.output","previous":"","status":"","step":"publish-review-package","previous_blocked":false,"op":"publish-review-package"}
+    with: {"change_name":"$INPUTS.change_name","change_folder":{"from":"$record-archive.output.change_folder","if_skipped":""},"blocked":false,"reason":"","result":{"from":"$rank-review.output","if_skipped":""},"previous":"","status":"","step":"publish-review-package","previous_blocked":false,"op":"publish-review-package","stop_after":"$INPUTS.stop_after"}
     output_format: {"type":"object","properties":{"succeeded":{"type":"boolean"}},"required":["succeeded"],"additionalProperties":false}

@@ -9,12 +9,14 @@ import { commitLogs } from './logs.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { inventory, type Ranking } from './review-inventory.ts';
+import { failedItems, inventory, type Ranking } from './review-inventory.ts';
 import { checkRanking, placeRanking, publishPackage } from './review-package.ts';
 import { readJson, writeJson, recordStep, readText, writeText } from './run-files.ts';
 interface FinishInputs {
   op: string; name: string; folder: string; blocked: boolean; reason: string;
   result: string; previous: string; status: string; step: string;
+  /** False when stop_after is acceptance: the run ends after the acceptance rounds. */
+  finish?: boolean;
 }
 function archiveNode(input: FinishInputs, dir: string): unknown {
   const args = { exec: runCommand, dir, name: input.name };
@@ -77,7 +79,13 @@ function pushOrReady(input: FinishInputs, dir: string): CheckResult {
   const checked = input.op === 'mark-ready' ? markReady(defaultTools()) : acceptancePush(runCommand, input.result);
   recordFinalizeCheck(dir, input.step, checked); return checked;
 }
+/** A run that stops after acceptance publishes no package; it succeeds when acceptance converged. */
+export function endedAfterAcceptance(dir: string): { succeeded: boolean } {
+  return { succeeded: failedItems(dir).length === 0 };
+}
 function dispatch(input: FinishInputs, dir: string): unknown {
+  if (input.op === 'end-after-acceptance') return pass();
+  if (input.op === 'publish-review-package' && input.finish === false) return endedAfterAcceptance(dir);
   if (input.op === 'commit-logs') return commitLogs(runCommand, dir, input.name);
   if (['archive-change', 'verify-archive-commit', 'record-archive'].includes(input.op)) return archiveNode(input, dir);
   if (['wait-finalize-ci', 'ci-cycle-status', 'end-ci-cycle', 'final-ci', 'record-finalize'].includes(input.op)) return ciNode(input, dir);

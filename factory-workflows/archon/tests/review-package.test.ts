@@ -153,3 +153,11 @@ test.each([false,true])('INT-011 actual failed acceptance push reports subsequen
   const failure=failedItems(dir).find(entry=>entry.source.includes('failure:acceptance'));
   expect(failure?.detail).toContain(pushAgain?'Finalize subsequently pushed':"lacks the round's fix unless finalize pushes it");
 });
+test.each([['ACCEPTANCE_COMPLETE',true],['ACCEPTANCE_FAILED',false]] as const)('stop_after acceptance: %s ends the run without a package, succeeded %s',(status,succeeded)=>{
+  const dir=box.path('artifacts');box.write('artifacts/acceptance-preparation-status.txt',`${status}\n`);box.write('artifacts/acceptance-handoff.md','Acceptance did not converge.');
+  const finish=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const run=(op:string)=>Bun.spawnSync([process.execPath,finish],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:dir,INPUTS_OP:op,INPUTS_STEP:op,INPUTS_STOP_AFTER:'acceptance'}});
+  const ended=run('end-after-acceptance');expect(ended.exitCode).toBe(0);expect(JSON.parse(ended.stdout.toString()).ok).toBe(true);
+  const published=run('publish-review-package');expect(published.exitCode).toBe(0);
+  expect(JSON.parse(published.stdout.toString())).toEqual({succeeded});expect(box.exists('artifacts/review-package.md')).toBe(false);
+});
