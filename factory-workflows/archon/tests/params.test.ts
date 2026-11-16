@@ -264,6 +264,7 @@ describe('merged workflow contracts', () => {
     id: string;
     model?: string[];
     context?: string | { resume: string };
+    output_format?: unknown;
     depends_on?: string[];
     loop_group?: { max_iterations: number; on_exhausted?: string; nodes: WorkflowNode[] };
   }
@@ -310,7 +311,22 @@ describe('merged workflow contracts', () => {
     expect(node('re-review').context).toEqual({ resume: 'review-change' });
     expect(node('fix-round-findings').context).toEqual({ resume: 'acceptance-fix' });
     expect(node('round-re-review').context).toEqual({ resume: 'round-review' });
-    expect(node('acceptance-fix').context).toEqual({ resume: 'open-draft-pr' });
+    expect(node('acceptance-fix').context).toEqual({ resume: 'session-report' });
+    expect(node('open-draft-pr').context).toBe('fresh');
+  });
+
+  // A step whose schema differs from the session's previous step misses the provider's
+  // prompt cache, so every step on a session returns that session's one schema.
+  test('every step on a session returns the schema its session started with', () => {
+    const root = (entry: WorkflowNode): WorkflowNode =>
+      typeof entry.context === 'object' ? root(node(entry.context.resume)) : entry;
+    const sessions = ['implementor-checklist', 'review-change', 'round-review'];
+    for (const start of sessions) {
+      const members = nodes.filter(entry => entry.model && root(entry).id === start);
+      expect(members.length).toBeGreaterThan(1);
+      for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
+    }
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(16);
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {

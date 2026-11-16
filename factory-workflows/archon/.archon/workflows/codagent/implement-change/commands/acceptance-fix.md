@@ -1,5 +1,3 @@
-Read the git log and `$ARTIFACTS_DIR/review/acceptance.md` when present for fixes made in forked review sessions.
-
 The independent acceptance tester did not report $INPUTS.change_label "$INPUTS.change_name" ready for acceptance in round index $INPUTS.acceptance_round (zero-based). Read its report, `$ARTIFACTS_DIR/acceptance-findings.md`, and `$ARTIFACTS_DIR/acceptance-round-status.txt`. Do not audit the tester's evidence files for completeness; the exploration log and handoff are written for the human acceptance session to read.
 
 Triage each finding into a fix you make, an escalation, or an entry in `$ARTIFACTS_DIR/acceptance-assumptions.md`. A finding where the tester reproduced behavior that contradicts the approved specs, or that an ordinary user would clearly consider broken, may not be dismissed as "not a defect": fix it, or record it in the assumptions ledger as a decision needed from the user, with your reasoning. $INPUTS.acceptance_fix_scope Preserve approved behavior, scope, and design; append ambiguity to the ledger instead of deciding it silently.

@@ -71,7 +71,10 @@ nodes:
       change_kind: $INPUTS.change_kind
 
   # The implementor's session starts here and owns the whole change: its
-  # checklist, the implementation, and fixes.
+  # checklist, the implementation, and fixes. Every step on it returns this one
+  # schema, since a step whose schema differs from the step before it misses the
+  # provider's prompt cache. A step returns the fields it does not use empty, and
+  # the check after each step stops the run when it reports itself blocked.
   - id: implementor-checklist
     depends_on: [commit-definition]
     model: ['@implementor', large]
@@ -81,11 +84,31 @@ nodes:
       change_label: $INPUTS.change_label
       change_name: $INPUTS.change_name
       change_dir: $validate-inputs.output.change_dir
+    output_format: &implementor-result
+      type: object
+      properties:
+        blocked: { type: boolean }
+        reason: { type: string }
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              action: { type: string, enum: [fixed, declined, replied] }
+              note: { type: string }
+            required: [id, action, note]
+            additionalProperties: false
+      required: [blocked, reason, actions]
+      additionalProperties: false
 
   - id: check-implementor-checklist-not-blocked
     depends_on: [implementor-checklist]
     script: check-not-blocked
     runtime: bun
+    with:
+      blocked: $implementor-checklist.output.blocked
+      reason: $implementor-checklist.output.reason
 
   - id: check-implementor-checklist
     depends_on: [check-implementor-checklist-not-blocked]
@@ -124,13 +147,7 @@ nodes:
       change_name: $INPUTS.change_name
       change_dir: $validate-inputs.output.change_dir
       problems: $verify-checklist.output.problems
-    output_format: &repair
-      type: object
-      properties:
-        blocked: { type: boolean }
-        reason: { type: string }
-      required: [blocked, reason]
-      additionalProperties: false
+    output_format: *implementor-result
 
   - id: recheck-checklist
     depends_on: [repair-checklist]
@@ -154,11 +171,15 @@ nodes:
       change_name: $INPUTS.change_name
       change_dir: $validate-inputs.output.change_dir
       artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
+    output_format: *implementor-result
 
   - id: check-implementation-not-blocked
     depends_on: [implement]
     script: check-not-blocked
     runtime: bun
+    with:
+      blocked: $implement.output.blocked
+      reason: $implement.output.reason
 
   # Checks that the checklist is complete, not that it is true; the audit
   # judges whether the evidence proves each behavior.
@@ -192,7 +213,7 @@ nodes:
             change_dir: $validate-inputs.output.change_dir
             lead_in: The
             commit_prefix: complete-evidence
-          output_format: *repair
+          output_format: *implementor-result
         - id: evidence-recheck
           depends_on: [complete-evidence]
           script: check-evidence
@@ -224,11 +245,15 @@ nodes:
       change_dir: $validate-inputs.output.change_dir
       artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
       findings: $audit.output
+    output_format: *implementor-result
 
   - id: check-findings-not-blocked
     depends_on: [resolve-findings]
     script: check-not-blocked
     runtime: bun
+    with:
+      blocked: $resolve-findings.output.blocked
+      reason: $resolve-findings.output.reason
 
   # As check-evidence, after the findings are fixed: a planned row may change
   # only where an audit finding names its ID.
@@ -262,7 +287,7 @@ nodes:
             change_dir: $validate-inputs.output.change_dir
             lead_in: After resolving the audit's findings, the
             commit_prefix: complete-evidence-after-review
-          output_format: *repair
+          output_format: *implementor-result
         - id: evidence-recheck-after-review
           depends_on: [complete-evidence-after-review]
           script: recheck-evidence
@@ -297,7 +322,7 @@ nodes:
       change_name: $INPUTS.change_name
       change_dir: $validate-inputs.output.change_dir
       problems: $check-clean.output.problems
-    output_format: *repair
+    output_format: *implementor-result
 
   - id: recheck-clean
     depends_on: [repair-clean]
@@ -333,7 +358,7 @@ nodes:
       change_dir: $validate-inputs.output.change_dir
       start: "$implement.execution.checkoutStart"
       problems: $verify-implementation-commits.output.problems
-    output_format: *repair
+    output_format: *implementor-result
 
   - id: recheck-implementation-commits
     depends_on: [repair-implementation-commits]
@@ -355,6 +380,7 @@ nodes:
     context: { resume: resolve-findings }
     command: session-report
     with: *change
+    output_format: *implementor-result
 
   - id: verify-assumptions-handoff
     depends_on: [session-report]
@@ -362,8 +388,8 @@ nodes:
     runtime: bun
     with:
       strict: false
-      blocked: false
-      reason: ""
+      blocked: $session-report.output.blocked
+      reason: $session-report.output.reason
     output_format: *check
 
   - id: repair-assumptions-handoff
@@ -376,7 +402,7 @@ nodes:
       change_label: $INPUTS.change_label
       change_name: $INPUTS.change_name
       problems: $verify-assumptions-handoff.output.problems
-    output_format: *repair
+    output_format: *implementor-result
 
   - id: recheck-assumptions-handoff
     depends_on: [repair-assumptions-handoff]
@@ -426,9 +452,22 @@ nodes:
       end: $prepare-review.output.end
       files: $prepare-review.output.files
       handed_off: $prepare-review.output.handed_off
+    # The first review and its re-reviews share one schema, so a re-review that
+    # continues the reviewer's session reuses its prompt cache. A first review
+    # returns no verdicts.
     output_format: &review-output
       type: object
       properties:
+        verdicts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              verdict: { type: string, enum: [confirmed, rejected, accepted, contested] }
+              reason: { type: string }
+            required: [id, verdict, reason]
+            additionalProperties: false
         findings:
           type: array
           items: &finding
@@ -443,7 +482,7 @@ nodes:
               fix: { type: string }
             required: [title, file, line, severity, category, problem, fix]
             additionalProperties: false
-      required: [findings]
+      required: [verdicts, findings]
       additionalProperties: false
 
   - id: record-review
@@ -481,23 +520,7 @@ nodes:
           with:
             place: before-pr
             findings: $record-review.output.findings
-          output_format: &review-fix-output
-            type: object
-            properties:
-              blocked: { type: boolean }
-              reason: { type: string }
-              actions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id: { type: string }
-                    action: { type: string, enum: [fixed, declined, replied] }
-                    note: { type: string }
-                  required: [id, action, note]
-                  additionalProperties: false
-            required: [blocked, reason, actions]
-            additionalProperties: false
+          output_format: *implementor-result
 
         - id: record-review-fixes
           depends_on: [fix-review-findings]
@@ -530,24 +553,7 @@ nodes:
             start: $record-review-fixes.output.start
             end: $record-review-fixes.output.end
             findings: $record-review-fixes.output.findings
-          output_format: &re-review-output
-            type: object
-            properties:
-              verdicts:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id: { type: string }
-                    verdict: { type: string, enum: [confirmed, rejected, accepted, contested] }
-                    reason: { type: string }
-                  required: [id, verdict, reason]
-                  additionalProperties: false
-              findings:
-                type: array
-                items: *finding
-            required: [verdicts, findings]
-            additionalProperties: false
+          output_format: *review-output
 
         - id: end-review-round
           depends_on: [record-review-fixes, re-review]
@@ -604,7 +610,7 @@ nodes:
       change_label: $INPUTS.change_label
       change_name: $INPUTS.change_name
       problems: $verify-clean-for-pr.output.problems
-    output_format: *repair
+    output_format: *implementor-result
 
   - id: recheck-clean-for-pr
     depends_on: [repair-clean-for-pr]
@@ -657,15 +663,22 @@ nodes:
       result: $tail-review.output
     output_format: *review-settled
 
-  # The pull request forks the implementor session; acceptance fixes continue it.
+  # The pull request is written in a fresh session, from the definition and the
+  # branch's commits.
   - id: open-draft-pr
     depends_on: [verify-clean-for-pr, recheck-clean-for-pr, record-tail-review]
     trigger_rule: none_failed_min_one_success
     model: ['@implementor', large]
-    context: { resume: session-report }
+    context: fresh
     command: open-draft-pr
     with: *change
-    output_format: *repair
+    output_format: &repair
+      type: object
+      properties:
+        blocked: { type: boolean }
+        reason: { type: string }
+      required: [blocked, reason]
+      additionalProperties: false
 
   # open-draft-pr writes the title and description to pr-title.txt and pr-body.md; this
   # opens the pull request as a draft, or puts the description into the open one's body
@@ -763,6 +776,9 @@ nodes:
             required: [round, last]
             additionalProperties: false
 
+        # The tester's session for the round. The handoff continues it and returns
+        # the same schema, so it reads the provider's prompt cache: `ready` means
+        # ready for CI here, and the round ready in the handoff.
         - id: acceptance-test
           depends_on: [reset-round-evidence]
           model: ['@tester', medium]
@@ -774,17 +790,17 @@ nodes:
             change_dir: $validate-inputs.output.change_dir
             acceptance_round: $reset-round-evidence.output.round
             acceptance_rounds: $validate-inputs.output.rounds
-          output_format:
+          output_format: &tester-result
             type: object
             properties:
-              ci_ready: { type: boolean }
+              ready: { type: boolean }
               reason: { type: string }
-            required: [ci_ready, reason]
+            required: [ready, reason]
             additionalProperties: false
 
         - id: wait-ci
           depends_on: [acceptance-test]
-          when: "$acceptance-test.output.ci_ready == 'true'"
+          when: "$acceptance-test.output.ready == 'true'"
           script: wait-ci
           runtime: bun
           # The wait polls for max_minutes; the timeout leaves room for the report.
@@ -813,6 +829,7 @@ nodes:
             ci_status: { from: $wait-ci.output.status, if_skipped: "not run" }
             ci_report: { from: $wait-ci.output.report, if_skipped: "none" }
             ci_reason: $acceptance-test.output.reason
+          output_format: *tester-result
 
         - id: acceptance-gate
           depends_on: [acceptance-handoff]
@@ -840,7 +857,7 @@ nodes:
         - id: acceptance-fix
           depends_on: [clear-retest-reason]
           model: ['@implementor', large]
-          context: { resume: open-draft-pr }
+          context: { resume: session-report }
           command: acceptance-fix
           with:
             change_label: $INPUTS.change_label
@@ -848,6 +865,7 @@ nodes:
             acceptance_round: $reset-round-evidence.output.round
             acceptance_fix_scope: $INPUTS.acceptance_fix_scope
             artifact_validation_instruction: $validate-inputs.output.artifact_validation_instruction
+          output_format: *implementor-result
 
         - id: check-acceptance-progress
           depends_on: [acceptance-gate, acceptance-fix]
@@ -856,6 +874,8 @@ nodes:
           runtime: bun
           with:
             fix: $acceptance-gate.output.fix
+            blocked: { from: $acceptance-fix.output.blocked, if_skipped: "false" }
+            reason: { from: $acceptance-fix.output.reason, if_skipped: "" }
           output_format:
             type: object
             properties:
@@ -916,7 +936,7 @@ nodes:
           with:
             place: acceptance
             findings: $record-round-review.output.findings
-          output_format: *review-fix-output
+          output_format: *implementor-result
 
         - id: record-round-fixes
           depends_on: [fix-round-findings]
@@ -941,7 +961,7 @@ nodes:
             start: $record-round-fixes.output.start
             end: $record-round-fixes.output.end
             findings: $record-round-fixes.output.findings
-          output_format: *re-review-output
+          output_format: *review-output
 
         - id: end-round-review
           depends_on: [record-round-fixes, round-re-review]
@@ -988,7 +1008,7 @@ nodes:
             change_label: $INPUTS.change_label
             change_name: $INPUTS.change_name
             problems: $acceptance-push.output.problems
-          output_format: *repair
+          output_format: *implementor-result
 
         - id: recheck-acceptance-push
           depends_on: [repair-acceptance-push]
@@ -1036,7 +1056,7 @@ nodes:
             change_label: $INPUTS.change_label
             change_name: $INPUTS.change_name
             problems: $verify-acceptance-pr.output.problems
-          output_format: *repair
+          output_format: *implementor-result
 
         - id: recheck-acceptance-pr
           depends_on: [repair-acceptance-pr]

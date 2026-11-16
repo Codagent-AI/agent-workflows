@@ -16,7 +16,7 @@ Each risk goes to the cheapest layer that catches it:
 - The finding states, contest-once, IDs, settling and the unchanged-fix stop are plain logic. Unit tests in `tests/review.test.ts` and `tests/acceptance.test.ts` cover them, including the second and third fix rounds that no dry run reaches.
 - Routing through skipped review nodes is where a wrong `when:` or `trigger_rule` would skip the pull request or fail the run. Fixtures cover each route.
 - The review scripts' use of git and of the run's files is a real boundary. A bun test runs them against a real repository.
-- A real provider forking a long session and later fix rounds need live agents. One manual run covers them before merge.
+- A real provider continuing a long session, and later fix rounds, need live agents. One manual run covers them before merge.
 
 The verification fixtures that move to `implement-change/fixtures/` keep their current assertions, with the implement steps stubbed.
 

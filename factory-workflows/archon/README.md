@@ -9,6 +9,8 @@ This folder is the workflow source Archon reads: pass it to `--workflow-source`.
 - `codagent-implement-change`, the entry point. It validates and commits the definition, implements against a checklist, audits the work, checks assumptions, reviews the code, checks the worktree, opens a draft pull request and runs acceptance rounds. The implementor fixes review findings in its own session and handles acceptance fixes; the independent tester and CI check each round.
 - `codagent-check-definition` and `codagent-commit-definition`, building blocks that `codagent-implement-change` includes.
 
+The implementor's steps, from its checklist to the acceptance fixes, continue one session, so each reads the provider's prompt cache instead of paying for the session again. That needs the Codagent-AI Archon fork, where `context: { resume: <node> }` continues a session in place; upstream Archon forks it. Those steps share one output schema, because a step whose schema differs from the step before it misses the cache. The pull request description is written in a fresh session.
+
 ## Layout
 
 Paths are relative to this folder, `factory-workflows/archon/`.

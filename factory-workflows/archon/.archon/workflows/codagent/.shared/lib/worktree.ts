@@ -6,12 +6,17 @@ import { ARTIFACTS } from './artifacts.ts';
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, output } from './exec.ts';
 
-export function checkNotBlocked(artifactsDir: string): CheckResult {
+/**
+ * Fails when the step wrote the blocked record, or returned `blocked: true` without one.
+ * The record carries more, so its text wins over the returned reason.
+ */
+export function checkNotBlocked(artifactsDir: string, returned = { blocked: false, reason: '' }): CheckResult {
   const record = join(artifactsDir, ARTIFACTS.blocked);
-  if (!existsSync(record)) return pass();
+  const recorded = existsSync(record);
+  if (!(recorded || returned.blocked)) return pass();
   return fail([
     'the change cannot be implemented compliantly without a user decision:',
-    readFileSync(record, 'utf8').trimEnd(),
+    recorded ? readFileSync(record, 'utf8').trimEnd() : returned.reason.trim() || 'the implementor gave no reason',
     'after deciding, update the definition and start a new run; resuming this run would not redo the stopped work',
   ]);
 }

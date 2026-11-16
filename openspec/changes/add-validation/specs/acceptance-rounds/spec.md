@@ -84,6 +84,17 @@ The workflow SHALL push the branch after a fix without force.
 - **WHEN** the push fails or tracked changes are uncommitted
 - **THEN** one implementor repair runs in the fix session, and a second failure fails the run
 
+### Requirement: CI is awaited only when the tester reports ready
+The workflow SHALL wait for CI only when the tester reports `ready: true`.
+
+#### Scenario: Tester is not ready for CI
+- **WHEN** the tester reports `ready: false` with a reason
+- **THEN** the wait is skipped and the handoff records `not run` and the reason
+
+#### Scenario: Tester is ready
+- **WHEN** the tester reports `ready: true`
+- **THEN** the workflow waits for CI, writes `ci/round-<n>.md`, and passes its status and path to the tester's handoff
+
 ## REMOVED Requirements
 
 ### Requirement: Assumptions are reviewed unless the caller did it

@@ -1,4 +1,4 @@
-Handle the current $INPUTS.place review findings in your implementation session. Read `$ARTIFACTS_DIR/review/state.json` and the git log; forked sessions may have committed changes you have not seen.
+Handle the current $INPUTS.place review findings in your implementation session. Read `$ARTIFACTS_DIR/review/state.json`.
 
 The attached list is initial context only; it can be stale in later rounds. At the start of every turn, refresh the current cycle from `review/state.json` and use its current actionable findings and histories as authoritative.
 

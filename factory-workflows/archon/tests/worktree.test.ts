@@ -31,6 +31,20 @@ describe('checkNotBlocked (check-not-blocked.sh)', () => {
       expect(result.problems).toContain(want);
     }
   });
+
+  test('fails with the returned reason when the step returned blocked without a record', () => {
+    const result = checkNotBlocked(box.dir, { blocked: true, reason: 'Which export format?' });
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain('Which export format?');
+    expect(checkNotBlocked(box.dir, { blocked: true, reason: ' ' }).problems).toContain('the implementor gave no reason');
+  });
+
+  test('prefers the record to the returned reason', () => {
+    box.write(ARTIFACTS.blocked, 'Decision needed: which export format?\n');
+    const result = checkNotBlocked(box.dir, { blocked: true, reason: 'short reason' });
+    expect(result.problems).toContain('Decision needed: which export format?');
+    expect(result.problems).not.toContain('short reason');
+  });
 });
 
 describe('checkTrackedClean', () => {

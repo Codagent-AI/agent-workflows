@@ -116,4 +116,4 @@ Already handed-off findings (title, file, line):
 $INPUTS.handed_off
 Do not report them again unless the new changes make them worse.
 
-Return JSON only: {"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.
+Return JSON only: {"verdicts":[],"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Leave `verdicts` empty; it is for re-reviews. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.

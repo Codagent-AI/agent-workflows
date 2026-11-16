@@ -7,8 +7,9 @@ Today `implement-change/implement-change.yaml` ends with an `include:` of `codag
 Archon facts this design relies on. The reference docs are in the pack's Archon checkout, `packages/docs-web/src/content/docs/reference/workflow-language.md` and `guides/loop-nodes.md`.
 
 - `context: { resume: <id> }` names a command or prompt node in the same workflow, or an `include:` node, which means the included workflow's returned node. A node inside an included workflow cannot name a node of the workflow that includes it. A probe on the pack's Archon confirmed that such a workflow fails to load.
-- A resume is an immutable fork. It never falls back to a fresh session. A missing source session fails the node.
-- Inside a `loop_group`, a node that resumes a node outside the body forks it on its first turn, and later iterations continue that private branch. A node that resumes a node in the same body forks that iteration's session of it.
+- A resume continues the named node's session, with the turns of every node that continued it and that the resuming node depends on, directly or through other nodes. Inside a `loop_group`, nodes of earlier iterations count. A skipped node adds nothing. When two such nodes could have run at the same time, the resume continues from the last point they share, so two nodes that run at the same time never share a session. A retry, or a node that `workflow resume` runs again, starts from the same point as the failed attempt and never sees its turns. On Codex the resume continues the thread in place when that point is the thread's last turn, and forks the thread at that point otherwise. On Claude it forks the session. This is the Codagent-AI fork's meaning of `context: resume`. Upstream Archon forks the named node's session and does not add the later turns.
+- A resume never falls back to a fresh session. A missing source session fails the node, and so does naming a node that was skipped.
+- A request reads the provider's prompt cache only as far as an earlier request on the same session had the same output schema and tools. On Codex the schema is part of the cached prompt, and on Claude it is the `StructuredOutput` tool. So a node whose `output_format` differs from the previous node's on its session misses the cache for the whole session.
 - A resume's source and consumer must resolve to the same provider.
 - `max_iterations` must be a literal.
 - A `loop_group` inside a `loop_group` body is supported but is "not hardened in v1". This design does not use one.
@@ -51,8 +52,24 @@ Archon facts this design relies on. The reference docs are in the pack's Archon 
    2. The review before the pull request (below).
    3. `verify-clean-for-pr`. Its repair resumes `session-report`.
    4. The tail review (below). It runs only when the head moved since the last review.
-   5. `open-draft-pr` (`@implementor`, resumes `session-report`, no preamble), `publish-draft-pr`, `verify-draft-pr`, and `reopen-draft-pr` (resumes `open-draft-pr`).
-   6. The `acceptance-rounds` loop. `acceptance-fix` becomes `@implementor` and resumes `open-draft-pr`. Its push and pull request repairs become `@implementor`. Each round reviews its fix (below).
+   5. `open-draft-pr` (`@implementor`, `context: fresh`, no preamble), `publish-draft-pr`, `verify-draft-pr`, and `reopen-draft-pr` (resumes `open-draft-pr`).
+   6. The `acceptance-rounds` loop. `acceptance-fix` becomes `@implementor` and resumes `session-report`, so it continues the implementor's session after the review fixes and any repair. Its push and pull request repairs become `@implementor`. Each round reviews its fix (below).
+
+### The implementor's session
+
+The implementor's session runs from `implementor-checklist` to the last acceptance repair: every `@implementor` node that resumes, through any chain, `implementor-checklist`. None of them can run at the same time as another, so they make one session that each node continues in place. Each names the node its prompt follows from, such as `session-report`, and gets the turns of the conditional nodes that ran since.
+
+Every node on the session returns one schema, the `&implementor-result` anchor, defined on `implementor-checklist`:
+
+```yaml
+blocked: boolean
+reason: string
+actions: [{ id: string, action: fixed | declined | replied, note: string }]
+```
+
+A node returns the fields it does not use empty: a repair returns no actions, and `implement` returns `blocked: false` and no actions unless it stops. The schema must stay the same on every node, word for word, because any difference misses the cache.
+
+Every `blocked` is read. The repairs' rechecks and `record-review-fixes` read it as before. `check-not-blocked`, after `implementor-checklist`, `implement` and `resolve-findings`, fails when the blocked record exists or the node returned `blocked: true`, and prints the record when there is one, or else the reason. `verify-assumptions-handoff` reads `session-report`'s, and `check-acceptance-progress` reads `acceptance-fix`'s, failing the run with `REPAIR_BLOCKED: <reason>` as a blocked repair does.
    7. `write-acceptance-status`. The workflow's `returns:` names it, with `outcome_field: ready`.
 
 `implement-change/scripts/validate-inputs.ts` takes over what verification's `validate-inputs.ts` checked. It validates `acceptance_rounds` against the literal 10, which moves to the implement workflow as the `&max-rounds` anchor. It outputs `change_dir`, `artifact_validation_instruction`, `rounds`, and `review`, which is `true` unless `review_strategy` is `none`. Verification's `validate-inputs.ts`, `check-forge.ts` (a duplicate), and its `review-assumptions.md` and `simplify.md` commands are deleted.
@@ -91,15 +108,25 @@ All review commands and scripts take the review's place (`before-pr` or `accepta
    - **`end-review-round`** (script, runs whether `re-review` ran or not). When the re-review ran, it applies the verdicts and new findings, checks that `HEAD` did not move, and records `end` as the last reviewed revision. When the fixer was blocked, the last reviewed revision stays where it was, because no review covered the fixer's commits. It rewrites the result file and outputs `stop`. `stop` is `true` when every finding is `closed` or `disputed`, or when the fixer was blocked.
 5. **`hand-off-review`** (script, runs whether `review-fixes` ran or not). It appends to `acceptance-assumptions.md` each `high` or `medium` finding, from any cycle, that is not yet handed off and is either not closed or closed by an accepted decline or reply. It marks each one handed off. Taking every cycle means the next hand-off also takes what an interrupted cycle left. A `low` finding that is not closed stays in the result file only.
 
-Within the loop, the fixer's first turn forks `session-report` and its later turns continue that branch. The re-review's first turn forks `review-change` and its later turns continue that branch. So the reviewer keeps one session for the cycle.
+Within the loop, the fixer continues the implementor's session, and the re-review continues the reviewer's session from `review-change`. So the reviewer keeps one session for the cycle.
 
 ### Output shapes
 
-`review-change` and the tail review:
+`review-change`, the tail review, `re-review` and their acceptance-round forms share one schema, so a re-review that continues the reviewer's session reads its cache. A first review returns no verdicts:
 
 ```yaml
 type: object
 properties:
+  verdicts:
+    type: array
+    items:
+      type: object
+      properties:
+        id: { type: string }
+        verdict: { type: string, enum: [confirmed, rejected, accepted, contested] }
+        reason: { type: string }
+      required: [id, verdict, reason]
+      additionalProperties: false
   findings:
     type: array
     items:
@@ -114,28 +141,15 @@ properties:
         fix: { type: string }
       required: [title, file, line, severity, category, problem, fix]
       additionalProperties: false
-required: [findings]
+required: [verdicts, findings]
 additionalProperties: false
 ```
 
 An empty `findings` list means the review found no defect. `line` is an integer with 0 for none, because every provider's strict mode accepts it.
 
-`fix-review-findings`:
+`fix-review-findings` returns the implementor's schema (above), with its actions.
 
-```yaml
-blocked: boolean
-reason: string
-actions: [{ id: string, action: fixed | declined | replied, note: string }]
-```
-
-`re-review`:
-
-```yaml
-verdicts: [{ id: string, verdict: confirmed | rejected | accepted | contested, reason: string }]
-findings: [<the finding shape above>]
-```
-
-All three use `additionalProperties: false` and list every property as required, as the pack's other schemas do.
+Both use `additionalProperties: false` and list every property as required, as the pack's other schemas do.
 
 ### Finding states
 
@@ -172,10 +186,10 @@ An acceptance finding's heading names its round, such as `Review finding R1, acc
 
 After `verify-clean-for-pr` and its repair, `prepare-tail-review` (the `prepare-review` script in tail mode) compares `HEAD` with the last reviewed revision in `review/state.json`. When they are equal, nothing else in the tail runs. Otherwise it starts a tail cycle and outputs the new range. The range covers commits from a clean-worktree repair, and any commit a blocked fixer made before it stopped.
 
-- **`tail-review`** (`['@reviewer', medium]`, `context: fresh`, `mutates_checkout: false`) uses the `review-change` command with the new range. A resume would fork the first review's session, which never saw the re-reviews, so a fresh session loses little.
+- **`tail-review`** (`['@reviewer', medium]`, `context: fresh`, `mutates_checkout: false`) uses the `review-change` command with the new range. The state file gives it the findings, so a fresh session loses little.
 - **`record-tail-review`** (the `record-review` script in tail mode) records the new findings as `open`, moves the last reviewed revision to `HEAD`, rewrites `review/before-pr.md`, and hands the new `high` and `medium` findings off at once. There are no fix rounds.
 
-`open-draft-pr` then runs. Its command says not to commit, so the pull request's head is the last reviewed revision. Its command also tells it to read `review/before-pr.md`, because its session is a fork of `session-report` and did not see the fix rounds.
+`open-draft-pr` then runs, in a fresh session. It writes the pull request from the change folder and the branch's commits, so it does not need the implementor's long session. Its command says not to commit, so the pull request's head is the last reviewed revision. It also reads `review/before-pr.md`.
 
 ### The review in each acceptance round
 
@@ -183,7 +197,7 @@ In the round body, after `check-acceptance-progress` and only when its `push` is
 
 - The first review's range runs from the last reviewed revision in `review/state.json` to the working tree, leaving out the change folder (`git diff <last-reviewed> -- . ':(exclude)<change_dir>'`). So it also covers tracked changes the acceptance fix left uncommitted, which the progress check counts as progress. The push repair commits those changes without changing product contents, so what is pushed was reviewed. The re-review's range is the fixer's commits.
 - With one fixer turn, a contest gets no reply in the round. A contested decline is handed off with the finding, the decline and the contest.
-- `fix-round-findings` and `round-re-review` resume nodes in the same round body, so Archon forks that round's sessions of `acceptance-fix` and `round-review`. Each round's cycle has its own sessions.
+- `fix-round-findings` continues the implementor's session through `acceptance-fix`. `round-review` starts fresh in each round, and `round-re-review` continues that round's reviewer session.
 - A blocked fixer's commits in an acceptance round are pushed without a review, because the round has no tail review. The next round's review starts from the last reviewed revision, so it covers them when that round has a fix.
 - `acceptance-push` depends on `hand-off-round-review` and `check-acceptance-progress`, with `trigger_rule: none_failed_min_one_success` and its current `when:`.
 
@@ -238,13 +252,17 @@ The evidence is not checked again after review fixes. The fixer reruns the check
 
 - **Fold verification into the implement workflow.** Archon lets a node resume only a node in its own workflow, or the returned node of a workflow it includes. The fixer must continue the implementor's session, so the steps after the session report must be in the implement workflow. The definition includes stay separate, because their repairs start fresh.
 - **Review after the assumptions handoff check and before the clean-worktree check.** That is where the source reviewed the change. A repair of the clean check can still commit, which the tail review covers.
-- **The implementor takes over the lead's steps.** In the pack the lead is a fresh session that knows nothing of the implementation. The pull request step and the acceptance fixes resume the implementor instead. The definition repairs stay fresh, on `@implementor`.
+- **The implementor takes over the lead's steps.** In the pack the lead is a fresh session that knows nothing of the implementation. The acceptance fixes continue the implementor's session instead. The pull request step and the definition repairs run fresh, on `@implementor`.
+- **One implementor session, continued in place.** Agent Runner ran the implementor as one session. Upstream Archon's `context: resume` forks, so each resumed node misses the provider's prompt cache on Codex and pays for the whole session again: about 684k input tokens in one evaluation run. The Codagent-AI fork continues the session in place, and forks only for a retry or for nodes that could run at the same time.
+- **One schema on the implementor's session.** A schema change misses the cache, so the nodes share one schema, and a node returns the fields it does not use empty. Writing results to files instead would leave the dry-run fixtures unable to stub a blocked repair, since a stub supplies only a node's output. Parsing a result out of the reply is the invented protocol Archon's rules forbid.
+- **One schema on the tester's session.** In each round `acceptance-handoff` continues `acceptance-test`'s session, so both return the `&tester-result` schema, `{ready, reason}`. For the test, `ready` means ready for CI and decides whether `wait-ci` runs. For the handoff, it means the round is ready, matching the status line it writes. Nothing reads the handoff's result: the gate still reads the status line and the evidence. A fresh handoff would also avoid the miss, since the tester writes its evidence to files, but it would lose what the tester knows and did not record.
+- **The pull request step is fresh.** It only summarizes the change folder and the commits, so continuing the implementor's session would make it read the whole session to write a description.
 - **The workflow owns IDs and states.** Agents report actions and verdicts by ID, and a script applies them by a fixed table. Agents cannot skip a state, reopen a closed finding, or contest twice, and bun tests can cover every transition.
 - **A JSON `output_format` for every review output.** The audit's `output_type: findings` is only a label, so it cannot be the shared shape. A schema makes Archon reject malformed output, which fails the run naming the node, as the spec requires.
 - **A decline can be contested once.** One contest and one reply give each side a turn. A finding that still has no agreement goes to a person with both sides.
 - **Findings never fail the run.** The source gated the pull request on its review. Here a person reads the draft pull request anyway, and the assumptions record puts each unresolved finding in front of them.
 - **The tail review has no fix rounds.** It covers small repairs made after the review. Fixing its findings would need another review of the fixes. Its findings go straight to the record.
-- **The tail review is always fresh.** A resume would fork the first review's session, which never saw the re-reviews, and the state file gives the tail what it needs. One fresh node also needs no second form for a first review that skipped the reviewer.
+- **The tail review is always fresh.** The state file gives the tail what it needs. One fresh node also needs no second form for a first review that skipped the reviewer.
 - **One fix round in an acceptance round.** The fix is small, and the tester and CI check it again in the next round. One fixer turn and one re-review as plain nodes avoid a loop inside a loop, which Archon does not harden. The cost is no reply to a contest within a round, so the person gets both sides instead.
 - **Accepted declines of `high` and `medium` findings go to the record.** Two agents agreeing not to fix a real defect is the one outcome nothing else checks. The pack already records in `acceptance-assumptions.md` each ruling a person might have made.
 - **`low` findings stay in the result.** A `low` finding that is not closed is listed in the review result but is not a pending decision for the person. That keeps nits out of the record.
@@ -255,8 +273,9 @@ The evidence is not checked again after review fixes. The fixer reruns the check
 
 ## Risks / Trade-offs
 
-- **Long implementor sessions get resumed.** The fixer, the pull request step and the acceptance fixes fork the implementor's session, which costs more per turn than a fresh one. A provider could also drop an old session; the node then fails rather than starting fresh.
-- **Forked sessions do not see each other's turns.** The pull request step and the acceptance fixes fork earlier nodes, not the fixer's branch. Their commands point them to the review result and the git log.
+- **The implementor's session grows long.** The fixer and the acceptance fixes continue it, which costs more per turn than a fresh session, though the cache covers most of it. A provider could also drop an old session; the node then fails rather than starting fresh.
+- **The pack depends on the fork's meaning of `context: resume`.** On upstream Archon each resume would fork without the later nodes' turns, so the fixer and the acceptance fixes would not see the turns of the nodes that ran since the node they name. Nothing fails; they see less, and miss the cache.
+- **A schema on every implementor node is unmeasured on long turns.** The repairs and fixers already do tool work under a schema. Whether a schema makes a long `implement` turn stop early is not known. An evaluation run should compare `implement`'s tool calls and duration with the baseline runs.
 - **Dry runs do not evaluate `until_bash`.** Fixtures reach only the first fix round. `tests/review.test.ts` covers later rounds, contest-once and the end conditions.
 - **A resumed run restarts an interrupted fix loop with three new rounds.** Archon keeps no iteration cursor for a failed `loop_group`. The state file keeps every finding and its state, so the restarted rounds go on from there, and the next hand-off takes what an interrupted cycle left. The cost is a few extra turns, and only after a failure and a resume. Persisting the round budget and cycle identity across resumes would add state and failure paths to every review node, for a rare case.
 - **A later review can report a defect again that was already handed off.** Each later review gets the list of handed-off findings and is told not to repeat one. That depends on the model following the instruction. A duplicate only adds an entry to the record.

@@ -4,14 +4,14 @@ check-definition__validate-definition: {"ok":true,"problems":""}
 check-definition__verify-definition: {"ok":true,"problems":""}
 commit-definition__commit-definition: {"ok":true,"problems":"","message":"a spec-driven change commits its definition in its planning step"}
 commit-definition__check-clean-before-implementation: "no tracked changes"
-implementor-checklist: "Wrote the checklist."
+implementor-checklist: {"blocked":false,"reason":"","actions":[]}
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: {"ok":true,"problems":""}
-implement: "Implemented the change."
+implement: {"blocked":false,"reason":"","actions":[]}
 check-implementation-not-blocked: "not blocked"
 check-evidence: {"ok":false,"problems":"evidence check: I-2 is failed but its Evidence cell does not say why"}
-complete-evidence: {"blocked":true,"reason":"the planned check needs a production credential"}
+complete-evidence: {"blocked":true,"reason":"the planned check needs a production credential","actions":[]}
 exec-code: true
 fixture:
   expect: failed

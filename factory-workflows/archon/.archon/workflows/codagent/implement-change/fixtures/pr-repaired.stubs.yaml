@@ -4,24 +4,24 @@ check-definition__validate-definition: {"ok":true,"problems":""}
 check-definition__verify-definition: {"ok":true,"problems":""}
 commit-definition__commit-definition: {"ok":true,"problems":"","message":"a spec-driven change commits its definition in its planning step"}
 commit-definition__check-clean-before-implementation: "no tracked changes"
-implementor-checklist: "Wrote the checklist."
+implementor-checklist: {"blocked":false,"reason":"","actions":[]}
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: {"ok":true,"problems":""}
-implement: "Implemented the change."
+implement: {"blocked":false,"reason":"","actions":[]}
 check-implementation-not-blocked: "not blocked"
 check-evidence: {"ok":true,"problems":""}
 audit: "I-2: the fallback greeting has no test that asserts it (specs/greeting/spec.md)."
-resolve-findings: "Added the fallback test."
+resolve-findings: {"blocked":false,"reason":"","actions":[]}
 check-findings-not-blocked: "not blocked"
 recheck-evidence: {"ok":true,"problems":""}
 check-clean: {"ok":true,"problems":""}
 verify-implementation-commits: {"ok":true,"problems":""}
-session-report: "## Assumption Audit"
+session-report: {"blocked":false,"reason":"","actions":[]}
 reset-round-evidence: {"round":0,"last":false}
-acceptance-test: {"ci_ready":true,"reason":""}
+acceptance-test: {"ready":true,"reason":""}
 wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
-acceptance-handoff: "Wrote the handoff; READY."
+acceptance-handoff: {"ready":true,"reason":""}
 acceptance-gate: {"ready":false,"fix":true,"reasons":"- the tester's round status is 'NOT_READY'"}
 check-acceptance-progress: {"progressed":true,"push":true}
 verify-assumptions-handoff: {"ok":true,"problems":""}
@@ -30,11 +30,11 @@ open-draft-pr: {"blocked":false,"reason":""}
 publish-draft-pr: {"ok":true,"problems":""}
 verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 clear-retest-reason: "cleared"
-acceptance-fix: "Fixed F-1 and committed."
+acceptance-fix: {"blocked":false,"reason":"","actions":[]}
 acceptance-push: {"ok":true,"problems":""}
 restore-draft-pr: {"ok":true,"problems":""}
 verify-acceptance-pr: {"ok":false,"problems":"open pull request does not match required draft state or local HEAD (state OPEN, draft false)","pr_url":""}
-repair-acceptance-pr: {"blocked":false,"reason":""}
+repair-acceptance-pr: {"blocked":false,"reason":"","actions":[]}
 recheck-acceptance-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
 fixture:

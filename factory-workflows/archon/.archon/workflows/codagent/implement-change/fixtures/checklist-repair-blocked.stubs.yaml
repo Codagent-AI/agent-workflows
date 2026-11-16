@@ -4,11 +4,11 @@ check-definition__validate-definition: {"ok":true,"problems":""}
 check-definition__verify-definition: {"ok":true,"problems":""}
 commit-definition__commit-definition: {"ok":true,"problems":"","message":"a spec-driven change commits its definition in its planning step"}
 commit-definition__check-clean-before-implementation: "no tracked changes"
-implementor-checklist: "Wrote the checklist."
+implementor-checklist: {"blocked":false,"reason":"","actions":[]}
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: {"ok":false,"problems":"checklist.md has uncommitted changes"}
-repair-checklist: {"blocked":true,"reason":"the checklist path is outside the repository"}
+repair-checklist: {"blocked":true,"reason":"the checklist path is outside the repository","actions":[]}
 exec-code: true
 fixture:
   expect: failed

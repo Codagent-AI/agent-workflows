@@ -1,6 +1,6 @@
 No tracked changes may remain uncommitted. Validation belongs to this workflow's own steps: do not run Agent Validator here, directly or through any skill.
 
-Read `$ARTIFACTS_DIR/review/before-pr.md` when present and the git log for changes made in forked review-fix sessions. Do not commit here.
+Read `$ARTIFACTS_DIR/review/before-pr.md` when present. Do not commit here.
 
 Push the current branch and write the pull request's title and description. The workflow opens the pull request as a draft, or updates the one that exists, in the step after this one. Do not run `gh` or any other command that creates or edits a pull request. Do not create a new implementation or artifact commit here; if tracked changes remain, stop and report them instead of publishing.
 - Push the current branch to its remote with `git`, setting the upstream when none is configured (for example `git push --set-upstream origin <branch>`). Never force-push.

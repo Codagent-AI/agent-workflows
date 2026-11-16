@@ -40,6 +40,6 @@ the ready SHA, PR URL, handoff path, unresolved-decision count, CI status, and k
 
 ## Round status
 
-Finally, overwrite `$ARTIFACTS_DIR/acceptance-round-status.txt` with exactly one line. Write `READY <sha>`, where `<sha>` is the full 40-character output of `git rev-parse HEAD`, only when `exploration-log.md` records this pass, `acceptance-tested-revision.txt` and `acceptance-handoff.md` in the evidence directory name that revision, current-head CI passed or is explicitly absent, and no clear defect or impediment remains. Otherwise write `NOT_READY`. The workflow checks this line together with the evidence files to decide whether acceptance testing has converged.
+Finally, overwrite `$ARTIFACTS_DIR/acceptance-round-status.txt` with exactly one line. Write `READY <sha>`, where `<sha>` is the full 40-character output of `git rev-parse HEAD`, only when `exploration-log.md` records this pass, `acceptance-tested-revision.txt` and `acceptance-handoff.md` in the evidence directory name that revision, current-head CI passed or is explicitly absent, and no clear defect or impediment remains. Otherwise write `NOT_READY`. The workflow checks this line together with the evidence files to decide whether acceptance testing has converged. Return `ready` true when you wrote `READY` and false when you wrote `NOT_READY`, with the reason in `reason`.
 
 Before your final message, stop every server and other long-running command you started, and confirm none is still running.
