@@ -24,7 +24,7 @@ Paths are relative to this folder, `factory-workflows/archon/`.
   .shared/lib/                       TypeScript modules the scripts share
   .shared/implement-change.md        how the implementor works and tests
   .shared/verify-behavior.md         how the checklist is written and evidenced
-tests/                               bun tests for .shared/lib, and run-fixtures.ts
+tests/                               bun tests for .shared/lib, run-fixtures.ts and live-trial.ts
 tests/data/changes/                  sample change definitions the fixtures use
 PROVENANCE.md                        where the workflows came from
 package.json, biome.json, .jscpd.json, tsconfig.json  lint tools for development; the pack does not use them
@@ -140,3 +140,17 @@ Archon's dry run does not evaluate a loop's `until_bash`, so fixtures cannot rea
 **Script tests** run the `.shared/lib` modules against temporary git repositories (git 2.38 or later), with fake `archon`, `gh` and `openspec` commands (the fake `archon` prints forge envelopes; `openspec` output matches OpenSpec 1.17.0); a test that calls the real ones fails.
 
 **Lint.** Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names, along with its recommended rules. jscpd fails on any repeated block of 50 tokens or more in the TypeScript or workflow YAML; fixtures are exempt. `tsc --noEmit` type-checks the scripts, `.shared/lib` and the tests against `tsconfig.json`. Fix the code rather than raising a limit or adding an ignore comment.
+
+## Live trials
+
+The tests above stub every agent. A live trial runs `codagent-implement-change` with real agents on [pacaplan/archon-live-trial](https://github.com/pacaplan/archon-live-trial), a public repository kept for this. It holds a tiny bun CLI and one OpenSpec change, `add-greeting-config`, which its `main` never implements. A trial is available for testing a pack change with real agents when that is worth its cost: it spends usage on every role's provider, takes 15 to 30 minutes, and opens a public draft pull request. Start one only when the user allows it.
+
+```sh
+bun run live-trial                               # start a trial of this checkout's pack
+bun run live-trial --input acceptance_rounds=1   # with a workflow input
+bun run live-trial cleanup <branch>              # close the trial's pull request and delete its branch
+```
+
+The script runs the pack as it is on disk in this checkout, edits included. It clones the repository to `~/.agent-workflows/live-trial/archon-live-trial` the first time and brings its `main` up to date, then starts the run detached on a new branch, `trial-<UTC time>`. It prints the run id and the commands to wait and to clean up. `--change`, `--branch` and `--from` pick another change, branch or start branch. To try a path the stock change does not reach, commit another change folder on a local branch of the clone and pass `--change <name> --from <that branch>`.
+
+Before a trial, bind every role alias the pack uses in the Archon config, including any the change adds: an unbound alias falls back to its tier's default model without a warning. When the run stops, read `archon workflow get <run-id> --cwd <clone> --json --verbose` and the files the run wrote (see [What a run writes](#what-a-run-writes)), then clean up. Archon removes the trial's local worktree in its own `archon isolation cleanup`.
