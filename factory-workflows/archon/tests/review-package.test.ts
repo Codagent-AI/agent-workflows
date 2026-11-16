@@ -52,6 +52,14 @@ test('INT-011 placement fills omissions corrects floors and names uncovered late
   if (!late) throw new Error('missing late commit');
   late.detail='Tests: test';expect(checkRanking(placed,source.required).ok).toBe(false);
 });
+test('INT-011 a late commit sized without openspec/ passes, and placement keeps its detail as written',()=>{
+  const sha=box.commitFix();const source=inv();
+  const own={...item('Late commit',sha),title:`Commit ${sha.slice(0,7)} after acceptance`,detail:'Size: 7 files changed, 9 insertions(+)\n\nTests: none cover it.'};
+  const ranking=emptyRanking();ranking.orange=[own];ranking.red=[item('Verification','I-1')];
+  expect(checkRanking(ranking,source.required).problems).not.toContain('needs shortstat');
+  const placed=placeRanking(ranking,source.required);
+  expect(placed.orange.find(entry=>entry.source.includes(sha))?.detail).toBe(own.detail);
+});
 test('INT-011 review-first ordering counts types collapsed sections and evidence',()=>{
   const ranking=emptyRanking();ranking.red=[{...item(),type:'Verification, Dispute'}];ranking.orange=Array.from({length:7},(_,i)=>item(i===6?'Late commit':'Decision',`D-${i}`));ranking.yellow=[item('Human check','manual review')];ranking.white=[item('Verification','I-3')];ranking.evidence='Screenshot text equivalent. Unexercised behavior has named unit coverage.';
   const body=renderPackage({ranking,failures:[item('Failure','finalize failed')],summary:'SUMMARY',decisions:'DECISIONS',disputes:'DISPUTES',base:'https://github.com/owner/repo',head:accepted});

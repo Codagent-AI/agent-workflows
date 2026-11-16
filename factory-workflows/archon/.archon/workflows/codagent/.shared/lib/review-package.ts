@@ -18,8 +18,11 @@ function entries(ranking: Ranking): { tier: Tier; item: Item }[] {
 function requiredItemProblems(expected: RequiredItem, item: Item): string[] {
     if (!item.type.split(',').map(type => type.trim()).includes(expected.item.type)) return [`wrong type for ${expected.item.source.join(', ')}`];
     if (expected.item.type !== 'Late commit') return [];
-    const size = expected.item.detail.split('\n')[0];
-    return item.detail.includes(size) && /(?:^|\n|[.!?]\s+)Tests:\s*\S/.test(item.detail) ? [] : [`late commit ${expected.item.title} needs shortstat and Tests:`];
+    // As Factory's verify-classification.py: the item names the commit by SHA and gives a size in
+    // `git diff --shortstat` wording, not one exact count, since the ranker sizes the commits
+    // without openspec/ and a commit may touch both.
+    const named = `${item.title} ${item.detail}`.includes(expected.item.title.slice(0, 7));
+    return named && /\b\d+ files? changed\b/.test(item.detail) && /(?:^|\n|[.!?]\s+)Tests:\s*\S/.test(item.detail) ? [] : [`late commit ${expected.item.title} needs shortstat and Tests:`];
 }
 function requiredProblems(ranking: Ranking, required: RequiredItem[]): string[] {
   const all = entries(ranking);
@@ -49,7 +52,8 @@ function insertRequired(placed: Ranking, expected: RequiredItem): void {
     const tier = TIERS[Math.min(TIERS.indexOf(found.tier), TIERS.indexOf(expected.tier))];
     placed[found.tier] = placed[found.tier].filter(item => item !== found.item);
     const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
-    const detail = expected.item.type === 'Late commit' ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
+    const lacksSize = expected.item.type === 'Late commit' && requiredItemProblems(expected, found.item).length > 0;
+    const detail = lacksSize ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
     placed[tier].push({ ...found.item, type, detail });
 }
 export function placeRanking(ranking: Ranking, required: RequiredItem[]): Ranking {
