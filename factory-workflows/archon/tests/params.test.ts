@@ -218,6 +218,21 @@ describe('pack settings reach the included blocks', () => {
   });
 });
 
+// Archon passes an `if_skipped` fallback on as literal text and substitutes only `$LOOP_PREV`
+// references in it, so a node reference there reaches the node as its own text, unresolved.
+describe('skipped-branch fallbacks', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  const workflows = readdirSync(pack, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map(entry => `${entry.name}/${entry.name}.yaml`);
+
+  test.each(workflows)('%s names no node output in an if_skipped fallback', workflow => {
+    const text = readFileSync(join(pack, workflow), 'utf8');
+    const fallbacks = [...text.matchAll(/if_skipped"?\s*:\s*"?(\$[A-Za-z][\w-]*\.output[^",}\s]*)/g)].map(match => match[1]);
+    expect(fallbacks.filter(ref => !ref?.startsWith('$LOOP_PREV.'))).toEqual([]);
+  });
+});
+
 // Declarative workflow contracts that must remain true after merging verification.
 describe('merged workflow contracts', () => {
   const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');

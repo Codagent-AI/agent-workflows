@@ -7,7 +7,7 @@ import { defaultTools } from './forge.ts';
 import { archiveChange, verifyArchive, recordArchive } from './archive.ts';
 import { commitLogs } from './logs.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
-import { blank } from './ci.ts';
+import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
 import { inventory, type Ranking } from './review-inventory.ts';
 import { checkRanking, placeRanking, publishPackage } from './review-package.ts';
@@ -35,10 +35,19 @@ function runCiWait(input: FinishInputs, dir: string, cycle: number): unknown {
   else recordFinalizeCheck(dir, input.step, pass());
   return { status: result.status, had_checks: result.hadChecks, head_moved: result.headMoved, report: readText(join(dir, 'ci/latest-report.txt')) || join(dir, args.report), ci_report: renderReport(result), cycle };
 }
+// A cycle's gate reads the CI result its last wait saved, not the waits' node outputs: one of
+// the two waits is always skipped, and a skipped node's output does not reach the gate.
+function latestCi(dir: string, fallback: string): { status: string; ciReport: string } {
+  const latest = readJson<CiResult | null>(join(dir, 'ci/latest.json'), null);
+  return latest ? { status: latest.status, ciReport: renderReport(latest) } : { status: fallback, ciReport: '' };
+}
 function ciNode(input: FinishInputs, dir: string): unknown {
   const previous = Number(input.previous); const cycle = Number.isFinite(previous) ? previous + 1 : 1;
-  if (input.op === 'end-ci-cycle') return endCiCycle(dir, input.status, cycle);
-  if (input.op === 'ci-cycle-status') return ciGate(input.status, input.blocked || finalizationBlocked(dir), cycle);
+  if (input.op === 'end-ci-cycle') return endCiCycle(dir, latestCi(dir, input.status).status, cycle);
+  if (input.op === 'ci-cycle-status') {
+    const latest = latestCi(dir, input.status);
+    return { ...ciGate(latest.status, input.blocked || finalizationBlocked(dir), cycle), ci_report: latest.ciReport };
+  }
   const tools = defaultTools();
   if (input.op === 'record-finalize') return recordFinalize(tools, dir);
   if (input.blocked || (input.op === 'wait-finalize-ci' && finalizationBlocked(dir))) {

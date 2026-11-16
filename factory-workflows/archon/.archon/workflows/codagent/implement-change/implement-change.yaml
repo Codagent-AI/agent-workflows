@@ -1021,7 +1021,6 @@ nodes:
 
         - id: verify-acceptance-pr
           depends_on: [restore-draft-pr]
-          trigger_rule: none_failed_min_one_success
           script: check-draft-pr
           runtime: bun
           with:
@@ -1246,8 +1245,8 @@ nodes:
           script: "finish"
           runtime: "bun"
           timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":{"from":"$rewait-finalize-ci.output.status","if_skipped":"$wait-finalize-ci.output.status"},"step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
-          output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
+          output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"},"ci_report":{"type":"string"}},"required":["done","fix","cycle","ci_report"],"additionalProperties":false}
 
         - id: "fix-pr"
           depends_on: ["ci-cycle-status"]
@@ -1255,7 +1254,7 @@ nodes:
           model: ["@implementor","large"]
           context: {"resume":"session-report"}
           command: "fix-pr"
-          with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","ci_report":{"from":"$rewait-finalize-ci.output.ci_report","if_skipped":"$wait-finalize-ci.output.ci_report"},"change_folder":"$record-archive.output.change_folder"}
+          with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","ci_report":"$ci-cycle-status.output.ci_report","change_folder":"$record-archive.output.change_folder"}
           when: "$ci-cycle-status.output.fix == 'true'"
 
           output_format: *implementor-result
@@ -1263,7 +1262,6 @@ nodes:
         - id: "push-ci-fix"
           when: "$ci-cycle-status.output.fix == 'true'"
           depends_on: ["fix-pr"]
-          trigger_rule: "none_failed_min_one_success"
           script: "finish"
           runtime: "bun"
           timeout: 1200000
@@ -1296,7 +1294,7 @@ nodes:
           trigger_rule: none_failed_min_one_success
           script: finish
           runtime: bun
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":{"from":"$rewait-finalize-ci.output.status","if_skipped":"$wait-finalize-ci.output.status"},"step":"end-ci-cycle","previous_blocked":false,"op":"end-ci-cycle"}
+          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"end-ci-cycle","previous_blocked":false,"op":"end-ci-cycle"}
           output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
 
   - id: "final-ci"
@@ -1405,7 +1403,7 @@ nodes:
     script: "finish"
     runtime: "bun"
     timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":{"from":"$repair-ranking.output","if_skipped":"$rank-review.output"},"previous":"","status":"","step":"place-ranking","previous_blocked":false,"op":"place-ranking"}
+    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"place-ranking","previous_blocked":false,"op":"place-ranking"}
     when: "$recheck-ranking.output.ok == 'false'"
     output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 

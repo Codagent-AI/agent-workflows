@@ -45,14 +45,25 @@ test('INT-010 cycle status and record-finalize scripts use saved reports across 
   const api=tools();box.write('artifacts/ci/latest.json',JSON.stringify(report()));
   expect(recordFinalize(api,box.path('artifacts')).ok).toBe(true);
   const script=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');
-  const env={...process.env,ARTIFACTS_DIR:box.path('artifacts'),INPUTS_OP:'ci-cycle-status',INPUTS_STATUS:'pending',ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])};
+  const env={...process.env,ARTIFACTS_DIR:box.path('artifacts'),INPUTS_OP:'ci-cycle-status',INPUTS_STATUS:'',ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])};
+  box.write('artifacts/ci/latest.json',JSON.stringify({...report(),status:'pending'}));
   for(let i=0;i<3;i++){
     const result=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_PREVIOUS:String(i)}});
-    expect(result.status).toBe(0);expect(JSON.parse(result.stdout)).toEqual({done:i===2,fix:false,cycle:i+1});
+    expect(result.status).toBe(0);expect(JSON.parse(result.stdout)).toMatchObject({done:i===2,fix:false,cycle:i+1});
   }
-  box.write('artifacts/ci/latest.json',JSON.stringify({...report(),status:'pending'}));
   const result=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:'record-finalize'}});
   expect(JSON.parse(result.stdout).ok).toBe(false);expect(JSON.parse(box.read('artifacts/step-results.json')).finalize.remaining).toContain('before merging');
+});
+test('INT-010 cycle gate reads the saved wait result, so comments reach fix-pr when the re-wait is skipped',()=>{
+  tools();
+  const comments={...report(),status:'comments' as const,comments:{hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'reviewer',body:'name the file in the error'}],informationalBotComments:[]}};
+  box.write('artifacts/ci/latest.json',JSON.stringify(comments));
+  const script=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const env={...process.env,ARTIFACTS_DIR:box.path('artifacts'),INPUTS_STATUS:'',INPUTS_PREVIOUS:'0',ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])};
+  const run=(op:string)=>{const r=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:op}});expect(r.status).toBe(0);return JSON.parse(r.stdout);};
+  const gate=run('ci-cycle-status');
+  expect(gate).toMatchObject({done:false,fix:true,cycle:1});expect(gate.ci_report).toContain('name the file in the error');
+  expect(run('end-ci-cycle')).toEqual({done:false,fix:true,cycle:1});
 });
 test('INT-010 wait errors for missing upstream and draft return without polling',()=>{
   const api=tools();box.git('branch','--unset-upstream');
