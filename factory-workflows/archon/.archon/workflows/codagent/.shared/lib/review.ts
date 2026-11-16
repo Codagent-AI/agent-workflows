@@ -134,7 +134,7 @@ export function renderResult(state: ReviewState): string {
   const blocked = indices.filter(({ c }) => c.blocked).map(({ c }) => `Fixer blocked: ${c.blocked}`).join('\n');
   return `# Review ${current.place}\n\n${ranges}\n\n${visible.length === 0 ? 'No findings.' : visible.map(findingDetails).join('\n\n')}\n${ignored}\n${blocked}\n`;
 }
-function handoffSection(state: ReviewState, finding: Finding): string {
+export function handoffSection(state: ReviewState, finding: Finding): string {
   const cycle = state.cycles[finding.cycle];
   if (!cycle) throw new Error(`missing cycle for ${finding.id}`);
   const place = cycle.place === 'acceptance' ? `acceptance round ${String(cycle.round)}` : 'before the pull request';
@@ -144,10 +144,10 @@ function handoffSection(state: ReviewState, finding: Finding): string {
   const accepted = finding.accepted_decline ? ' The reviewer accepted it.' : '';
   const history = finding.history.map(h => `${h.actor} ${h.action}: ${h.note}`).join('; ');
   const pending = finding.accepted_decline ? 'None, unless you disagree with the decline.' : 'Whether to fix it before accepting the change.';
-  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Is this a defect that must be fixed before the change is accepted? ${finding.problem} (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Ruling: ${ruling}${accepted}\n- Rationale: ${finding.problem}; suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n- Pending decision: ${pending}\n`;
+  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Is this a defect that must be fixed before the change is accepted? ${finding.problem} (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Step: ${place} review handoff.\n- Decision: ${ruling}${accepted}\n- Alternatives: fix or leave the finding open.\n- What breaks if wrong: ${finding.problem}\n- Rationale: ${finding.problem}; suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n- Pending decision: ${pending}\n`;
 }
-export function handoff(state: ReviewState, ledger: string): string {
-  const selected = state.findings.filter(f => !f.handed_off && f.severity !== 'low' &&
+export function handoff(state: ReviewState, ledger: string, decisions?: boolean): string {
+  const selected = state.findings.filter(f => !f.handed_off && f.severity !== 'low' && (decisions === undefined || f.accepted_decline === decisions) &&
     (f.state !== 'closed' || f.accepted_decline));
   if (selected.length === 0) return ledger;
   const sections = selected.map(f => handoffSection(state, f)).join('\n');

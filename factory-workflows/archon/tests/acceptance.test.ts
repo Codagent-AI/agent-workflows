@@ -1,3 +1,4 @@
+import { endAcceptance } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync, symlinkSync } from 'node:fs';
 
@@ -107,7 +108,7 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
       head,
       "round status is 'NOT_READY'",
       box.path('evidence/acceptance-findings.md'),
-      box.path('evidence/acceptance-assumptions.md'),
+      box.path('evidence/decision-log.md'),
       box.path('evidence/acceptance-handoff-tester.md'),
     ]) {
       expect(handoff).toContain(want);
@@ -246,4 +247,11 @@ describe('clearRetestReason', () => {
     expect(box.exists(`evidence/${ARTIFACTS.retestReason}`)).toBe(false);
     clearRetestReason(evidence);
   });
+});
+
+test('blocked acceptance records failure and a persistent stop marker for the loop',()=>{
+  const dir=box.path('evidence');endAcceptance(dir,'blocked on decision D-01');
+  expect(box.read('evidence/acceptance-stop.txt')).toContain('D-01');
+  const recorded=JSON.parse(box.read('evidence/step-results.json'));
+  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('D-01');
 });

@@ -2,15 +2,13 @@ validate-inputs: {"change_dir":"tests/data/changes/valid-change","artifact_valid
 check-forge: "forge ready"
 check-definition__validate-definition: {"ok":true,"problems":""}
 check-definition__verify-definition: {"ok":true,"problems":""}
-commit-definition__commit-definition: {"ok":true,"problems":"","message":"a spec-driven change commits its definition in its planning step"}
+commit-definition__commit-definition: {"ok":true,"problems":"","message":"definition committed"}
 commit-definition__check-clean-before-implementation: "no tracked changes"
 implementor-checklist: {"blocked":false,"reason":"","actions":[]}
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: {"ok":true,"problems":""}
 implement: {"blocked":false,"reason":"","actions":[]}
-check-implementation-not-blocked: "not blocked"
-check-evidence: {"ok":true,"problems":""}
 audit: "I-2: the fallback greeting has no test that asserts it (specs/greeting/spec.md)."
 resolve-findings: {"blocked":false,"reason":"","actions":[]}
 check-findings-not-blocked: "not blocked"
@@ -24,7 +22,6 @@ wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/ro
 acceptance-handoff: {"ready":true,"reason":""}
 acceptance-gate: {"ready":false,"fix":true,"reasons":"- the tester's round status is 'NOT_READY'"}
 check-acceptance-progress: {"progressed":false,"push":false}
-verify-assumptions-handoff: {"ok":true,"problems":""}
 verify-clean-for-pr: {"ok":true,"problems":""}
 open-draft-pr: {"blocked":false,"reason":""}
 publish-draft-pr: {"ok":true,"problems":""}
@@ -32,6 +29,23 @@ verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/g
 clear-retest-reason: "cleared"
 acceptance-fix: {"blocked":false,"reason":"","actions":[]}
 write-acceptance-status: {"ready":false,"status":"ACCEPTANCE_FAILED","message":"acceptance preparation failed"}
+save-implementor-response: "saved"
+check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
+check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
+commit-logs: {"ok":true,"problems":""}
+archive-change: {"ok":true,"problems":""}
+verify-archive-commit: {"ok":true,"problems":"","archive_state":"{\"owned_delta\":[],\"archive_dir\":\"archive\"}"}
+record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-change"}
+finalize-push: {"ok":true,"problems":""}
+mark-ready: {"ok":true,"problems":""}
+wait-finalize-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+ci-cycle-status: {"done":true,"fix":false,"cycle":1}
+final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+record-finalize: {"ok":true,"problems":""}
+prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
+rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
+check-ranking: {"ok":true,"problems":""}
+publish-review-package: {"succeeded":false}
 fixture:
   expect: completed
   authored: failed
@@ -41,7 +55,4 @@ fixture:
     - write-acceptance-status
   inputs:
     change_name: valid-change
-    changes_root: tests/data/changes
-    change_kind: spec-driven
-    artifact_validation_instruction: Validate any changed spec artifact.
     review_strategy: none

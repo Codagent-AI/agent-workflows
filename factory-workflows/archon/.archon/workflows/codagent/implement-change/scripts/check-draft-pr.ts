@@ -8,6 +8,7 @@ import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { artifactsDir, required, runCheck } from '../../.shared/lib/check.ts';
 import { sleep } from '../../.shared/lib/exec.ts';
 import { defaultTools } from '../../.shared/lib/forge.ts';
+import { readJson } from '../../.shared/lib/run-files.ts';
 import { checkDraftPr } from '../../.shared/lib/pull-request.ts';
 
 runCheck(() => {
@@ -17,7 +18,8 @@ runCheck(() => {
   if (pr !== undefined) {
     const file = join(artifactsDir(), ARTIFACTS.pullRequest);
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify(pr, null, 2)}\n`);
+    const earlier = readJson<{ opened_head_revision?: string }>(file, {});
+    writeFileSync(file, `${JSON.stringify({ ...pr, opened_head_revision: earlier.opened_head_revision ?? pr.head_revision }, null, 2)}\n`);
   }
   return { ...result, pr_url: prUrl };
 });

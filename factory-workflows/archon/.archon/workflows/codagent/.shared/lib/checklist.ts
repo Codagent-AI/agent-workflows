@@ -60,10 +60,11 @@ export interface ImplementorChecklistInput {
   start: CheckoutStart;
 }
 
-/** Commits the checklist, unless it is outside the repository. */
+/** Commits the repository-local checklist. */
 function commitChecklist(exec: Exec, list: string, changeName: string): CheckResult {
-  // Empty for a change directory outside the repository, which stays uncommitted.
-  if (!status(exec, ['--', list])) return pass();
+  const changes = status(exec, ['--', list]);
+  if (changes === undefined) return fail(`could not inspect repository-local checklist ${list}`);
+  if (!changes) return pass();
   const message = `[check-implementor-checklist] docs: add verification checklist for ${changeName}`;
   for (const args of [['add', '--', list], ['commit', '-m', message, '--', list]]) {
     const result = exec('git', args);
@@ -112,8 +113,9 @@ export function tableShapeProblems(text: string): string[] {
 export function verifyChecklist(exec: Exec, changeDir: string, planFile: string): CheckResult {
   const list = checklistPath(changeDir);
   if (!nonEmptyFile(list)) return fail(`${list} is missing or empty`);
-  // Empty for a change directory outside the repository, which stays uncommitted.
-  if (status(exec, ['--', list])) return fail(`${list} has uncommitted changes`);
+  const changes = status(exec, ['--', list]);
+  if (changes === undefined) return fail(`could not inspect repository-local checklist ${list}`);
+  if (changes) return fail(`${list} has uncommitted changes`);
   const problems = tableShapeProblems(readFileSync(list, 'utf8'));
   if (problems.length > 0) return fail(problems);
   copyFileSync(list, planFile);

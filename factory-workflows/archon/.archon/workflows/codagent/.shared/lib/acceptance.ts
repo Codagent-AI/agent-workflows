@@ -1,3 +1,4 @@
+import { readText } from './run-files.ts';
 // The acceptance rounds' evidence files and convergence gate.
 //
 // Convergence requires all of:
@@ -135,6 +136,8 @@ function readBack(evidenceDir: string, expected: Finalized['status']): void {
  */
 export function finalize(exec: Exec, evidenceDir: string, rounds: string): Finalized {
   const reasons = convergenceReasons(exec, evidenceDir);
+  const results = readText(join(evidenceDir, 'step-results.json'));
+  if (results.includes('"acceptance"')) reasons.push('Acceptance ended on a blocked fix or failed push; see step-results.json');
   const current = head(exec);
   mkdirSync(evidenceDir, { recursive: true });
   const statusFile = join(evidenceDir, ARTIFACTS.preparationStatus);
@@ -160,7 +163,7 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
     `Local HEAD: ${current ?? 'unknown'}\n`,
     `Reasons:\n\n${reasonLines}`,
     `Open findings: ${join(evidenceDir, ARTIFACTS.findings)}`,
-    `Unresolved assumptions: ${join(evidenceDir, ARTIFACTS.assumptions)}`,
+    `Unresolved assumptions: ${join(evidenceDir, ARTIFACTS.decisions)}`,
   ];
   if (nonEmptyFile(testerHandoff)) lines.push(`Tester handoff: ${testerHandoff}`);
   writeFileSync(handoff, `${lines.join('\n')}\n`);

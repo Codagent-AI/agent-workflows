@@ -1,9 +1,0 @@
-exec-code: true
-fixture:
-  expect: failed
-  fail-node: validate-inputs
-  inputs:
-    change_name: valid-change
-    changes_root: tests/data/changes
-    change_kind: spec-driven
-    review_strategy: none

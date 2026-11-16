@@ -444,3 +444,5 @@ describe('renderReport', () => {
     expect(text).toContain('### Still Running\n- slow (in_progress)');
   });
 });
+
+// Finalization uses the same forge reader, with stricter final-head and ready-state gates.

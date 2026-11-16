@@ -169,7 +169,7 @@ describe('review rendering and handoff', () => {
     applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'agreed' }]);
     currentCycle(state).blocked = 'missing access';
     const ledger = handoff(state, 'No unresolved assumptions or context gaps.\n');
-    for (const expected of ['## Review finding R1', '## Review finding R2', 'Question:', 'Requirement:', 'Ruling:',
+    for (const expected of ['## Review finding R1', '## Review finding R2', 'Question:', 'Requirement:', 'Decision:',
       'Rationale:', 'Pending decision:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
       'intentional compatibility', 'The reviewer accepted it.', 'review/before-pr.md']) expect(ledger).toContain(expected);
     expect(ledger).not.toContain('## Review finding R3');
@@ -243,7 +243,7 @@ function record(prepared: Record<string, unknown>, findings: Defect[] = [], mode
   expect(Object.keys(output).sort()).toEqual(['findings', 'settled']);
 }
 
-describe('INT-007 review scripts against real git', () => {
+describe('INT-009 review scripts against real git', () => {
   test('whole-change range excludes definition; invalid start and moved review head fail explicitly', () => {
     const start = box.head(); box.commitFix('changed\n');
     box.write('openspec/changes/demo/proposal.md', 'definition'); box.git('add', '.'); box.commit('definition');
@@ -282,7 +282,7 @@ describe('INT-007 review scripts against real git', () => {
         verdicts: [{ id: 'R1', verdict: 'contested', reason: `reviewer disagrees with ${action}` }], findings: [] } });
     }
     run('hand-off-review');
-    const ledger = read('acceptance-assumptions.md');
+    const ledger = read('dispute-log.md');
     for (const text of ['## Review finding R1', 'fixer declined because compatibility', 'fixer replied because compatibility',
       'reviewer disagrees with declined', 'reviewer disagrees with replied', 'review/before-pr.md']) expect(ledger).toContain(text);
     expect(read('review/before-pr.md')).toContain('[disputed]');
@@ -295,7 +295,7 @@ describe('INT-007 review scripts against real git', () => {
     expect(read('review/before-pr.md')).toContain('No findings.');
     expect(persisted().last_reviewed).toBe(box.head());
     const tail = prepare('tail'); expect(tail.needed).toBe(false);
-    run('hand-off-review'); expect(existsSync(join(artifacts, 'acceptance-assumptions.md'))).toBe(false);
+    run('hand-off-review'); expect(existsSync(join(artifacts, 'dispute-log.md'))).toBe(false);
   });
   test('tail covers a head moved only by an excluded definition commit', () => {
     record(prepare('initial', box.head()));
@@ -326,10 +326,10 @@ describe('INT-007 review scripts against real git', () => {
     record(tail, [defect({ title: 'Tail defect' })], 'tail');
     expect(persisted().last_reviewed).toBe(box.head());
     expect(read('review/before-pr.md')).toContain(box.head());
-    const ledger = read('acceptance-assumptions.md');
+    const ledger = read('dispute-log.md');
     expect(ledger).toContain('missing credential'); expect(ledger).toContain('Tail defect');
     expect(ledger).not.toContain('## Review finding R3');
-    run('hand-off-review'); expect(read('acceptance-assumptions.md')).toBe(ledger);
+    run('hand-off-review'); expect(read('dispute-log.md')).toBe(ledger);
   });
   test('one acceptance fixer turn hands off contested declines with both sides before any reply', () => {
     record(prepare('initial', box.head()));
@@ -348,7 +348,7 @@ describe('INT-007 review scripts against real git', () => {
     for (const finding of state.findings) {
       expect(finding.handed_off).toBe(true);
       expect(finding.history.map(entry => entry.action)).toEqual(['declined', 'contested']);
-      const ledger = read('acceptance-assumptions.md');
+      const ledger = read('dispute-log.md');
       for (const expected of [`## Review finding ${finding.id}, acceptance round 1`, finding.problem,
         finding.fix, `compatibility ${finding.id}`, `unsafe behavior ${finding.id}`, 'review/acceptance.md']) {
         expect(ledger).toContain(expected);
@@ -369,8 +369,8 @@ describe('INT-007 review scripts against real git', () => {
     const output = run('end-review-round', { end: fixed.end, blocked: false, review_name: 'round-re-review', result: {
       verdicts: [{ id: 'R1', verdict: 'confirmed', reason: 'resolved' }, { id: 'R2', verdict: 'accepted', reason: 'agreed' }], findings: [] } });
     expect(output.stop).toBe(true);
-    writeFileSync(join(artifacts, 'acceptance-assumptions.md'), 'No unresolved assumptions or context gaps.\n');
-    run('hand-off-review'); const ledger = read('acceptance-assumptions.md');
+    writeFileSync(join(artifacts, 'decision-log.md'), 'No unresolved assumptions or context gaps.\n');
+    run('hand-off-review'); const ledger = read('decision-log.md');
     expect(ledger).not.toContain('Review finding R1'); expect(ledger).toContain('Review finding R2');
     expect(ledger).toContain('compatibility'); expect(ledger).not.toContain('No unresolved assumptions');
     box.commitFix('second round\n');

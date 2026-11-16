@@ -115,7 +115,7 @@ export interface WaitOptions {
   now?: () => number;
 }
 
-const blank = (error: string): CiResult => ({
+export const blank = (error: string): CiResult => ({
   status: 'error',
   error,
   prUrl: '',

@@ -47,21 +47,24 @@ interface GraphPullRequest {
 const isBot = (author: GraphAuthor | null | undefined): boolean => author?.__typename === 'Bot';
 const loginOf = (comment: GraphComment | undefined): string => comment?.author?.login ?? '';
 
+const isRunReply = (comment: GraphComment | undefined): boolean => (comment?.body ?? '').trimEnd().endsWith('<!-- codagent-reply -->');
+
 /** A thread's comments without the finding bot's trailing acks. */
 function significantComments(comments: GraphComment[]): GraphComment[] {
   const findingAuthor = loginOf(comments[0]);
   if (!isBot(comments[0]?.author)) return comments;
   let end = comments.length;
-  while (end > 1 && isBot(comments[end - 1]?.author) && loginOf(comments[end - 1]) === findingAuthor) end -= 1;
+  while (end > 1 && isBot(comments[end - 1]?.author) && loginOf(comments[end - 1]) === findingAuthor && !isRunReply(comments[end - 1])) end -= 1;
   return comments.slice(0, end);
 }
 
 /** Whether the latest significant comment is from the PR author or from another bot. */
-function isDeferred(significant: GraphComment[], findingAuthor: string, prAuthor: string): boolean {
+function isDeferred(significant: GraphComment[], findingAuthor: string, _prAuthor: string): boolean {
   const latest = significant.at(-1);
   if (latest === undefined) return false;
+  if (isRunReply(latest)) return true;
   if (isBot(latest.author)) return significant.length > 1 && loginOf(latest) !== findingAuthor;
-  return prAuthor !== '' && loginOf(latest) === prAuthor;
+  return false;
 }
 
 function threadEntry(first: GraphComment | undefined): Thread {
@@ -94,7 +97,7 @@ export function classifyComments(pr: GraphPullRequest, prAuthorLogin = ''): PrCo
     const deferred = isDeferred(significantComments(comments), findingAuthor, prAuthor);
     (deferred ? deferredThreads : unresolvedThreads).push(threadEntry(comments[0]));
   }
-  const topLevel = (pr.comments?.nodes ?? []).filter(comment => prAuthor === '' || loginOf(comment) !== prAuthor);
+  const topLevel = (pr.comments?.nodes ?? []).filter(comment => !isRunReply(comment));
   // Only explicit Bot actors are informational, so missing author metadata cannot hide feedback.
   const issueComments = topLevel.filter(comment => !isBot(comment.author)).map(asComment);
   const informationalBotComments = topLevel.filter(comment => isBot(comment.author)).map(asComment);

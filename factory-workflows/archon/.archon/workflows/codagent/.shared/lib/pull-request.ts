@@ -111,21 +111,21 @@ export function restoreDraft(tools: Tools): CheckResult {
 }
 
 /** Pushes the current branch after an acceptance fix, without force-pushing. */
-export function acceptancePush(exec: Exec): CheckResult {
+export function acceptancePush(exec: Exec, pushed = 'acceptance fixes'): CheckResult {
   const branch = output(exec, 'git', ['branch', '--show-current']);
-  if (!branch) return fail('acceptance push: HEAD is detached; check out the change branch');
+  if (!branch) return fail(`${pushed} push: HEAD is detached; check out the change branch`);
   const changes = status(exec, ['--untracked-files=no']);
-  if (changes === undefined) return fail('acceptance push: could not inspect tracked changes');
+  if (changes === undefined) return fail(`${pushed} push: could not inspect tracked changes`);
   if (changes !== '') {
-    return fail(['acceptance push: tracked changes are uncommitted; commit them before pushing', changes]);
+    return fail([`${pushed} push: tracked changes are uncommitted; commit them before pushing`, changes]);
   }
   const remote = output(exec, 'git', ['config', `branch.${branch}.remote`]) ?? '';
   const mergeRef = output(exec, 'git', ['config', `branch.${branch}.merge`]) ?? '';
   const args =
     remote && mergeRef ? ['push', remote, `HEAD:${mergeRef}`] : ['push', '--set-upstream', 'origin', branch];
-  const pushed = exec('git', args);
-  if (pushed.status !== 0) {
-    return fail([`acceptance push: git ${args.join(' ')} failed:`, pushed.stdout.trim(), pushed.stderr.trim()]);
+  const response = exec('git', args);
+  if (response.status !== 0) {
+    return fail([`${pushed} push: git ${args.join(' ')} failed:`, response.stdout.trim(), response.stderr.trim()]);
   }
   return pass();
 }
@@ -219,4 +219,14 @@ export function publishDraftPr(tools: Tools, description: Description): CheckRes
   return found.value.view === null
     ? createDraft(tools, found.value, description)
     : updateDraft(tools, found.value, found.value.view, block);
+}
+
+/** Finalize changes only draft state, never merging the pull request. */
+export function markReady(tools: Tools): CheckResult {
+  const found = lookupPr(tools);
+  if (!found.ok) return fail(found.problem);
+  const { view, repo } = found.value;
+  if (!view) return fail('no open pull request to mark ready');
+  const ready = tools.forge.call(OPS.ready, { ref: { repo, number: view.pr.number } });
+  return ready.ok ? pass() : fail(ready.problem);
 }

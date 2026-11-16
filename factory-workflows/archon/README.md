@@ -1,15 +1,15 @@
 # Codagent workflows for Archon
 
-The `codagent` workflow pack for the [Archon](https://github.com/coleam00/Archon) engine. It takes an approved change definition, has agents implement it against a checklist of how each spec behavior is verified, audits the result, opens a draft pull request, and runs acceptance-test rounds until the change is ready for a human to accept.
+The `codagent` workflow pack for the [Archon](https://github.com/coleam00/Archon) engine. It takes an approved change definition, has agents implement it against a checklist of how each spec behavior is verified, audits the result, opens a draft pull request, runs acceptance rounds, archives the OpenSpec change, marks the pull request ready, fixes CI and comments, and publishes the evidence for human review. A run never merges.
 
 This folder is the workflow source Archon reads: pass it to `--workflow-source`. `PROVENANCE.md` says where the workflows came from and how they differ from their source.
 
 ## Workflows
 
-- `codagent-implement-change`, the entry point. It validates and commits the definition, implements against a checklist, audits the work, checks assumptions, reviews the code, checks the worktree, opens a draft pull request and runs acceptance rounds. The implementor fixes review findings in its own session and handles acceptance fixes; the independent tester and CI check each round.
+- `codagent-implement-change`, the entry point. It validates and commits the definition, implements against a checklist, checks completion, audits the work, reviews the code, checks the worktree, opens a draft pull request and runs acceptance rounds, then commits the logs, archives, finalizes and publishes the review package. The implementor fixes review findings in its own session and handles acceptance fixes; the independent tester and CI check each round.
 - `codagent-check-definition` and `codagent-commit-definition`, building blocks that `codagent-implement-change` includes.
 
-The implementor's steps, from its checklist to the acceptance fixes, continue one session, so each reads the provider's prompt cache instead of paying for the session again. That needs the Codagent-AI Archon fork, where `context: { resume: <node> }` continues a session in place; upstream Archon forks it. Those steps share one output schema, because a step whose schema differs from the step before it misses the cache. The pull request description is written in a fresh session.
+The implementor's steps, from its checklist through archive and finalize repairs, continue one session, so each reads the provider's prompt cache instead of paying for the session again. That needs the Codagent-AI Archon fork, where `context: { resume: <node> }` continues a session in place; upstream Archon forks it. Those steps share one output schema, because a step whose schema differs from the step before it misses the cache. The pull request description is written in a fresh session.
 
 ## Layout
 
@@ -34,7 +34,7 @@ Every check is a TypeScript script node run by bun. Agents read the two `.shared
 
 ## Running
 
-Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `git` with push access to the target repository, the Archon forge plugin for its host (see [The forge](#the-forge)), and the `openspec` CLI for an OpenSpec change (tested with OpenSpec 1.17.0).
+Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `git` with push access to the target repository, the Archon forge plugin for its host (see [The forge](#the-forge)), and the `openspec` CLI (tested with OpenSpec 1.17.0).
 
 ```sh
 archon workflow run codagent-implement-change \
@@ -45,35 +45,31 @@ archon workflow run codagent-implement-change \
 
 With `--no-worktree` the run works on the target checkout's current branch, which becomes the pull request's branch.
 
-`change_name` is the only input a launch must give. Everything else is a pack setting, declared in `.archon/workflows/codagent/.pack/pack.yaml`, with defaults for an OpenSpec repository. The change's folder is derived: `<changes_root>/<change_name>`, which is `openspec/changes/<name>` by default.
+`change_name` is the only input a launch must give. Everything else is a pack setting, declared in `.archon/workflows/codagent/.pack/pack.yaml`, with defaults for an OpenSpec repository. The change's folder is derived: always `openspec/changes/<name>` inside the repository.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `change_kind` | `openspec` | `openspec` (also checked with `openspec validate`, and committed by the workflow) or `spec-driven` (whose definition must already be committed). |
-| `changes_root` | `openspec/changes` | The folder that holds the changes. An `openspec` change must use the default. |
-| `change_label` | `OpenSpec change` | Human label for the change kind, used in the agents' prompts. |
-| `artifact_validation_instruction` | empty | One sentence telling agents how to validate a changed artifact. Empty means the `openspec validate` sentence naming the change for `openspec`; a `spec-driven` change must set it. |
 | `review_strategy` | `builtin` | `builtin` reviews before the draft and after each acceptance fix; `none` disables all review. |
 | `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
 | `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the implementor resolves in each acceptance fix. |
 
-A project that is not the default sets its values in `.archon/packs/codagent.yaml` in the target checkout, under `settings:` only:
+A project overrides defaults in `.archon/packs/codagent.yaml` under `settings:`:
 
 ```yaml
 settings:
-  change_kind: spec-driven
-  changes_root: specs/changes
-  change_label: spec-driven change
-  artifact_validation_instruction: Validate a changed spec with the spec linter.
+  acceptance_rounds: 5
+  review_strategy: builtin
 ```
 
-Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`change_kind` must be `openspec` or `spec-driven`), refuses the run before any node runs.
+Only OpenSpec changes are supported. Remove `change_kind`, `changes_root`, `change_label` and `artifact_validation_instruction` from existing project settings: Archon refuses these undeclared keys at launch. Agents receive the OpenSpec validation sentence derived from the change name.
+
+Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`review_strategy` must be `builtin` or `none`), refuses the run before any node runs.
 
 `codagent-verify-change` has been removed. Launch `codagent-implement-change` instead and drop `skip_implementation_review` and `stop_unchanged_acceptance`. An unchanged acceptance fix with no retest reason always ends the rounds. Existing `@lead` bindings are unused; bind `@reviewer`, or it falls back to `medium`. Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
 
 ### The forge
 
-Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create` and `pr.draft` (the draft state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews` and `pr.merge-state`. The one read left on `gh` is the pull request's review threads and conversation comments, a single GraphQL query. No script writes with `gh`, and no agent prompt tells an agent to write to the pull request. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
+Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create`, `pr.draft` and `pr.ready` (the draft/ready state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews` and `pr.merge-state`. The one read left on `gh` is the pull request's review threads and conversation comments, a single GraphQL query. Scripts own pull request state and description. The finalize fixer uses `gh api` to reply to comments and resolve fixed threads; replies end with `<!-- codagent-reply -->`. Human comments count even from the pull request author; marked run replies do not. Unfixed top-level human comments remain actionable. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
 
 The first node after `validate-inputs`, `check-forge`, runs `archon forge check` for the host of the branch's remote with exactly those operations, so a missing plugin or credential refuses the run before any agent spends. It makes no call to the forge itself.
 
@@ -84,12 +80,11 @@ The comments and threads read stays on `gh` because the forge's actor record has
 
 ### Roles
 
-Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@crosscheck', large]`, `['@tester', medium]`, and `['@reviewer', medium]`. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
+Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@tester', medium]`, and `['@reviewer', medium]` (the inspection audit uses reviewer with `large`). Existing `@crosscheck` bindings are unused. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
 
 ```yaml
 aliases:
   '@reviewer': { provider: claude, model: <model>, effort: high }
-  '@crosscheck': { provider: codex, model: <model>, effort: high }
   '@implementor': { provider: codex, model: <model>, effort: medium }
   '@tester': { provider: codex, model: <model>, effort: medium }
 ```
@@ -103,11 +98,17 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | File | Written by | Purpose |
 | --- | --- | --- |
 | `implementation-blocked.md` | any implementor step | The question only a human can answer. Its existence fails the next check. |
-| `acceptance-assumptions.md` | every agent | Rulings an agent made on questions a human might have decided. |
-| `implementor-decisions.md` | implementor | Ordinary decisions that could change behavior, scope or integration. |
+| `decision-log.md`, `dispute-log.md` | agents and handoff scripts | Consequential decisions and unfixed disagreements. Numbered and committed in the change folder after acceptance; later entries go to those committed copies. Empty logs are valid. |
+| `implementation-complete.md` | implementor | Completed work and the location of its verification evidence. |
+| `completion-problems.txt`, `completion-check.json`, `completion-verdict.json`, `completion-loop.jsonl`, `completion-state.json` | completion scripts | Independent completion checks, retained judgments and bounded-loop counters. |
+| `continue-snapshot.json`, `implementation-remaining.md`, `implementor-response.md` | completion scripts | Progress comparison and judge/implementor handoff. |
+| `archive/state.json`, `archive/before.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
+| `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
+| `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
+| `review-attention.json`, `review-package.md` | package scripts | Checked ranking and published review package. |
 | `evidence/` | implementor | Saved output each checklist row's evidence names. |
 | `planned-checklist.md`, `evidence-problems.txt` | scripts | The planned checklist, and the evidence check's problem list. |
-| `nodes/audit.md` | Archon | The crosscheck's findings. |
+| `nodes/audit.md` | Archon | The reviewer's inspection audit findings. |
 | `session-report.md` | implementor | The implementor's session report, which the acceptance tester reads. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
 | `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
@@ -130,7 +131,19 @@ A failed check goes to one agent repair, then the same check runs again in stric
 
 The builtin reviewer inspects changed code for quality, security and error-handling defects, excluding the change definition. It does not repeat the definition audit or review style. It starts fresh per cycle and keeps its session for re-reviews. Before the draft, up to three fixer/re-review rounds run. Each continuing acceptance fix gets one round before push. The implementor may commit a fix, decline with a reason, or reply to a contest. The reviewer confirms/rejects fixes and accepts/contests declines. A second disagreement becomes disputed.
 
-Findings never gate the run. Unfixed high/medium findings and accepted high/medium declines go to `acceptance-assumptions.md` with both sides; low findings remain in review results. A review that cannot produce valid structured output fails the run. A commit after the initial cycle receives a fresh tail review without fix rounds before the draft opens at the reviewed head. Review fixes rerun affected checklist checks or mark them not verified; no extra evidence gate follows them.
+Findings never gate the run. Unfixed high/medium findings go to `dispute-log.md` with both sides; accepted high/medium declines go to `decision-log.md` with the fix reason; low findings remain in review results. A review that cannot produce valid structured output fails the run. A commit after the initial cycle receives a fresh tail review without fix rounds before the draft opens at the reviewed head. Review fixes rerun affected checklist checks or mark them not verified; no extra evidence gate follows them.
+
+### Finishing a change
+
+Before the audit, a fresh tester judges incomplete implementation records. At most three continue passes and two consecutive record fixes are allowed; a stalled pass fails. The post-audit evidence repairs remain limited to two.
+
+After acceptance ends, the logs are committed and OpenSpec validates and archives the change, even if acceptance failed. Delta repair and archive-commit repair each run once. Archive commits preserve unrelated staged and unstaged work. A failed log commit is carried by the archive; archive failure retains files and still proceeds to finalize.
+
+Finalize pushes without force, marks the PR ready, and runs up to three CI/fix cycles, each with a 15-minute wait. A final check reuses a settled report for the same head or waits again. Every check must pass (or no CI be configured), with no blocking review, conflict or actionable comment. Wait errors get one code-free repair. Fixes remain within approved scope.
+
+A fresh reviewer ranks evidence, decisions and disputes. The script enforces red failed/unverified rows and failed steps, and at least orange non-PR disputes and later code commits. One ranking repair precedes deterministic placement. Review first lists the run's state, all red items and up to five orange items; remaining items, evidence and both logs are collapsed below the summary. Human text outside generated-body markers survives.
+
+A run completes with outcome succeeded only when acceptance, archive and finalize pass and the package is published. A published package with any of those failures means needs attention and outcome failed. Pre-PR blockers, exhausted ordinary checks or inability to publish the package fail the run. Blocked acceptance fixes and exhausted acceptance-push repairs end the rounds and proceed to the package; other earlier exhausted checks remain fatal. Only a person merges. Because archive precedes human review, requested changes afterwards edit the main OpenSpec specs.
 
 ## Tests
 

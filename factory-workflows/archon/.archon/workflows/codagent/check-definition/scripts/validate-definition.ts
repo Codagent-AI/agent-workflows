@@ -8,6 +8,5 @@ runCheck(() =>
   validatePlanningArtifacts(runCommand, {
     changeName: required(process.env.INPUTS_CHANGE_NAME, 'change_name'),
     changeDir: required(process.env.INPUTS_CHANGE_DIR, 'change_dir'),
-    changeKind: required(process.env.INPUTS_CHANGE_KIND, 'change_kind'),
   })
 );

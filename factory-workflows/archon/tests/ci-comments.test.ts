@@ -36,14 +36,14 @@ describe('classifyComments', () => {
     expect(result).toMatchObject({ hasComments: false, unresolvedThreads: [], deferredThreads: [] });
   });
 
-  test('the pull request author own comment is dropped', () => {
+  test('the pull request author own comment counts', () => {
     const result = classifyComments(pr({ comments: [{ author: user('pr-author'), body: 'Context from the author' }] }), 'pr-author');
-    expect(result).toMatchObject({ hasComments: false, issueComments: [], informationalBotComments: [] });
+    expect(result).toMatchObject({ hasComments: true, issueComments: [{ author: 'pr-author', body: 'Context from the author' }], informationalBotComments: [] });
   });
 
   test('the author is read from the pull request when not given', () => {
     const result = classifyComments(pr({ comments: [{ author: user('pr-author'), body: 'Context' }] }));
-    expect(result.issueComments).toEqual([]);
+    expect(result.issueComments).toEqual([{ author: 'pr-author', body: 'Context' }]);
   });
 
   test('a comment with a missing author is a human comment from unknown', () => {
@@ -56,11 +56,11 @@ describe('classifyComments', () => {
   const deferralByAuthor = inline(user('pr-author'), 'Out of scope — leaving unresolved.');
   const ack = inline(bot('coderabbitai[bot]'), 'Acknowledged.');
 
-  test('an author deferral followed by a bot ack defers the thread', () => {
+  test('an unmarked author reply followed by bot ack remains actionable', () => {
     const result = classifyComments(pr({ threads: [{ isResolved: false, comments: [finding, deferralByAuthor, ack] }] }), 'pr-author');
-    expect(result.hasComments).toBe(false);
-    expect(result.unresolvedThreads).toEqual([]);
-    expect(result.deferredThreads).toEqual([{ file: 'openspec/foo.md', line: 3, author: 'coderabbitai[bot]', body: 'Unused export' }]);
+    expect(result.hasComments).toBe(true);
+    expect(result.unresolvedThreads).toHaveLength(1);
+    expect(result.deferredThreads).toEqual([]);
   });
 
   test('a later human reviewer reply keeps the thread unresolved', () => {
@@ -105,4 +105,16 @@ describe('classifyComments', () => {
       informationalBotComments: [],
     });
   });
+});
+
+test('INT-013 marked replies are excluded and latest marked thread replies defer', () => {
+  const marked = { author: user('pr-author'), body: 'Leaving this for review.\n<!-- codagent-reply -->' };
+  const result = classifyComments(pr({ comments: [marked], threads: [{ isResolved: false, comments: [inline(user('reviewer'), 'fix'), marked] }] }));
+  expect(result.issueComments).toEqual([]); expect(result.deferredThreads).toHaveLength(1); expect(result.hasComments).toBe(false);
+});
+
+test('INT-013 marked bot replies defer even when bot identity equals the finding author', () => {
+  const actor=bot('run-bot');
+  const result=classifyComments(pr({threads:[{isResolved:false,comments:[inline(actor,'finding'),inline(actor,'reply\n<!-- codagent-reply -->')]}]}));
+  expect(result.deferredThreads).toHaveLength(1);expect(result.hasComments).toBe(false);
 });

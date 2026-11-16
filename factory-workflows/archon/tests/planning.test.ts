@@ -33,7 +33,6 @@ const validate = (input: Partial<PlanningInput> = {}) =>
   validatePlanningArtifacts(box.exec, {
     changeName: 'demo',
     changeDir: 'openspec/changes/demo',
-    changeKind: 'openspec',
     ...input,
   });
 
@@ -95,50 +94,12 @@ describe('validatePlanningArtifacts input checks', () => {
     expect(box.calls('openspec')).toEqual([]);
   });
 
-  test('rejects an unsupported change kind', () => {
-    expect(validate({ changeKind: 'markdown' }).problems).toContain('unsupported change_kind: markdown');
-  });
-
   test('rejects an empty change dir', () => {
-    expect(validate({ changeDir: '', changeKind: 'spec-driven' }).problems).toContain('change_dir must not be empty');
+    expect(validate({ changeDir: '' }).problems).toContain('change_dir must not be empty');
   });
 });
 
-describe('validatePlanningArtifacts spec-driven kind', () => {
-  const dir = 'changes/demo';
-  const write = (spec: string): void => {
-    box.write(`${dir}/proposal.md`, '# Proposal\n');
-    box.write(`${dir}/design.md`, '# Design\n');
-    box.write(`${dir}/test-plan.md`, TEST_PLAN);
-    box.write(`${dir}/specs/widgets/spec.md`, spec);
-  };
-  const run = () => validate({ changeDir: dir, changeKind: 'spec-driven' });
-
-  test('a complete spec passes without running openspec', () => {
-    write(OPENSPEC_SPEC);
-    expect(run().ok).toBe(true);
-    expect(box.calls('openspec')).toEqual([]);
-  });
-
-  test('a spec without a requirement heading fails', () => {
-    write('# Widgets\n\nNothing here.\n');
-    expect(run().problems).toContain("contains no '### Requirement:' heading");
-  });
-
-  test('a requirement without SHALL or MUST fails', () => {
-    write('### Requirement: Widget\nThe system works.\n#### Scenario: Works\n- **WHEN** used\n- **THEN** it works\n');
-    expect(run().problems).toContain("requirement 'Widget' lacks SHALL or MUST language");
-  });
-
-  test('a requirement without a scenario fails', () => {
-    write('### Requirement: Widget\nThe system MUST work.\n');
-    expect(run().problems).toContain("requirement 'Widget' has no '#### Scenario:'");
-  });
-
-  test('a scenario without WHEN or THEN fails', () => {
-    write('### Requirement: Widget\nThe system MUST work.\n#### Scenario: Works\n- it works\n');
-    const result = run();
-    expect(result.problems).toContain("scenario 'Works' lacks WHEN behavior");
-    expect(result.problems).toContain("scenario 'Works' lacks THEN behavior");
-  });
+test.each(['proposal.md','design.md','test-plan.md'])('empty required definition artifact %s fails',file=>{
+  writeOpenSpecChange();box.write(`openspec/changes/demo/${file}`,'');
+  const result=validate();expect(result.ok).toBe(false);expect(result.problems).toContain(`missing or empty openspec/changes/demo/${file}`);
 });
