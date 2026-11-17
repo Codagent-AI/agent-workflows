@@ -19,6 +19,19 @@
         "planning"
       ],
       "repository": "https://github.com/Codagent-AI/agent-workflows"
+    },
+    {
+      "name": "codagent-archon",
+      "source": "./human-workflows/archon/plugin",
+      "description": "Run the Codagent pack's Archon workflows from your own session: implement an approved OpenSpec change with Archon and follow the run to the end.",
+      "license": "MIT",
+      "keywords": [
+        "archon",
+        "openspec",
+        "workflow",
+        "implementation"
+      ],
+      "repository": "https://github.com/Codagent-AI/agent-workflows"
     }
   ]
 }

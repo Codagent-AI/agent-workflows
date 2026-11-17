@@ -1,0 +1,18 @@
+{
+  "name": "codagent-archon",
+  "version": "0.1.0",
+  "description": "Run the Codagent pack's Archon workflows from your own session: implement an approved OpenSpec change with Archon and follow the run to the end.",
+  "author": {
+    "name": "Codagent-AI",
+    "url": "https://github.com/Codagent-AI"
+  },
+  "homepage": "https://github.com/Codagent-AI/agent-workflows/tree/main/human-workflows/archon",
+  "repository": "https://github.com/Codagent-AI/agent-workflows",
+  "license": "MIT",
+  "keywords": [
+    "archon",
+    "openspec",
+    "workflow",
+    "implementation"
+  ]
+}

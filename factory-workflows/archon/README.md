@@ -32,6 +32,12 @@ package.json, biome.json, .jscpd.json, tsconfig.json  lint tools for development
 
 Every check is a TypeScript script node run by bun. Agents read the two `.shared/*.md` documents through `$PACK_DIR`.
 
+## Setup
+
+1. Install Archon, then run `archon setup`. It sets up the providers your role bindings name, with their logins, and offers to install Archon's skill in a project.
+2. Install Archon's `archon-cli` skill in each repository you run the pack against. The pack's workflows don't use it, but it lets your coding agent launch, watch, answer and resume their runs. `archon skill add /path/to/target` installs it for Claude Code (`.claude/skills/`) and Codex (`.agents/skills/`); `archon setup` does the same for the one project you name. It is a copy of the skill your Archon ships, so run `archon skill add` again after you update Archon.
+3. To run the pack from your coding agent's session, install the `codagent-archon` plugin, which launches a run, follows it and brings you its questions. See [its README](../../human-workflows/archon/README.md).
+
 ## Running
 
 Requirements: Archon with `--workflow-source` and `$PACK_DIR`, the providers your role bindings name, logged in, `git` with push access to the target repository, the Archon forge plugin for its host (see [The forge](#the-forge)), and the `openspec` CLI (tested with OpenSpec 1.17.0).
