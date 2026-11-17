@@ -1,5 +1,7 @@
-# The pack's dry-run fixtures are test stubs. Skipping them keeps large pack changes
-# under CodeRabbit's 100-file review limit.
+# The pack's dry-run fixtures are test stubs, and archived OpenSpec changes are documents
+# moved out of openspec/changes. Skipping both keeps large pack changes under CodeRabbit's
+# 100-file review limit.
 reviews:
   path_filters:
     - "!factory-workflows/archon/.archon/workflows/codagent/*/fixtures/**"
+    - "!openspec/changes/archive/**"
