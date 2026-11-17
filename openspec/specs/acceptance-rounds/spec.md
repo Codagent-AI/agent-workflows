@@ -1,7 +1,7 @@
 # acceptance-rounds Specification
 
 ## Purpose
-Defines how the `codagent-verify-change` workflow prepares an implemented change for human acceptance: it reviews assumptions, opens a draft pull request, and runs bounded rounds of independent testing, CI and fixes until the change converges or the rounds run out.
+Defines how the `codagent-implement-change` workflow tests an implemented change after opening its draft pull request: bounded rounds of independent testing, CI and fixes until the change converges or the rounds run out, then one recheck of the checklist rows still not verified.
 
 ## Requirements
 
@@ -81,11 +81,19 @@ The workflow SHALL wait for CI only when the tester reports `ready: true`.
 - **THEN** the workflow waits for CI, writes `ci/round-<n>.md`, and passes its status and path to the tester's handoff
 
 ### Requirement: The tester writes the handoff after the CI wait
-The workflow SHALL have the same tester session write the handoff after the wait.
+The workflow SHALL have the same tester session write the handoff after the wait. When the round is not ready and is not the last, the handoff SHALL hold only the head, why the round is not ready, and the paths of the findings and the exploration log, because a fix and another round follow and only the last round's handoff reaches the person.
 
 #### Scenario: Handoff resumes the tester
 - **WHEN** the CI wait ended or was skipped
-- **THEN** the tester session that explored the change resumes and receives the CI status, the report path and the reason
+- **THEN** the tester session that explored the change resumes and receives the CI status, the report path, the reason and whether the round is the last
+
+#### Scenario: Round before the last is not ready
+- **WHEN** the tester finds the round not ready and another round may follow
+- **THEN** it writes the short handoff and the round status
+
+#### Scenario: Ready or last round
+- **WHEN** the round is ready, or it is the last round
+- **THEN** the tester writes the full handoff
 
 ### Requirement: Convergence needs one revision, tested and ready
 The gate SHALL report ready only when all of the following hold at the current `HEAD`: the round status ends with `READY <HEAD>`, the tested revision is `<HEAD>`, the exploration log and the handoff are not empty, and no tracked file has uncommitted changes.
@@ -139,23 +147,23 @@ The workflow SHALL fail a push when tracked changes are uncommitted or `HEAD` is
 - **WHEN** `HEAD` is detached
 - **THEN** the push step fails asking for the change branch
 
-### Requirement: The run declares whether acceptance converged
-At the end, the workflow SHALL write `acceptance-preparation-status.txt` as `ACCEPTANCE_COMPLETE` or `ACCEPTANCE_FAILED`, read it back, and declare `ready` as the run's outcome.
+### Requirement: The rounds record whether acceptance converged
+When the rounds end, the workflow SHALL write `acceptance-preparation-status.txt` as `ACCEPTANCE_COMPLETE` or `ACCEPTANCE_FAILED`, read it back as `ready`, and go on to the archive whether or not acceptance converged.
 
 #### Scenario: Converged
 - **WHEN** the gate conditions hold at the end
-- **THEN** the status is `ACCEPTANCE_COMPLETE` and `ready` is true
+- **THEN** the status is `ACCEPTANCE_COMPLETE`, `ready` is true, and the archive runs
 
 #### Scenario: Did not converge
 - **WHEN** the conditions do not hold when the rounds end
-- **THEN** the status is `ACCEPTANCE_FAILED`, `ready` is false, and the run still completes so the handoff reaches a human
+- **THEN** the status is `ACCEPTANCE_FAILED`, `ready` is false, the archive and finalize still run, and the review package lists the failed acceptance as a red item
 
 ### Requirement: A short handoff is written when acceptance did not converge
-When acceptance did not converge, the workflow SHALL write a short `acceptance-handoff.md` naming the reasons, the head, the findings and the ledger.
+When acceptance did not converge, the workflow SHALL write a short `acceptance-handoff.md` naming the reasons, the head, the findings and the decision log.
 
 #### Scenario: Short handoff content
 - **WHEN** acceptance did not converge
-- **THEN** the handoff names the rounds, the local head, each reason, and the paths of the findings and the assumptions ledger
+- **THEN** the handoff names the rounds, the local head, each reason, and the paths of the findings and the run's `decision-log.md`
 
 ### Requirement: The tester's own handoff is kept
 When acceptance did not converge, the workflow SHALL keep the tester's own handoff.
@@ -182,17 +190,6 @@ In each round with a fix that does not end the rounds, the workflow SHALL run th
 #### Scenario: Last round
 - **WHEN** a round ends at the gate with no fix
 - **THEN** no review runs in that round
-
-### Requirement: The assumptions ledger exists before the pull request
-The workflow SHALL fail unless `acceptance-assumptions.md` exists and is not empty.
-
-#### Scenario: Ledger is missing
-- **WHEN** the ledger is missing or empty
-- **THEN** the handoff check names the file, one implementor repair runs, continuing the session report's session, and a second failure fails the run
-
-#### Scenario: Ledger present
-- **WHEN** an earlier step wrote the ledger
-- **THEN** the handoff check passes
 
 ### Requirement: The implementor fixes a round that did not converge
 When a round is not ready and not the last, the implementor SHALL fix the findings. The first round's fix SHALL continue the implementor's session from the pull request step, and each later round's fix SHALL continue the earlier fix's session.
@@ -227,3 +224,22 @@ The workflow SHALL end the rounds after a fix that left the tested revision as i
 #### Scenario: Worktree cannot be inspected
 - **WHEN** git fails while the workflow decides progress
 - **THEN** the step fails instead of counting the fix as progress
+
+### Requirement: Rows still not verified are rechecked after the rounds
+After the acceptance rounds end, before the run stops after acceptance or commits the logs, the workflow SHALL list the checklist rows still marked not verified. When there are any, the implementor SHALL rerun the checks those rows name, integration and end-to-end tests included, with a 10-minute limit per command, mark each row verified, failed or not verified with its reason, and commit only the checklist.
+
+#### Scenario: Rows are still not verified
+- **WHEN** checklist rows are marked not verified when the rounds end
+- **THEN** the implementor reruns their checks, saves the output as evidence and commits the updated checklist
+
+#### Scenario: Every row is settled
+- **WHEN** no checklist row is marked not verified when the rounds end
+- **THEN** no recheck runs
+
+#### Scenario: A rerun check fails
+- **WHEN** a rerun check fails
+- **THEN** its row is marked failed, no other file changes, and the row becomes a red item
+
+#### Scenario: Run stops after acceptance
+- **WHEN** `stop_after` is `acceptance` and the recheck committed the checklist
+- **THEN** the workflow pushes the branch, and a push that fails is recorded as an acceptance failure, so the run's outcome is failed
