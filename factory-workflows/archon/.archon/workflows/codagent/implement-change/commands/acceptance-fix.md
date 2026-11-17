@@ -10,4 +10,4 @@ Do not name a scope for the next round. The tester diffs against its recorded te
 
 
 
-If a finding needs a decision only a human can make, record it in `decision-log.md` and fix what you safely can.
+If a finding needs a decision only a human can make, record it in `decision-log.md` and fix what you safely can. That is not a blocked step, and in this step it replaces the session's blocked rule: do not write `implementation-blocked.md`. Set `blocked` to true only when you could not commit your changes, and give the reason.

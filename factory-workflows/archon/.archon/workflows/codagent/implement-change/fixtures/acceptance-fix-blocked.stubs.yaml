@@ -26,7 +26,7 @@ open-draft-pr: {"blocked":false,"reason":""}
 publish-draft-pr: {"ok":true,"problems":""}
 verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 clear-retest-reason: "cleared"
-acceptance-fix: {"blocked":true,"reason":"Only the product owner can choose the fallback greeting.","actions":[]}
+acceptance-fix: {"blocked":true,"reason":"Could not commit the fix: the pre-commit hook needs a credential.","actions":[]}
 exec-code: true
 save-implementor-response: "saved"
 check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
