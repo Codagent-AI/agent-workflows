@@ -6,7 +6,7 @@ Defines the review package the `codagent-implement-change` workflow writes into 
 ## Requirements
 
 ### Requirement: Every run whose acceptance rounds end writes a review package into its pull request
-At the end of every run whose acceptance rounds end, converged or not, whatever failed before, the workflow SHALL write a review package into the pull request. The package SHALL surface what went wrong or needs the person's call, and collapse or leave out what went right.
+At the end of every run whose acceptance rounds end, converged or not, whatever failed before, the workflow SHALL write a review package into the pull request, unless `stop_after` is `acceptance`. The package SHALL surface what went wrong or needs the person's call, and collapse or leave out what went right.
 
 #### Scenario: Run ends after a failed step
 - **WHEN** acceptance, the archive or finalize failed
