@@ -112,7 +112,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `nodes/audit.md` | Archon | The reviewer's inspection audit findings. |
 | `session-report.md` | implementor | The implementor's session report, which the acceptance tester reads. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
-| `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. |
+| `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. A round that is not ready and not the last writes a short handoff. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
 | `acceptance-retest-reason.txt` | implementor | Why a fix that changed nothing still needs a retest. |
 | `pr-title.txt` | open-draft-pr | The pull request title, used only when the pull request does not exist yet. |
@@ -126,13 +126,13 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 
 A failed check goes to one agent repair, then the same check runs again in strict mode and fails the run if the problem remains. A repair that cannot proceed without a human returns `blocked`, and the run fails with `REPAIR_BLOCKED: <reason>`. The evidence checks allow two repairs and the definition check three, each repair followed by a recheck in a loop that fails the run when its repairs run out.
 
-`acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head.
+`acceptance_rounds` is at most 10, because a loop's iteration ceiling must be a literal; the inputs check rejects a larger value. Each round waits up to 15 minutes for CI on the pull request's current head, and 3 minutes when no check appears.
 
 ### Code review
 
 The builtin reviewer inspects changed code for quality, security and error-handling defects, excluding the change definition. It does not repeat the definition audit or review style. It starts fresh per cycle and keeps its session for re-reviews. Before the draft, up to three fixer/re-review rounds run. Each continuing acceptance fix gets one round before push. The implementor may commit a fix, decline with a reason, or reply to a contest. The reviewer confirms/rejects fixes and accepts/contests declines. A second disagreement becomes disputed.
 
-Findings never gate the run. Unfixed high/medium findings go to `dispute-log.md` with both sides; accepted high/medium declines go to `decision-log.md` with the fix reason; low findings remain in review results. A review that cannot produce valid structured output fails the run. A commit after the initial cycle receives a fresh tail review without fix rounds before the draft opens at the reviewed head. Review fixes rerun affected checklist checks or mark them not verified; no extra evidence gate follows them.
+Findings never gate the run. Unfixed high/medium findings go to `dispute-log.md` with both sides; accepted high/medium declines go to `decision-log.md` with the fix reason; low findings remain in review results. A review that cannot produce valid structured output fails the run. A commit after the initial cycle receives a fresh tail review without fix rounds before the draft opens at the reviewed head. Review fixes rerun affected checklist checks or mark them not verified; no extra evidence gate follows them. When the acceptance rounds end, the implementor reruns the checks of the rows still not verified, once, and commits the checklist.
 
 ### Finishing a change
 

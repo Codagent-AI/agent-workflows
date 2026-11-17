@@ -16,11 +16,15 @@ The pull request SHALL stay a draft through the acceptance rounds, and finalize 
 - **THEN** finalize fails, and the run goes on to write the review package
 
 ### Requirement: The review package rewrites the generated description
-At the end of the run, the workflow SHALL rewrite the generated block of the pull request description with "Review first" on top, the implementor's change summary below it, and the collapsed sections after the summary.
+At the end of the run, the workflow SHALL rewrite the generated block of the pull request description with "Review first" on top, the implementor's change summary below it, and the collapsed sections after the summary. The change summary SHALL describe the change and its commits and SHALL NOT report test or validation results, which later steps make stale.
 
 #### Scenario: Package is written
 - **WHEN** the review package is written
 - **THEN** the generated block holds "Review first", then the change summary, then the collapsed sections
+
+#### Scenario: Summary leaves out test results
+- **WHEN** the implementor writes the change summary for the draft pull request
+- **THEN** the summary describes the change and its commits, and the test results appear only in the package's testing evidence
 
 #### Scenario: Person added text
 - **WHEN** the description has text outside the generated-body markers
@@ -50,3 +54,14 @@ The wait SHALL count unresolved threads and human conversation comments as actio
 #### Scenario: Bot comment
 - **WHEN** a top-level comment is from an author whose type is `Bot`
 - **THEN** it is listed as informational and does not count as feedback
+
+### Requirement: The CI wait is bounded
+The wait SHALL poll the pull request's checks, reviews and merge state every 30 seconds for up to 15 minutes. When no check has appeared 3 minutes into the wait, the branch SHALL be treated as having no CI.
+
+#### Scenario: No checks exist
+- **WHEN** no check has appeared 3 minutes into the wait and the merge state is known
+- **THEN** polling ends, the wait reports its result as it would at the deadline, and the report says no CI checks appeared and that a check registering later is not covered
+
+#### Scenario: Deadline passes
+- **WHEN** checks are still pending after 15 minutes
+- **THEN** polling ends and the status is `pending`

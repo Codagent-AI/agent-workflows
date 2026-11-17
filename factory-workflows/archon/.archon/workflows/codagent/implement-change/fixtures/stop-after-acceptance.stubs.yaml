@@ -29,6 +29,9 @@ open-draft-pr: {"blocked":false,"reason":""}
 publish-draft-pr: {"ok":true,"problems":""}
 verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
+list-unverified: {"rows":"I-2"}
+recheck-unverified: {"blocked":false,"reason":"","actions":[]}
+push-recheck: {"ok":true,"problems":""}
 save-implementor-response: "saved"
 check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
 check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
@@ -46,6 +49,8 @@ fixture:
     - acceptance-test
     - acceptance-gate
     - write-acceptance-status
+    - recheck-unverified
+    - push-recheck
     - end-after-acceptance
     - publish-review-package
   resolved-text-contains:
@@ -53,6 +58,7 @@ fixture:
     audit: You are running autonomously with no human in the loop.
     resolve-findings: "I-2: the fallback greeting has no test"
     session-report: "# Session report instructions"
+    recheck-unverified: "still marked `not verified`: I-2"
   inputs:
     change_name: valid-change
     review_strategy: none

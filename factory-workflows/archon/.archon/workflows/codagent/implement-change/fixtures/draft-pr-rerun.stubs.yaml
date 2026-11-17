@@ -30,6 +30,7 @@ reopen-draft-pr: {"blocked":false,"reason":""}
 publish-reopened-draft-pr: {"ok":true,"problems":""}
 recheck-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
+list-unverified: {"rows":""}
 save-implementor-response: "saved"
 check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
 check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}

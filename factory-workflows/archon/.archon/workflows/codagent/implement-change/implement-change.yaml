@@ -816,6 +816,7 @@ nodes:
             ci_status: { from: $wait-ci.output.status, if_skipped: "not run" }
             ci_report: { from: $wait-ci.output.report, if_skipped: "none" }
             ci_reason: $acceptance-test.output.reason
+            last: $reset-round-evidence.output.last
           output_format: *tester-result
 
         - id: acceptance-gate
@@ -1073,10 +1074,36 @@ nodes:
       required: [ready, status, message]
       additionalProperties: false
 
+  # Before the stop point, so a run that stops after acceptance has it too: the implementor
+  # reruns the checks of the rows still not verified. Finalize pushes it in a finished run.
+  - id: "list-unverified"
+    depends_on: ["write-acceptance-status"]
+    script: "finish"
+    runtime: "bun"
+    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"list-unverified","previous_blocked":false,"op":"list-unverified"}
+    output_format: {"type":"object","properties":{"rows":{"type":"string"}},"required":["rows"],"additionalProperties":false}
+
+  - id: "recheck-unverified"
+    depends_on: ["list-unverified"]
+    when: "$list-unverified.output.rows != ''"
+    model: ["@implementor","large"]
+    context: {"resume":"session-report"}
+    command: "recheck-unverified"
+    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","rows":"$list-unverified.output.rows"}
+    output_format: *implementor-result
+
+  - id: "push-recheck"
+    depends_on: ["recheck-unverified"]
+    when: "$validate-inputs.output.finish == 'false'"
+    script: "finish"
+    runtime: "bun"
+    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"push-recheck","previous_blocked":false,"op":"push-recheck"}
+    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
   # Finish always records failures and continues to the review package. With stop_after:
   # acceptance it is skipped, and with it every step through the ranking.
   - id: "commit-logs"
-    depends_on: ["write-acceptance-status"]
+    depends_on: ["list-unverified","recheck-unverified"]
     trigger_rule: "none_failed_min_one_success"
     when: "$validate-inputs.output.finish == 'true'"
     script: "finish"
@@ -1414,7 +1441,8 @@ nodes:
   # With stop_after: acceptance the run ends here, its pull request a draft and its change
   # unarchived, and publish-review-package declares the outcome from acceptance alone.
   - id: "end-after-acceptance"
-    depends_on: ["write-acceptance-status"]
+    depends_on: ["list-unverified","recheck-unverified","push-recheck"]
+    trigger_rule: "none_failed_min_one_success"
     script: "finish"
     runtime: "bun"
     with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"end-after-acceptance","previous_blocked":false,"op":"end-after-acceptance","stop_after":"$INPUTS.stop_after"}

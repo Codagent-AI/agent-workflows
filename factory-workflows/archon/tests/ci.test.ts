@@ -293,6 +293,13 @@ describe('waitForCi', () => {
     expect(result.hadChecks).toBe(false);
   });
 
+  test('a pull request with no checks passes 3 minutes in, not at the deadline', () => {
+    const { result, waits } = wait({ mergeable: 'clean', units: [] }, 15, 30);
+    expect(result.status).toBe('passed');
+    expect(waits).toHaveLength(6);
+    expect(result.elapsedMinutes).toBe(3);
+  });
+
   test.each([
     ['checks.state', 'failed to fetch PR checks: forge checks.state failed (forge_error): rate limited'],
     ['pr.reviews', 'failed to fetch PR reviews: forge pr.reviews failed (forge_error): rate limited'],
@@ -432,7 +439,7 @@ describe('renderReport', () => {
   });
 
   test('says when no checks are reported, and shows an error', () => {
-    expect(renderReport({ ...base(), hadChecks: false })).toContain('No CI checks are configured or reported');
+    expect(renderReport({ ...base(), hadChecks: false })).toContain('No CI checks appeared for this pull request during the wait');
     const errored = renderReport({ ...base(), status: 'error', error: 'no PR found', hadChecks: false, prUrl: '', headSha: '' });
     expect(errored).toContain('**Error:** no PR found');
     expect(errored).toContain('**PR:** unknown');

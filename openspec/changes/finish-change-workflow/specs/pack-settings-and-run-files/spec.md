@@ -20,7 +20,7 @@ Every value other than `change_name` SHALL come from a pack setting with a defau
 - **THEN** the run is refused before any node runs
 
 ### Requirement: A run can end after the acceptance rounds
-With `stop_after: acceptance`, the workflow SHALL end after the acceptance rounds, without committing the logs, archiving the change, finalizing the pull request or publishing the review package, and its outcome SHALL be succeeded exactly when acceptance converged. With the default, `finish`, every step SHALL run.
+With `stop_after: acceptance`, the workflow SHALL end after the acceptance rounds and the recheck of the rows still not verified, without committing the logs, archiving the change, finalizing the pull request or publishing the review package, and its outcome SHALL be succeeded exactly when acceptance converged. With the default, `finish`, every step SHALL run.
 
 #### Scenario: Acceptance converges
 - **WHEN** a launch sets `stop_after: acceptance` and acceptance converges

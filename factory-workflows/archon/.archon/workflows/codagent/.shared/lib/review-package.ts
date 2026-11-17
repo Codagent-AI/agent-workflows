@@ -80,12 +80,18 @@ function renderItem(item: Item, base: string, head: string): string {
   return `- **${item.type}:** ${itemLink(item, base, head)}\n  ${item.detail.replaceAll('\n', '\n  ')}`;
 }
 const collapse = (title: string, body: string): string => `<details>\n<summary>${title}</summary>\n\n${body || 'None.'}\n\n</details>`;
+/** The run's state, and how many red items block the merge when there are any. */
+function stateLine(failed: number, red: number): string {
+  const state = `Run ${failed > 0 ? 'needs attention' : 'succeeded'}.`;
+  if (red === 0) return state;
+  return `${state} ${red} red ${red === 1 ? 'item blocks' : 'items block'} the merge.`;
+}
 export function renderPackage(input: { ranking: Ranking; failures: Item[]; summary: string; decisions: string; disputes: string; base: string; head: string }): string {
   const { ranking, failures, base, head } = input;
   const orange = [...ranking.orange].sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
   const show = (items: Item[]): string => items.map(item => renderItem(item, base, head)).join('\n');
   const red = [...failures, ...ranking.red.filter(item => item.type !== 'Failure')];
-  return ['## Review first', `Run ${failures.length > 0 ? 'needs attention' : 'succeeded'}.`, show(red), show(orange.slice(0, 5)),
+  return ['## Review first', stateLine(failures.length, red.length), show(red), show(orange.slice(0, 5)),
     `${Math.max(0, orange.length - 5)} orange and ${ranking.yellow.length} yellow items collapsed below.`, input.summary,
     collapse('Other review items', show([...orange.slice(5), ...ranking.yellow])),
     collapse('Testing evidence', `${ranking.evidence}\n\n${show(ranking.white)}`), collapse('Decision log', input.decisions), collapse('Dispute log', input.disputes)].join('\n\n');

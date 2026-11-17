@@ -308,7 +308,7 @@ describe('merged workflow contracts', () => {
       expect(members.length).toBeGreaterThan(1);
       for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
     }
-    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(22);
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(23);
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {

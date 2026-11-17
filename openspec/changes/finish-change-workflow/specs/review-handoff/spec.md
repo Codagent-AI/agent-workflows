@@ -76,7 +76,7 @@ The workflow SHALL summarize the testing evidence: each spec behavior's verdict 
 The reviewer, in a fresh session after finalize, SHALL rank every item from the testing evidence, the decision log and the dispute log into exactly one of red, orange, yellow and white, by the Agent Factory's tier rules without their Agent Validator, task-compliance, resume and plan-revision parts. Items that share one root cause SHALL become one item, in the highest tier any of them reaches, listing each symptom.
 
 #### Scenario: Red items
-- **WHEN** a spec behavior failed, a behavior was not verified and no automated test covers it, or a decision departs from the definition
+- **WHEN** a spec behavior failed, a checklist row is failed or not verified, or a decision departs from the definition
 - **THEN** the item is red
 
 #### Scenario: Orange items
@@ -84,8 +84,12 @@ The reviewer, in a fresh session after finalize, SHALL rank every item from the 
 - **THEN** the item is orange, unless a red rule also applies
 
 #### Scenario: Yellow items
-- **WHEN** acceptance did not exercise a behavior that a named automated test covers, or a decision or dispute meets no red or orange rule
+- **WHEN** acceptance did not exercise a behavior whose checklist row a passing automated test verifies, or a decision or dispute meets no red or orange rule
 - **THEN** the item is yellow, naming the test where one covers it
+
+#### Scenario: Unverified row has a named test
+- **WHEN** a checklist row is not verified and names an automated test that covers it
+- **THEN** the item is red, not yellow, because no run records that test passing at the final head
 
 #### Scenario: Unfixed comment is a style preference
 - **WHEN** the finalize fixer did not fix a pull request comment that asked only for a style preference
@@ -141,7 +145,11 @@ The workflow SHALL write a "Review first" section at the top of the generated pa
 
 #### Scenario: Section content
 - **WHEN** the package is written
-- **THEN** "Review first" gives the run's state as succeeded or needs attention, every red item, then up to five orange items with the commits after acceptance first, and a line counting the orange and yellow items collapsed below
+- **THEN** "Review first" gives the run's state as succeeded or needs attention, followed by how many red items block the merge when there are any, every red item, then up to five orange items with the commits after acceptance first, and a line counting the orange and yellow items collapsed below
+
+#### Scenario: Red items under a succeeded run
+- **WHEN** every step passed and the ranking has one red item
+- **THEN** "Review first" reads "Run succeeded. 1 red item blocks the merge."
 
 #### Scenario: Item prefix
 - **WHEN** an item is shown

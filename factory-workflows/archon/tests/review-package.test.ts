@@ -63,8 +63,14 @@ test('INT-011 a late commit sized without openspec/ passes, and placement keeps 
 test('INT-011 review-first ordering counts types collapsed sections and evidence',()=>{
   const ranking=emptyRanking();ranking.red=[{...item(),type:'Verification, Dispute'}];ranking.orange=Array.from({length:7},(_,i)=>item(i===6?'Late commit':'Decision',`D-${i}`));ranking.yellow=[item('Human check','manual review')];ranking.white=[item('Verification','I-3')];ranking.evidence='Screenshot text equivalent. Unexercised behavior has named unit coverage.';
   const body=renderPackage({ranking,failures:[item('Failure','finalize failed')],summary:'SUMMARY',decisions:'DECISIONS',disputes:'DISPUTES',base:'https://github.com/owner/repo',head:accepted});
-  const top=body.split('SUMMARY')[0];expect(top).toContain('Run needs attention');expect(top).toContain('2 orange and 1 yellow');expect(top).not.toContain('D-4');expect(top.indexOf('D-6')).toBeLessThan(top.indexOf('D-0'));
+  const top=body.split('SUMMARY')[0];expect(top).toContain('Run needs attention. 2 red items block the merge.');expect(top).toContain('2 orange and 1 yellow');expect(top).not.toContain('D-4');expect(top.indexOf('D-6')).toBeLessThan(top.indexOf('D-0'));
   expect(body).toContain('Verification, Dispute:');expect(body).toContain(`<summary>Testing evidence</summary>`);expect(body).toContain('DECISIONS');expect(body).toContain('#L12-L18');
+});
+test('INT-011 a succeeded run counts the red items that block the merge',()=>{
+  const ranking=emptyRanking();ranking.red=[item('Verification','I-1')];
+  const render=(red:typeof ranking.red)=>renderPackage({ranking:{...ranking,red},failures:[],summary:'S',decisions:'',disputes:'',base:'https://github.com/owner/repo',head:accepted});
+  expect(render(ranking.red)).toContain('Run succeeded. 1 red item blocks the merge.');
+  expect(render([])).toContain('Run succeeded.\n');
 });
 test.each([true,false])('INT-011 publication preserves human text and declares clean outcome %s',clean=>{
   if (!clean) box.write('artifacts/step-results.json',JSON.stringify({archive:{ok:false,problems:'archive failed',remaining:'repair'}}));

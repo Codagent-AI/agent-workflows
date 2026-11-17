@@ -147,6 +147,8 @@ interface Waiter {
   options: WaitOptions;
   now: () => number;
   deadline: number;
+  /** When no check has appeared by now, the branch has no CI. */
+  noChecksBy: number;
   target: Target;
 }
 
@@ -156,6 +158,8 @@ interface Run {
 }
 
 const failure = (result: CiResult, error: string): CiResult => ({ ...result, status: 'error', error });
+// Checks register within seconds of a push; none after this long means the branch has no CI.
+const NO_CHECKS_MINUTES = 3;
 
 /** The branch's pull request, or an error result. */
 function findTarget(tools: Tools): Target | CiResult {
@@ -204,17 +208,13 @@ function pollOnce(waiter: Waiter, run: Run): number | string {
   return checks.length;
 }
 
-/** Whether polling again cannot change the outcome. */
-function isSettled(result: CiResult, checkCount: number): boolean {
+/** Whether polling again cannot change the outcome. A branch with no check by noChecksBy has no CI. */
+function isSettled(result: CiResult, checkCount: number, noCi: boolean): boolean {
   if (result.mergeable === 'conflict' || result.failedChecks.length > 0 || result.blockingReviews.length > 0) {
     return true;
   }
-  return (
-    result.mergeable !== 'unknown' &&
-    checkCount > 0 &&
-    result.pendingChecks.length === 0 &&
-    result.passedChecks.length === checkCount
-  );
+  if (result.mergeable === 'unknown' || result.pendingChecks.length > 0) return false;
+  return checkCount > 0 ? result.passedChecks.length === checkCount : noCi && !result.hadChecks;
 }
 
 /** Polls until the outcome is settled or the deadline passes; returns an error message if a read fails. */
@@ -223,7 +223,7 @@ function pollUntilSettled(waiter: Waiter, run: Run): string | undefined {
   for (;;) {
     const polled = pollOnce(waiter, run);
     if (typeof polled === 'string') return polled;
-    if (isSettled(run.result, polled) || waiter.now() + waitMs > waiter.deadline) return undefined;
+    if (isSettled(run.result, polled, waiter.now() >= waiter.noChecksBy) || waiter.now() + waitMs > waiter.deadline) return undefined;
     waiter.sleep(waitMs);
   }
 }
@@ -283,7 +283,7 @@ export function waitForCi(tools: Tools, sleep: Sleep, options: WaitOptions): CiR
   const { pr } = target.view;
   const result: CiResult = { ...blank(''), prUrl: pr.url, headSha: pr.head_revision ?? '' };
   const run: Run = { result };
-  const waiter: Waiter = { tools, sleep, options, now, deadline: started + options.maxMinutes * 60_000, target };
+  const waiter: Waiter = { tools, sleep, options, now, deadline: started + options.maxMinutes * 60_000, noChecksBy: started + NO_CHECKS_MINUTES * 60_000, target };
 
   const problem = pollUntilSettled(waiter, run);
   if (problem !== undefined) return failure(result, problem);

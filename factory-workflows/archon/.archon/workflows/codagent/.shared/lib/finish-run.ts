@@ -6,6 +6,8 @@ import { runCommand, sleep } from './exec.ts';
 import { defaultTools } from './forge.ts';
 import { archiveChange, verifyArchive, recordArchive } from './archive.ts';
 import { commitLogs } from './logs.ts';
+import { checklistPath } from './checklist.ts';
+import { evidenceRows } from './evidence.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
@@ -79,12 +81,25 @@ function pushOrReady(input: FinishInputs, dir: string): CheckResult {
   const checked = input.op === 'mark-ready' ? markReady(defaultTools()) : acceptancePush(runCommand, input.result);
   recordFinalizeCheck(dir, input.step, checked); return checked;
 }
+/** The IDs of the checklist rows still marked not verified when the acceptance rounds end. */
+export function unverifiedRows(folder: string): { rows: string } {
+  const rows = evidenceRows(readText(checklistPath(folder))) ?? [];
+  return { rows: rows.filter(row => row.status === 'not verified').map(row => row.id).join(', ') };
+}
+/** Pushes the recheck's commit when the run stops after acceptance; a failure is the acceptance's. */
+export function pushRecheck(dir: string): CheckResult {
+  const pushed = acceptancePush(runCommand, 'recheck');
+  if (!pushed.ok) recordStep(dir, 'acceptance', { ok: false, problems: pushed.problems, remaining: 'Push the branch: the pull request lacks the recheck of the rows not verified.' });
+  return pushed;
+}
 /** A run that stops after acceptance publishes no package; it succeeds when acceptance converged. */
 export function endedAfterAcceptance(dir: string): { succeeded: boolean } {
   return { succeeded: failedItems(dir).length === 0 };
 }
 function dispatch(input: FinishInputs, dir: string): unknown {
   if (input.op === 'end-after-acceptance') return pass();
+  if (input.op === 'list-unverified') return unverifiedRows(input.folder);
+  if (input.op === 'push-recheck') return pushRecheck(dir);
   if (input.op === 'publish-review-package' && input.finish === false) return endedAfterAcceptance(dir);
   if (input.op === 'commit-logs') return commitLogs(runCommand, dir, input.name);
   if (['archive-change', 'verify-archive-commit', 'record-archive'].includes(input.op)) return archiveNode(input, dir);

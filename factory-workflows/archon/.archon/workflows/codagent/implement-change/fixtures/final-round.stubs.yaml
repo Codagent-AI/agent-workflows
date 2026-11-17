@@ -16,7 +16,7 @@ recheck-evidence: {"ok":true,"problems":""}
 check-clean: {"ok":true,"problems":""}
 verify-implementation-commits: {"ok":true,"problems":""}
 session-report: {"blocked":false,"reason":"","actions":[]}
-reset-round-evidence: {"round":0,"last":false}
+reset-round-evidence: {"round":0,"last":true}
 acceptance-test: {"ready":false,"reason":"F-1 remains"}
 wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
 acceptance-handoff: {"ready":true,"reason":""}
@@ -54,6 +54,8 @@ fixture:
     - acceptance-gate
     - check-acceptance-progress
     - write-acceptance-status
+  resolved-text-contains:
+    acceptance-handoff: "Last round: `true`"
   inputs:
     change_name: valid-change
     acceptance_rounds: "1"

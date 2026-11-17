@@ -29,6 +29,7 @@ verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/g
 clear-retest-reason: "cleared"
 acceptance-fix: {"blocked":false,"reason":"","actions":[]}
 write-acceptance-status: {"ready":false,"status":"ACCEPTANCE_FAILED","message":"acceptance preparation failed"}
+list-unverified: {"rows":""}
 save-implementor-response: "saved"
 check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
 check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}

@@ -32,6 +32,7 @@ acceptance-push: {"ok":true,"problems":""}
 restore-draft-pr: {"ok":true,"problems":""}
 verify-acceptance-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
+list-unverified: {"rows":""}
 prepare-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
 review-change: {"verdicts":[],"findings":[]}
 record-review: {"settled":true,"findings":""}

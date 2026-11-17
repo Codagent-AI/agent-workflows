@@ -13,7 +13,7 @@ export function renderReport(result: CiResult): string {
   lines.push(`**Head:** ${result.headSha || 'unknown'}${result.headMoved ? ' (local HEAD or the PR head has since moved)' : ''}`);
   lines.push(`**Elapsed:** ~${String(result.elapsedMinutes)} minutes`);
   if (result.error) lines.push('', `**Error:** ${result.error}`);
-  if (!result.hadChecks && result.status !== 'error') lines.push('', 'No CI checks are configured or reported for this pull request.');
+  if (!result.hadChecks && result.status !== 'error') lines.push('', 'No CI checks appeared for this pull request during the wait, so it is treated as having no CI. A check that registers later is not covered.');
   const section = (title: string, items: string[]): void => {
     if (items.length > 0) lines.push('', `### ${title}`, ...items);
   };

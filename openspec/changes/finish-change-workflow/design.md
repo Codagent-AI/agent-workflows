@@ -39,10 +39,11 @@ The nodes below are added to, or change in, add-validation's `implement-change.y
    - `resolve-findings`, the evidence check and repairs after it, the clean and commit checks, and `session-report` stay.
    - `verify-assumptions-handoff`, `repair-assumptions-handoff` and `recheck-assumptions-handoff` are removed. `prepare-review` depends on `session-report`.
 2. **Review, pull request and acceptance rounds** as add-validation has them. `hand-off-review` and `hand-off-round-review` write to the run's logs instead of `acceptance-assumptions.md` (see Logs). A blocked acceptance fix and a push that still fails end the rounds instead of failing the run (see Going on past a failure). `write-acceptance-status` is no longer the `returns:` node.
-3. **Logs.** `commit-logs` (script).
-4. **Archive.** `archive-change`, `repair-archive-delta`, `rearchive-change`, `verify-archive-commit`, `repair-archive-commit`, `recheck-archive-commit`, `record-archive`.
-5. **Finalize.** `finalize-push`, `repair-finalize-push`, `recheck-finalize-push`, `mark-ready`, the `ci-cycles` loop, `final-ci`, `repair-final-wait`, `mark-ready-after-final-repair`, `recheck-final-ci`, `record-finalize`.
-6. **Package.** `prepare-ranking`, `rank-review`, `check-ranking`, `repair-ranking`, `recheck-ranking`, `place-ranking`, `publish-review-package` (the `returns:` node).
+3. **Recheck.** `list-unverified` (script), `recheck-unverified`, and `push-recheck` (script) when the run stops after acceptance. This runs before the stop point (see Recheck after acceptance).
+4. **Logs.** `commit-logs` (script).
+5. **Archive.** `archive-change`, `repair-archive-delta`, `rearchive-change`, `verify-archive-commit`, `repair-archive-commit`, `recheck-archive-commit`, `record-archive`.
+6. **Finalize.** `finalize-push`, `repair-finalize-push`, `recheck-finalize-push`, `mark-ready`, the `ci-cycles` loop, `final-ci`, `repair-final-wait`, `mark-ready-after-final-repair`, `recheck-final-ci`, `record-finalize`.
+7. **Package.** `prepare-ranking`, `rank-review`, `check-ranking`, `repair-ranking`, `recheck-ranking`, `place-ranking`, `publish-review-package` (the `returns:` node).
 
 ### Roles and sessions
 
@@ -74,6 +75,16 @@ The nodes below are added to, or change in, add-validation's `implement-change.y
 4. **`continue-implementation`**, when the verdict is `continue`, with `remaining` as its input.
 
 `save-implementor-response` (script) writes the node output of `implement`, and of each continue pass, to `implementor-response.md`, which the judge reads as untrusted.
+
+### Recheck after acceptance
+
+The review and acceptance fixes run only the unit tests they affect, and they mark a checklist row `not verified` when they change its code without rerunning its check. Agent Runner closed that gap with Agent Validator, which ran the project's full checks after each acceptance fix. The pack has no validator, and a project may have no CI, so without a recheck those rows stay unverified at the final head.
+
+- **`list-unverified`** (script, after `write-acceptance-status`) outputs the IDs of the rows still `not verified`.
+- **`recheck-unverified`** (`['@implementor', large]`, resumes `session-report`) runs only when there are any. It reruns each distinct check those rows name, integration and end-to-end tests included, with a 10-minute timeout per command, saves the output under `$ARTIFACTS_DIR/evidence/`, marks each row `verified`, `failed` or still `not verified` with its reason, and commits only the checklist with the `[recheck]` prefix. A failed check is not fixed here; it reaches the person as a red item. Its `blocked` result changes nothing, because a row it could not recheck stays `not verified` and is red, and a checklist it could not commit fails the next push check: `finalize-push` and its repair in a finished run, `push-recheck` after acceptance. An error in the agent node fails the run, as for the pack's other agent steps, and a resume picks it up.
+- **`push-recheck`** (script) runs only with `stop_after: acceptance`, so the draft pull request and the evaluated branch end at the recheck's commit. A failed push is recorded as an acceptance failure and the run ends failed. In a finished run, `finalize-push` pushes the commit.
+
+It runs before the stop point, so evals, which stop after acceptance, get the same evidence. The commit touches only the change folder, so the ranking does not count it as a late commit; a commit that changes anything else is one.
 
 ### Logs
 
@@ -109,7 +120,7 @@ The nodes below are added to, or change in, add-validation's `implement-change.y
 - **`check-ranking`** (script, report mode) ports `verify-classification.py` and extends it. It builds the required items from files the ranker does not write: the checklist's failed and `not verified` rows (red), the dispute log's `DP` entries other than `PR comment` ones (at least orange), and the commits after the accepted head (at least orange, named by SHA, with the `--shortstat` size and a `Tests:` sentence). It rejects a ranking that leaves one out or ranks it lower, one tier per title, an empty item or an unknown type. A passing ranking is written to `review-attention.json`.
 - **`repair-ranking`** once, then **`recheck-ranking`**. When the ranking still fails, **`place-ranking`** (script) starts from the last ranking and puts each required item in its tier itself, with `Tests: none named.` for later commits it had to add, so the package is still written.
 - **`publish-review-package`** (script, `returns:`, `outcome_field: succeeded`) adds a red Failure item for each failure in `step-results.json` and for `ACCEPTANCE_FAILED`. It renders the description, ported from `annotate-pr.py`:
-  - "Review first": the run's state (succeeded, or needs attention), every red item, then up to five orange items with the later commits first, then a line counting what is collapsed. Each item starts with its type, such as `Dispute:`.
+  - "Review first": the run's state (succeeded, or needs attention) and, when there are red items, how many block the merge ("Run succeeded. 1 red item blocks the merge."), every red item, then up to five orange items with the later commits first, then a line counting what is collapsed. Each item starts with its type, such as `Dispute:`.
   - The implementor's summary from `pr-body.md`.
   - Collapsed sections: the other orange and yellow items, the testing evidence with the white items, the decision log and the dispute log.
 

@@ -17,7 +17,11 @@ and a short verbatim excerpt rather than a defect. On `pending`, report and stop
 With no configured checks, continue after recording that CI coverage is absent. Treat skipped, neutral,
 cancelled, and timed-out checks as evidence states, never as passes.
 
-Then write `<evidence-directory>/acceptance-handoff.md`:
+Last round: `$INPUTS.last`. Decide whether the round is ready as "Round status" below describes. When
+it is not ready and this is not the last round, a fix and another round follow, and only the last
+round's handoff reaches the person: write `<evidence-directory>/acceptance-handoff.md` with only the
+current head SHA, why the round is not ready, and the paths of the findings and the exploration log,
+then go to "Round status". Otherwise write the full `<evidence-directory>/acceptance-handoff.md`:
 
 1. **Decision brief**: delivered behavior, unresolved decisions (read the ledger again now; never say none
    are pending without it showing none), overall status, suggested review path.
