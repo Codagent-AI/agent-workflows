@@ -118,7 +118,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `nodes/audit.md` | Archon | The reviewer's inspection audit findings. |
 | `session-report.md` | implementor | The implementor's session report, which the acceptance tester reads. |
 | `exploration-log.md`, `acceptance-findings.md`, `acceptance-tested-revision.txt` | tester | Each round's exploration and findings, and the revision it tested. |
-| `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer. A round that is not ready and not the last writes a short handoff. |
+| `acceptance-round-status.txt`, `acceptance-handoff.md` | tester | The round's verdict, and the handoff for the human reviewer, written in full every round. |
 | `acceptance-preparation-status.txt`, `acceptance-handoff-tester.md` | write-acceptance-status script | The final status. When acceptance did not converge, the script writes a short `acceptance-handoff.md` and keeps the tester's as `acceptance-handoff-tester.md`. |
 | `acceptance-retest-reason.txt` | implementor | Why a fix that changed nothing still needs a retest. |
 | `pr-title.txt` | open-draft-pr | The pull request title, used only when the pull request does not exist yet. |
