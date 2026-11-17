@@ -39,17 +39,6 @@ Every pull request read and write except comment threads SHALL run as `archon fo
 - **WHEN** the CLI prints no JSON envelope
 - **THEN** the check fails with the exit status and stderr
 
-### Requirement: Agents push and write files
-Agents SHALL push with `git` and write the pull request's title and description to files.
-
-#### Scenario: Agent opens the draft
-- **WHEN** `open-draft-pr` ends
-- **THEN** `pr-title.txt` and `pr-body.md` hold the title and the description, and no agent has created or edited a pull request
-
-#### Scenario: Lead cannot push
-- **WHEN** the lead is blocked by a missing credential or a decision only a human can make
-- **THEN** it reports `blocked` with the reason, and the publish step fails with `REPAIR_BLOCKED: <reason>`
-
 ### Requirement: The pack opens or updates the pull request from the files
 The pack SHALL open or update the pull request from the title and description files.
 
@@ -114,7 +103,7 @@ The workflow SHALL check that the branch has exactly one open draft pull request
 
 #### Scenario: Detached head or none found
 - **WHEN** `HEAD` is detached or the branch has no open pull request
-- **THEN** the check fails saying so, and one lead repair runs
+- **THEN** the check fails saying so, and one implementor repair runs, continuing the pull request step's session
 
 ### Requirement: The matching pull request is recorded
 The workflow SHALL record the pull request it found in `pull-request.json`.
@@ -139,7 +128,7 @@ After an acceptance push, the workflow SHALL check the pull request again.
 
 #### Scenario: Pull request does not match after the push
 - **WHEN** the check still fails after ten attempts
-- **THEN** one lead repair runs in the fix session, and a second failure fails the run
+- **THEN** one implementor repair runs in the fix session, and a second failure fails the run
 
 ### Requirement: The CI wait is bounded
 The wait SHALL poll the pull request's checks, reviews and merge state every 30 seconds for up to 15 minutes.
@@ -213,3 +202,14 @@ The wait SHALL count unresolved threads and human conversation comments as actio
 #### Scenario: Bot comment
 - **WHEN** a top-level comment is from an author whose type is `Bot`
 - **THEN** it is listed as informational and does not count as feedback
+
+### Requirement: Agents push and write the pull request files
+Agents SHALL push with `git` and write the pull request's title and description to files.
+
+#### Scenario: Agent opens the draft
+- **WHEN** `open-draft-pr` ends
+- **THEN** `pr-title.txt` and `pr-body.md` hold the title and the description, and no agent has created or edited a pull request
+
+#### Scenario: Implementor cannot push
+- **WHEN** the implementor is blocked by a missing credential or a decision only a human can make
+- **THEN** it reports `blocked` with the reason, and the publish step fails with `REPAIR_BLOCKED: <reason>`
