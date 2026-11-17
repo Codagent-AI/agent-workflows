@@ -3,7 +3,7 @@
 ## Layout rule
 
 - Top-level folders are named by purpose: `human-workflows/` for plugins where a person and an agent work together, and `factory-workflows/` for workflows an agent runs without a person.
-- Folders under them are named by what they depend on: `human-workflows/openspec/`, `factory-workflows/archon/`.
+- Folders under them are named by what they depend on: `human-workflows/openspec/`, `human-workflows/archon/`, `factory-workflows/archon/`.
 - New work goes under the purpose folder it serves. Add a dependency folder when the dependency differs.
 - Keep the README's layout table current when you add a folder.
 - Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.
@@ -14,7 +14,7 @@
 Paul changes the pack (`factory-workflows/archon`) in one Claude session, from definition to evals:
 
 1. **Define.** Paul writes the change with the `define-openspec-change` plugin's `define` skill. It lands in `openspec/changes/<name>`.
-2. **Implement.** When Paul says so, run it with the `archon-implement-change` skill. The pack on main builds the change on its own branch, archives it, and marks its PR ready for review with a "Review first" section in the description.
+2. **Implement.** When Paul says so, run it with the `codagent-archon` plugin's `implement-change` skill, with this checkout as the pack. The pack on main builds the change on its own branch, archives it, and marks its PR ready for review with a "Review first" section in the description.
 3. **Human verification.** Help Paul verify the PR. Walk through its "Review first" section, the change's decision and dispute logs, and any human-only checks in the change's test plan. Change the implementation branch only when he asks.
 4. **Evals.** Run the reps Paul asks for (default 1) with the `archon-fly-eval` skill, setting `agent_workflows_ref` to the implementation branch. Paul rates reps first, and only then do you report scores.
 5. Paul merges the pack PR.

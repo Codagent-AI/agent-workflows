@@ -43,6 +43,11 @@ entry_points:
     reviews:
       - all-reviewers
 
+  # The codagent-archon plugin: skills and the script they run.
+  - path: human-workflows/archon
+    reviews:
+      - all-reviewers
+
   # The Archon factory workflow pack.
   - path: factory-workflows/archon
     checks:
