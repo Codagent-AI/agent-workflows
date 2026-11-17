@@ -108,7 +108,7 @@ This format structures your thinking — it is not a gate. If you cannot complet
 - Explain **why** each issue matters with a concrete failure scenario
 - Provide a **concrete fix** with corrected code
 
-## Review task
+# Review task
 
 Review only the changed code in $INPUTS.files for $INPUTS.place. The range starts at $INPUTS.start and ends at $INPUTS.end. For acceptance's first review, diff the start revision against the working tree, including tracked uncommitted changes; otherwise diff start..end. Exclude `$INPUTS.change_dir/` throughout. Do not repeat the inspection audit against the definition or checklist, and do not review style. Inspect only: change no file, commit, branch or worktree state. Do not run tests or Agent Validator.
 

@@ -1,0 +1,5 @@
+# The pack's dry-run fixtures are test stubs. Skipping them keeps large pack changes
+# under CodeRabbit's 100-file review limit.
+reviews:
+  path_filters:
+    - "!factory-workflows/archon/.archon/workflows/codagent/*/fixtures/**"
