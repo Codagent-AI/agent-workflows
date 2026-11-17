@@ -816,7 +816,6 @@ nodes:
             ci_status: { from: $wait-ci.output.status, if_skipped: "not run" }
             ci_report: { from: $wait-ci.output.report, if_skipped: "none" }
             ci_reason: $acceptance-test.output.reason
-            last: $reset-round-evidence.output.last
           output_format: *tester-result
 
         - id: acceptance-gate

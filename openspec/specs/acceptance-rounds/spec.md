@@ -81,19 +81,11 @@ The workflow SHALL wait for CI only when the tester reports `ready: true`.
 - **THEN** the workflow waits for CI, writes `ci/round-<n>.md`, and passes its status and path to the tester's handoff
 
 ### Requirement: The tester writes the handoff after the CI wait
-The workflow SHALL have the same tester session write the handoff after the wait. When the round is not ready and is not the last, the handoff SHALL hold only the head, why the round is not ready, and the paths of the findings and the exploration log, because a fix and another round follow and only the last round's handoff reaches the person.
+The workflow SHALL have the same tester session write the full handoff after the wait in every round, since the rounds can end after any round.
 
 #### Scenario: Handoff resumes the tester
 - **WHEN** the CI wait ended or was skipped
-- **THEN** the tester session that explored the change resumes and receives the CI status, the report path, the reason and whether the round is the last
-
-#### Scenario: Round before the last is not ready
-- **WHEN** the tester finds the round not ready and another round may follow
-- **THEN** it writes the short handoff and the round status
-
-#### Scenario: Ready or last round
-- **WHEN** the round is ready, or it is the last round
-- **THEN** the tester writes the full handoff
+- **THEN** the tester session that explored the change resumes and receives the CI status, the report path and the reason
 
 ### Requirement: Convergence needs one revision, tested and ready
 The gate SHALL report ready only when all of the following hold at the current `HEAD`: the round status ends with `READY <HEAD>`, the tested revision is `<HEAD>`, the exploration log and the handoff are not empty, and no tracked file has uncommitted changes.

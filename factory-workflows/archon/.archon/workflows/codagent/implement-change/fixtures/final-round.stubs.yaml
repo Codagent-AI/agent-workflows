@@ -54,8 +54,6 @@ fixture:
     - acceptance-gate
     - check-acceptance-progress
     - write-acceptance-status
-  resolved-text-contains:
-    acceptance-handoff: "Last round: `true`"
   inputs:
     change_name: valid-change
     acceptance_rounds: "1"
