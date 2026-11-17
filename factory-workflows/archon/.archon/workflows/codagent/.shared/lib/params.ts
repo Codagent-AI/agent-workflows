@@ -54,7 +54,7 @@ export function changesRootProblems(changeKind: string, changesRoot: string): Pr
   return [];
 }
 
-/** The inputs both workflows check before any other node. The two flags are verify-change's. */
+/** Inputs checked before any other implement workflow node. */
 export interface WorkflowInputs {
   changeName: string;
   changeKind: string;
@@ -65,16 +65,11 @@ export interface WorkflowInputs {
   /** The most acceptance rounds the workflow allows: the loop's max_iterations. */
   maxRounds: number;
   acceptanceFixScope: string;
-  skipImplementationReview?: string;
-  stopUnchangedAcceptance?: string;
+  reviewStrategy: string;
 }
 
 /** Problems with any of the inputs, empty when they are all valid. */
 export function inputProblems(inputs: WorkflowInputs): Problems {
-  const flags: [string, string | undefined][] = [
-    ['skip_implementation_review', inputs.skipImplementationReview],
-    ['stop_unchanged_acceptance', inputs.stopUnchangedAcceptance],
-  ];
   return [
     ...changeNameProblems(inputs.changeName),
     ...changesRootProblems(inputs.changeKind, inputs.changesRoot),
@@ -82,7 +77,6 @@ export function inputProblems(inputs: WorkflowInputs): Problems {
       'artifact_validation_instruction',
       validationInstruction(inputs.changeKind, inputs.changeName, inputs.validationSetting)
     ),
-    ...flags.flatMap(([name, value]) => (value === undefined ? [] : booleanProblems(name, value))),
     ...nonEmptyProblems('acceptance_fix_scope', inputs.acceptanceFixScope),
     ...acceptanceRoundsProblems(inputs.acceptanceRounds, inputs.maxRounds),
   ];
@@ -104,7 +98,7 @@ export function validateRun(inputs: WorkflowInputs, extra: Record<string, unknow
   );
 }
 
-/** The inputs both validate-inputs scripts read. The two flags are verify-change's alone. */
+/** Bindings read by the implement workflow input validator. */
 export function readInputs(env: NodeJS.ProcessEnv): WorkflowInputs {
   return {
     changeName: required(env.INPUTS_CHANGE_NAME, 'change_name'),
@@ -114,7 +108,6 @@ export function readInputs(env: NodeJS.ProcessEnv): WorkflowInputs {
     maxRounds: Number(required(env.INPUTS_MAX_ROUNDS, 'max_rounds')),
     acceptanceRounds: required(env.INPUTS_ACCEPTANCE_ROUNDS, 'acceptance_rounds'),
     acceptanceFixScope: required(env.INPUTS_ACCEPTANCE_FIX_SCOPE, 'acceptance_fix_scope'),
-    skipImplementationReview: env.INPUTS_SKIP_IMPLEMENTATION_REVIEW,
-    stopUnchangedAcceptance: env.INPUTS_STOP_UNCHANGED_ACCEPTANCE,
+    reviewStrategy: required(env.INPUTS_REVIEW_STRATEGY, 'review_strategy'),
   };
 }

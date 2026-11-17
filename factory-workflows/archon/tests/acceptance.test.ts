@@ -4,6 +4,7 @@ import { rmSync, symlinkSync } from 'node:fs';
 import {
   checkGate,
   checkProgress,
+  clearRetestReason,
   convergenceReasons,
   finalize,
   lastLine,
@@ -178,55 +179,50 @@ describe('startRound (reset-round-evidence)', () => {
 });
 
 describe('checkProgress (check-acceptance-progress)', () => {
-  const settle = (fix: boolean, stopUnchanged: boolean) => checkProgress(box.exec, evidence, fix, stopUnchanged);
+  const settle = (fix: boolean) => checkProgress(box.exec, evidence, fix);
 
   test('without a fix there is nothing to push', () => {
-    expect(settle(false, true)).toEqual({ progressed: true, push: false });
+    expect(settle(false)).toEqual({ progressed: true, push: false });
   });
 
-  test('an unchanged fix continues the rounds by default', () => {
+  test('an unchanged fix ends the rounds unconditionally', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
-    expect(settle(true, false)).toEqual({ progressed: true, push: true });
-  });
-
-  test('an unchanged fix ends the rounds when stop_unchanged_acceptance is set', () => {
-    put(ARTIFACTS.testedRevision, `${box.head()}\n`);
-    expect(settle(true, true)).toEqual({ progressed: false, push: false });
+    expect(settle(true)).toEqual({ progressed: false, push: false });
   });
 
   test('a committed fix continues the rounds', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     box.commitFix();
-    expect(settle(true, true)).toEqual({ progressed: true, push: true });
+    expect(settle(true)).toEqual({ progressed: true, push: true });
   });
 
   test('a retest reason continues the rounds without a commit', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     put(ARTIFACTS.retestReason, 'repaired the test server\n');
-    expect(settle(true, true)).toEqual({ progressed: true, push: true });
+    expect(settle(true)).toEqual({ progressed: true, push: true });
   });
 
   test('an empty retest reason does not count', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     put(ARTIFACTS.retestReason, '');
-    expect(settle(true, true).progressed).toBe(false);
+    expect(settle(true).progressed).toBe(false);
   });
 
   test('tracked changes left uncommitted count as progress', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     box.write('file.txt', 'dirty\n');
-    expect(settle(true, true).progressed).toBe(true);
+    expect(settle(true).progressed).toBe(true);
   });
 
   test('a missing tested revision counts as progress', () => {
-    expect(settle(true, true).progressed).toBe(true);
+    expect(settle(true).progressed).toBe(true);
   });
 
   test('a git failure is an error, not progress', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     const broken: typeof box.exec = (command, args, options) =>
       command === 'git' && args[0] === 'status' ? { status: 128, stdout: '', stderr: 'fatal\n' } : box.exec(command, args, options);
-    expect(() => checkProgress(broken, evidence, true, true)).toThrow('could not inspect the worktree');
+    expect(() => checkProgress(broken, evidence, true)).toThrow('could not inspect the worktree');
   });
 });
 
@@ -238,5 +234,16 @@ describe('lastLine', () => {
 
   test('is empty for a missing file', () => {
     expect(lastLine(box.path('evidence/none.txt'))).toBe('');
+  });
+});
+
+
+describe('clearRetestReason', () => {
+  test('clears the stale reason before a fix and tolerates absent files', () => {
+    clearRetestReason(evidence);
+    put(ARTIFACTS.retestReason, 'previous round reason');
+    clearRetestReason(evidence);
+    expect(box.exists(`evidence/${ARTIFACTS.retestReason}`)).toBe(false);
+    clearRetestReason(evidence);
   });
 });

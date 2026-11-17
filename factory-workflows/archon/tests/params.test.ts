@@ -119,26 +119,20 @@ describe('validationInstruction', () => {
 });
 
 describe('inputProblems', () => {
-  const valid = { changeName: 'demo', changesRoot: 'openspec/changes', changeKind: 'openspec', validationSetting: '', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything' };
+  const valid = { changeName: 'demo', changesRoot: 'openspec/changes', changeKind: 'openspec', validationSetting: '', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything', reviewStrategy: 'builtin' };
 
-  test('accepts valid inputs, with or without verify-change flags', () => {
+  test('accepts valid inputs with either strategy', () => {
     expect(inputProblems(valid)).toEqual([]);
-    expect(inputProblems({ ...valid, skipImplementationReview: 'true', stopUnchangedAcceptance: 'false' })).toEqual([]);
+    expect(inputProblems({ ...valid, reviewStrategy: 'none' })).toEqual([]);
   });
 
   test('reports every problem at once', () => {
-    expect(
-      inputProblems({
-        changeName: 'Demo',
-        changesRoot: 'openspec/changes',
-        changeKind: 'openspec',
-        validationSetting: '',
-        acceptanceRounds: '0',
-        maxRounds: 10,
-        acceptanceFixScope: ' ',
-        skipImplementationReview: 'yes',
-      })
-    ).toHaveLength(4);
+    const problems = inputProblems({ ...valid, changeName: 'Demo', changesRoot: 'elsewhere',
+      validationSetting: ' ', acceptanceRounds: '0', acceptanceFixScope: ' ' });
+    expect(problems).toHaveLength(5);
+    for (const name of ['change_name', 'changes_root', 'artifact_validation_instruction', 'acceptance_rounds', 'acceptance_fix_scope']) {
+      expect(problems.join('\n')).toContain(name);
+    }
   });
 
   test('checks the root against the kind when the kind is given', () => {
@@ -147,11 +141,7 @@ describe('inputProblems', () => {
     expect(inputProblems({ ...valid, changeKind: 'spec-driven' })).toEqual(['artifact_validation_instruction must not be empty']);
   });
 
-  test('checks the flags only when given', () => {
-    expect(inputProblems({ ...valid, stopUnchangedAcceptance: 'maybe' })).toEqual([
-      'stop_unchanged_acceptance must be true or false, got: maybe',
-    ]);
-  });
+
 });
 
 // The loader reads only a node's own script for INPUTS_* names, not the modules it imports,
@@ -201,20 +191,19 @@ describe('timing bindings', () => {
     return found;
   };
 
-  test('max_rounds is the acceptance loop ceiling in both workflows', () => {
-    const ceiling = find(load('verify-change'), 'acceptance-rounds').loop_group?.max_iterations;
+  test('max_rounds is the implement acceptance loop ceiling', () => {
+    const ceiling = find(load('implement-change'), 'acceptance-rounds').loop_group?.max_iterations;
     expect(ceiling).toBeGreaterThan(0);
-    expect(find(load('verify-change'), 'validate-inputs').with?.max_rounds).toBe(ceiling);
     expect(find(load('implement-change'), 'validate-inputs').with?.max_rounds).toBe(ceiling);
   });
 
   test('the wait-ci timeout outlasts the minutes it polls', () => {
-    const node = find(load('verify-change'), 'wait-ci');
+    const node = find(load('implement-change'), 'wait-ci');
     expect(node.timeout).toBeGreaterThan(Number(node.with?.max_minutes) * 60_000);
   });
 
   test('every draft pull request check binds its retry interval', () => {
-    const checks = load('verify-change').flatMap(node => [node, ...(node.loop_group?.nodes ?? [])]);
+    const checks = load('implement-change').flatMap(node => [node, ...(node.loop_group?.nodes ?? [])]);
     const draftChecks = checks.filter(node => node.with?.attempts !== undefined);
     expect(draftChecks.length).toBeGreaterThan(0);
     for (const node of draftChecks) expect(node.with?.interval_seconds).toBe(3);
@@ -243,6 +232,7 @@ describe('pack settings reach the included blocks', () => {
         'change_kind',
         'change_label',
         'changes_root',
+        'review_strategy',
       ].sort()
     );
   });
@@ -264,5 +254,85 @@ describe('pack settings reach the included blocks', () => {
   test.each(includes.map(node => [node.id, node] as const))('%s passes each setting on unchanged', (_id, node) => {
     const passed = Object.entries(node.with ?? {}).filter(([name]) => settings.includes(name));
     expect(passed.filter(([name, value]) => value !== `$INPUTS.${name}`)).toEqual([]);
+  });
+});
+
+// Declarative workflow contracts that must remain true after merging verification.
+describe('merged workflow contracts', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  interface WorkflowNode {
+    id: string;
+    model?: string[];
+    context?: string | { resume: string };
+    output_format?: unknown;
+    depends_on?: string[];
+    loop_group?: { max_iterations: number; on_exhausted?: string; nodes: WorkflowNode[] };
+  }
+  const load = (name: string) => Bun.YAML.parse(readFileSync(join(pack, name, `${name}.yaml`), 'utf8')) as {
+    nodes: WorkflowNode[]; returns: string; outcome_field: string;
+  };
+  const workflow = load('implement-change');
+  const flatten = (entries: WorkflowNode[]): WorkflowNode[] => entries.flatMap(entry => [entry, ...flatten(entry.loop_group?.nodes ?? [])]);
+  const nodes = flatten(workflow.nodes);
+  const node = (id: string) => {
+    const value = nodes.find(candidate => candidate.id === id);
+    if (!value) throw new Error(`missing ${id}`);
+    return value;
+  };
+
+  test('strategy and kind are launch enums with approved defaults', () => {
+    const settings = (Bun.YAML.parse(readFileSync(join(pack, '.pack/pack.yaml'), 'utf8')) as {
+      inputs: Record<string, { type: string; values: string[]; default: string }>;
+    }).inputs;
+    expect(settings.review_strategy).toMatchObject({ type: 'enum', values: ['builtin', 'none'], default: 'builtin' });
+    expect(settings.change_kind).toMatchObject({ type: 'enum', values: ['openspec', 'spec-driven'], default: 'openspec' });
+  });
+
+  test('validation is first and authored outcome comes from acceptance status', () => {
+    expect(workflow.nodes[0]?.id).toBe('validate-inputs');
+    expect(workflow.returns).toBe('write-acceptance-status');
+    expect(workflow.outcome_field).toBe('ready');
+    expect(readdirSync(pack)).not.toContain('verify-change');
+  });
+
+  test('every agent declares an approved role, fallback tier and context', () => {
+    const tiers: Record<string, string> = { '@implementor': 'large', '@crosscheck': 'large', '@reviewer': 'medium', '@tester': 'medium' };
+    const all = ['implement-change', 'check-definition', 'commit-definition'].flatMap(name => flatten(load(name).nodes));
+    for (const entry of all.filter(candidate => candidate.model)) {
+      expect(entry.model).toHaveLength(2);
+      expect(entry.model?.[1]).toBe(tiers[entry.model?.[0] ?? '']);
+      expect(entry.context).toBeDefined();
+    }
+  });
+
+  test('pre-pr and round reviewers fork the correct session owners', () => {
+    for (const id of ['review-change', 'tail-review', 'round-review']) expect(node(id).context).toBe('fresh');
+    expect(node('fix-review-findings').context).toEqual({ resume: 'session-report' });
+    expect(node('re-review').context).toEqual({ resume: 'review-change' });
+    expect(node('fix-round-findings').context).toEqual({ resume: 'acceptance-fix' });
+    expect(node('round-re-review').context).toEqual({ resume: 'round-review' });
+    expect(node('acceptance-fix').context).toEqual({ resume: 'session-report' });
+    expect(node('open-draft-pr').context).toBe('fresh');
+  });
+
+  // A step whose schema differs from the session's previous step misses the provider's
+  // prompt cache, so every step on a session returns that session's one schema.
+  test('every step on a session returns the schema its session started with', () => {
+    const root = (entry: WorkflowNode): WorkflowNode =>
+      typeof entry.context === 'object' ? root(node(entry.context.resume)) : entry;
+    const sessions = ['implementor-checklist', 'review-change', 'round-review'];
+    for (const start of sessions) {
+      const members = nodes.filter(entry => entry.model && root(entry).id === start);
+      expect(members.length).toBeGreaterThan(1);
+      for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
+    }
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(16);
+  });
+
+  test('review exhaustion completes at three and acceptance uses one plain fixer', () => {
+    expect(node('review-fixes').loop_group).toMatchObject({ max_iterations: 3, on_exhausted: 'complete' });
+    const body = node('acceptance-rounds').loop_group?.nodes ?? [];
+    expect(body.filter(entry => entry.id === 'fix-round-findings')).toHaveLength(1);
+    expect(body.some(entry => entry.loop_group)).toBe(false);
   });
 });

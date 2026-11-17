@@ -33,7 +33,7 @@ nodes:
   - id: repair-commit-definition
     depends_on: [commit-definition]
     when: "$commit-definition.output.ok == 'false'"
-    model: ['@lead', large]
+    model: ['@implementor', large]
     context: fresh
     command: repair-commit-definition
     with:

@@ -1,5 +1,3 @@
-# The forge check runs before any agent. The scratch checkout has no git remote, so there is
-# no host to check and the run refuses at check-forge.
 exec-code: true
 fixture:
   expect: failed
@@ -9,3 +7,4 @@ fixture:
     changes_root: tests/data/changes
     change_kind: spec-driven
     artifact_validation_instruction: Validate any changed spec artifact.
+    review_strategy: none

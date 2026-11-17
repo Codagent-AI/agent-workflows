@@ -9,7 +9,7 @@ import {
   head,
   status,
 } from '../.archon/workflows/codagent/.shared/lib/worktree.ts';
-import { ARTIFACTS } from '../.archon/workflows/codagent/.shared/lib/artifacts.ts';
+import { ARTIFACTS, nonEmptyFile } from '../.archon/workflows/codagent/.shared/lib/artifacts.ts';
 import { type Sandbox, createSandbox } from './helpers.ts';
 
 let box: Sandbox;
@@ -30,6 +30,20 @@ describe('checkNotBlocked (check-not-blocked.sh)', () => {
     for (const want of ['without a user decision', 'Decision needed: which export format?', 'start a new run']) {
       expect(result.problems).toContain(want);
     }
+  });
+
+  test('fails with the returned reason when the step returned blocked without a record', () => {
+    const result = checkNotBlocked(box.dir, { blocked: true, reason: 'Which export format?' });
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain('Which export format?');
+    expect(checkNotBlocked(box.dir, { blocked: true, reason: ' ' }).problems).toContain('the implementor gave no reason');
+  });
+
+  test('prefers the record to the returned reason', () => {
+    box.write(ARTIFACTS.blocked, 'Decision needed: which export format?\n');
+    const result = checkNotBlocked(box.dir, { blocked: true, reason: 'short reason' });
+    expect(result.problems).toContain('Decision needed: which export format?');
+    expect(result.problems).not.toContain('short reason');
   });
 });
 
@@ -108,5 +122,18 @@ describe('changedPaths', () => {
   test('is empty for a clean worktree and undefined when git fails', () => {
     expect(changedPaths(box.exec)).toEqual([]);
     expect(changedPaths(() => ({ status: 128, stdout: '', stderr: 'fatal' }))).toBeUndefined();
+  });
+});
+
+
+describe('assumptions handoff file predicate', () => {
+  test('rejects a missing, empty or directory ledger and accepts a populated ledger', () => {
+    const ledger = box.path(ARTIFACTS.assumptions);
+    expect(nonEmptyFile(ledger)).toBe(false);
+    box.write(ARTIFACTS.assumptions, '');
+    expect(nonEmptyFile(ledger)).toBe(false);
+    box.write(ARTIFACTS.assumptions, 'No unresolved assumptions or context gaps.\n');
+    expect(nonEmptyFile(ledger)).toBe(true);
+    expect(nonEmptyFile(box.dir)).toBe(false);
   });
 });

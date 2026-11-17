@@ -28,4 +28,11 @@ inputs:
     description: Most acceptance-test rounds, 1 to 10.
   acceptance_fix_scope:
     default: Resolve every high-confidence finding you can, including implementation, CI, PR-state, tooling, setup, and environmental problems.
-    description: Which findings the lead resolves in each acceptance fix.
+    description: Which findings the implementor resolves in each acceptance fix.
+  review_strategy:
+    type: enum
+    values: [builtin, none]
+    default: builtin
+    description: >-
+      builtin: the pack's reviewer reviews the change before the draft pull request
+      and after each acceptance fix. none: no review runs.

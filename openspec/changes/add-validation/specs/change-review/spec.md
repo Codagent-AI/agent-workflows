@@ -50,7 +50,7 @@ A review SHALL return a list of findings in one shared shape. An empty list SHAL
 
 #### Scenario: Review finds nothing
 - **WHEN** the reviewer finds no defect and no finding is open
-- **THEN** it returns an empty list, and the result says exactly `No findings.`
+- **THEN** it returns an empty list, and the result says exactly `No open findings.`
 
 #### Scenario: Review finds defects
 - **WHEN** the reviewer finds defects
@@ -208,7 +208,7 @@ The workflow SHALL keep one review result for before the pull request and one fo
 
 #### Scenario: Result after a review
 - **WHEN** a review ends
-- **THEN** its place's result names the start and end revisions it covered, lists the open and disputed findings or says `No findings.`, and lists each accepted decline with its reason
+- **THEN** its place's result names the start and end revisions it covered, lists the open and disputed findings or says `No open findings.`, and lists each accepted decline with its reason
 
 #### Scenario: Later round
 - **WHEN** a review runs in a later acceptance round

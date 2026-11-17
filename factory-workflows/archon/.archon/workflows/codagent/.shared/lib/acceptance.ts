@@ -69,7 +69,7 @@ export function startRound(evidenceDir: string, previousRound: string, rounds: n
 
 export interface Gate {
   ready: boolean;
-  /** Whether the lead fixes the findings now: not ready, and not the last round. */
+  /** Whether the implementor fixes the findings now: not ready, and not the last round. */
   fix: boolean;
   reasons: string;
 }
@@ -80,6 +80,11 @@ export function checkGate(exec: Exec, evidenceDir: string, last: boolean): Gate 
   return { ready, fix: !(ready || last), reasons: reasons.map(reason => `- ${reason}`).join('\n') };
 }
 
+/** Clear the reason already consumed by the tester before starting the next fix. */
+export function clearRetestReason(evidenceDir: string): void {
+  rmSync(join(evidenceDir, ARTIFACTS.retestReason), { force: true });
+}
+
 export interface Progress {
   progressed: boolean;
   /** Whether the round pushes the fix and the next round retests it. */
@@ -87,17 +92,16 @@ export interface Progress {
 }
 
 /**
- * After the lead's fix: did it move the tested revision, leave tracked changes, or write a
- * retest reason? With stop_unchanged_acceptance, a fix that did none of these ends the
+ * After the implementor's fix: did it move the tested revision, leave tracked changes, or write a
+ * retest reason? A fix that did none of these ends the
  * rounds, because another tester round could only repeat the last one.
  */
-export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean, stopUnchanged: boolean): Progress {
+export function checkProgress(exec: Exec, evidenceDir: string, fix: boolean): Progress {
   if (!fix) return { progressed: true, push: false };
-  if (!stopUnchanged) return { progressed: true, push: true };
   const tested = lastLine(join(evidenceDir, ARTIFACTS.testedRevision)).replace(/\s/g, '');
   const current = head(exec);
   const changes = status(exec, ['--untracked-files=no']);
-  // A git failure must not read as progress, or the stop option would push and retest.
+  // A git failure must not read as progress, or the workflow would push and retest.
   if (current === undefined || changes === undefined) {
     throw new Error('could not inspect the worktree to decide whether the acceptance fix made progress');
   }

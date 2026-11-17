@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { runCheck } from '../.archon/workflows/codagent/.shared/lib/check.ts';
 import {
   FORGE_OPERATIONS,
   OPS,
@@ -90,6 +91,33 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
     expect(waits).toEqual([3000]);
   });
 
+  test('fails after ten stale reads with nine configured waits', () => {
+    const { result, waits } = check([found({ head_revision: STALE })], 10, 3);
+    expect(result.ok).toBe(false);
+    expect(box.calls('archon').filter(call => call.args[1] === 'pr.view')).toHaveLength(10);
+    expect(waits).toEqual(Array(9).fill(3000));
+  });
+
+  test('a second failed PR check in strict mode fails the run after ten reads', () => {
+    const previous = { strict: process.env.INPUTS_STRICT, blocked: process.env.INPUTS_BLOCKED };
+    process.env.INPUTS_STRICT = 'true'; process.env.INPUTS_BLOCKED = 'false';
+    const exit = spyOn(process, 'exit').mockImplementation(() => { throw new Error('check failed exit 1'); });
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const tools = box.forgeTools([found({ head_revision: STALE })]);
+      expect(() => runCheck(() => checkDraftPr(tools, () => {}, 10, 3))).toThrow('check failed exit 1');
+      expect(box.calls('archon').filter(call => call.args[1] === 'pr.view')).toHaveLength(10);
+      expect(stderr.mock.calls[0]?.[0]).toContain('does not match required draft state or local HEAD');
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      exit.mockRestore(); stderr.mockRestore();
+      if (previous.strict === undefined) delete process.env.INPUTS_STRICT;
+      else process.env.INPUTS_STRICT = previous.strict;
+      if (previous.blocked === undefined) delete process.env.INPUTS_BLOCKED;
+      else process.env.INPUTS_BLOCKED = previous.blocked;
+    }
+  });
+
   test('checks once by default', () => {
     const rules = [rule(VIEW, ok('pr.view', prView({ head_revision: STALE })), ok('pr.view', prView({ head_revision: box.head() })))];
     const { result, waits } = check(rules);
@@ -99,6 +127,8 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
 
   const failing: [string, () => ReturnType<typeof found>, string][] = [
     ['head mismatch', () => found({ head_revision: STALE }), 'does not match required draft state or local HEAD'],
+    ['missing base', () => found({ base: '', head_revision: box.head() }), "base ''"],
+    ['closed pull request', () => found({ state: 'closed', head_revision: box.head() }), 'state closed'],
     ['not a draft', () => found({ is_draft: false, head_revision: box.head() }), 'draft false'],
     ['a merged pull request', () => found({ state: 'merged', head_revision: box.head() }), 'state merged'],
     ['no pull request', () => rule(VIEW, ok('pr.view', null)), 'found 0'],

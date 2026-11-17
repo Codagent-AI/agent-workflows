@@ -5,6 +5,9 @@ import { existsSync, statSync } from 'node:fs';
 
 export const ARTIFACTS = {
   blocked: 'implementation-blocked.md',
+  reviewState: 'review/state.json',
+  reviewBeforePr: 'review/before-pr.md',
+  reviewAcceptance: 'review/acceptance.md',
   assumptions: 'acceptance-assumptions.md',
   evidenceDir: 'evidence',
   plannedChecklist: 'planned-checklist.md',
