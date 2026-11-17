@@ -54,8 +54,7 @@ function symlinkedOpenspec(changeDir: string): CommitPlanResult | undefined {
     return outcome(fail(`commit-change-plan: change directory not found: ${changeDir}`));
   }
   return outcome(
-    pass(),
-    `openspec is a symbolic link; ${changeDir} is not committed here. Commit it by hand in the repository that holds the OpenSpec project.`
+    fail(`openspec is a symbolic link; the OpenSpec change must live inside this repository: ${changeDir}`)
   );
 }
 

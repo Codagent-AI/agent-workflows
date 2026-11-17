@@ -114,8 +114,8 @@ describe('commitChangePlan with an openspec symbolic link', () => {
     symlinkSync(outside, box.path('openspec'));
     const before = box.head();
     const result = commitPlan();
-    expect(result.ok).toBe(true);
-    expect(result.message).toContain('openspec is a symbolic link');
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain('openspec is a symbolic link');
     expect(box.head()).toBe(before);
   });
 

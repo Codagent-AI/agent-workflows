@@ -31,10 +31,12 @@ export function saveResult(dir: string, state: ReviewState): void {
   saveState(dir, state);
 }
 export function saveHandoff(dir: string, state: ReviewState): void {
-  const file = join(dir, ARTIFACTS.assumptions);
-  const ledger = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const next = handoff(state, ledger);
-  if (next !== ledger) write(file, next);
+  for (const [name, decisions] of [[ARTIFACTS.decisions, true], [ARTIFACTS.disputes, false]] as const) {
+    const file = join(dir, name);
+    const ledger = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    const next = handoff(state, ledger, decisions);
+    if (next !== ledger) write(file, next);
+  }
   saveState(dir, state);
 }
 export function script(run: () => Record<string, unknown>): void {

@@ -182,14 +182,14 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
     expect(run().problems).toContain('did not write');
   });
 
-  test('leaves a checklist outside the repository uncommitted', () => {
+  test('refuses a checklist outside the repository', () => {
     const outside = mkdtempSync(join(tmpdir(), 'archon-outside-'));
     try {
       const changeDir = join(outside, 'change');
       mkdirSync(changeDir);
       writeFileSync(join(changeDir, 'checklist.md'), 'x\n');
       const result = checkImplementorChecklist(box.exec, { changeDir, changeName: 'demo', start: start() });
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
       expect(box.head()).toBe(definitionHead);
     } finally {
       rmSync(outside, { recursive: true, force: true });

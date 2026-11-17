@@ -7,7 +7,6 @@ import {
   booleanProblems,
   changeDir,
   changeNameProblems,
-  changesRootProblems,
   inputProblems,
   nonEmptyProblems,
   validationInstruction,
@@ -88,60 +87,30 @@ describe('acceptanceRoundsProblems', () => {
   });
 });
 
-describe('changeDir and changesRootProblems', () => {
-  test('the change folder is the changes root and the name', () => {
-    expect(changeDir('openspec/changes', 'demo')).toBe('openspec/changes/demo');
-    expect(changeDir('specs/changes/', 'demo')).toBe('specs/changes/demo');
-  });
-
-  test('an openspec change must use the OpenSpec folder, and a spec-driven one may not', () => {
-    expect(changesRootProblems('openspec', 'openspec/changes/')).toEqual([]);
-    expect(changesRootProblems('openspec', 'elsewhere')).toEqual(['changes_root must be openspec/changes for openspec: elsewhere']);
-    expect(changesRootProblems('spec-driven', 'elsewhere')).toEqual([]);
-  });
-
-  test('the root must not be empty', () => {
-    expect(changesRootProblems('spec-driven', ' ')).toEqual(['changes_root must not be empty']);
-  });
-});
-
-describe('validationInstruction', () => {
-  test('an openspec change gets the sentence naming it', () => {
-    expect(validationInstruction('openspec', 'demo', '')).toBe(
-      'When an approved artifact changed, run `openspec validate --type change "demo"`.'
-    );
-  });
-
-  test('the setting wins, and a spec-driven change has none of its own', () => {
-    expect(validationInstruction('openspec', 'demo', 'Run the linter.')).toBe('Run the linter.');
-    expect(validationInstruction('spec-driven', 'demo', '')).toBe('');
+describe('fixed OpenSpec values', () => {
+  test('folder and validation sentence name the change', () => {
+    expect(changeDir('demo')).toBe('openspec/changes/demo');
+    expect(validationInstruction('demo')).toBe('When an approved artifact changed, run `openspec validate --type change "demo"`.');
   });
 });
 
 describe('inputProblems', () => {
-  const valid = { changeName: 'demo', changesRoot: 'openspec/changes', changeKind: 'openspec', validationSetting: '', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything', reviewStrategy: 'builtin' };
+  const valid = { changeName: 'demo', acceptanceRounds: '3', maxRounds: 10, acceptanceFixScope: 'resolve everything', reviewStrategy: 'builtin', stopAfter: 'finish' };
 
   test('accepts valid inputs with either strategy', () => {
     expect(inputProblems(valid)).toEqual([]);
     expect(inputProblems({ ...valid, reviewStrategy: 'none' })).toEqual([]);
   });
 
+  test('accepts either stop_after value', () => {
+    expect(inputProblems({ ...valid, stopAfter: 'acceptance' })).toEqual([]);
+  });
+
   test('reports every problem at once', () => {
-    const problems = inputProblems({ ...valid, changeName: 'Demo', changesRoot: 'elsewhere',
-      validationSetting: ' ', acceptanceRounds: '0', acceptanceFixScope: ' ' });
+    const problems = inputProblems({ ...valid, changeName: 'Demo', acceptanceRounds: '0', acceptanceFixScope: ' ', reviewStrategy: 'bad', stopAfter: 'archive' });
     expect(problems).toHaveLength(5);
-    for (const name of ['change_name', 'changes_root', 'artifact_validation_instruction', 'acceptance_rounds', 'acceptance_fix_scope']) {
-      expect(problems.join('\n')).toContain(name);
-    }
+    for (const name of ['change_name', 'acceptance_rounds', 'acceptance_fix_scope', 'review_strategy', 'stop_after']) expect(problems.join('\n')).toContain(name);
   });
-
-  test('checks the root against the kind when the kind is given', () => {
-    expect(inputProblems({ ...valid, changeKind: 'openspec', changesRoot: 'elsewhere' })).toHaveLength(1);
-    expect(inputProblems({ ...valid, changeKind: 'spec-driven', changesRoot: 'elsewhere', validationSetting: 'Lint.' })).toEqual([]);
-    expect(inputProblems({ ...valid, changeKind: 'spec-driven' })).toEqual(['artifact_validation_instruction must not be empty']);
-  });
-
-
 });
 
 // The loader reads only a node's own script for INPUTS_* names, not the modules it imports,
@@ -228,11 +197,8 @@ describe('pack settings reach the included blocks', () => {
       [
         'acceptance_fix_scope',
         'acceptance_rounds',
-        'artifact_validation_instruction',
-        'change_kind',
-        'change_label',
-        'changes_root',
         'review_strategy',
+        'stop_after',
       ].sort()
     );
   });
@@ -254,6 +220,21 @@ describe('pack settings reach the included blocks', () => {
   test.each(includes.map(node => [node.id, node] as const))('%s passes each setting on unchanged', (_id, node) => {
     const passed = Object.entries(node.with ?? {}).filter(([name]) => settings.includes(name));
     expect(passed.filter(([name, value]) => value !== `$INPUTS.${name}`)).toEqual([]);
+  });
+});
+
+// Archon passes an `if_skipped` fallback on as literal text and substitutes only `$LOOP_PREV`
+// references in it, so a node reference there reaches the node as its own text, unresolved.
+describe('skipped-branch fallbacks', () => {
+  const pack = join(import.meta.dir, '..', '.archon', 'workflows', 'codagent');
+  const workflows = readdirSync(pack, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map(entry => `${entry.name}/${entry.name}.yaml`);
+
+  test.each(workflows)('%s names no node output in an if_skipped fallback', workflow => {
+    const text = readFileSync(join(pack, workflow), 'utf8');
+    const fallbacks = [...text.matchAll(/if_skipped"?\s*:\s*"?(\$[A-Za-z][\w-]*\.output[^",}\s]*)/g)].map(match => match[1]);
+    expect(fallbacks.filter(ref => !ref?.startsWith('$LOOP_PREV.'))).toEqual([]);
   });
 });
 
@@ -285,22 +266,23 @@ describe('merged workflow contracts', () => {
       inputs: Record<string, { type: string; values: string[]; default: string }>;
     }).inputs;
     expect(settings.review_strategy).toMatchObject({ type: 'enum', values: ['builtin', 'none'], default: 'builtin' });
-    expect(settings.change_kind).toMatchObject({ type: 'enum', values: ['openspec', 'spec-driven'], default: 'openspec' });
+    expect(settings.stop_after).toMatchObject({ type: 'enum', values: ['finish', 'acceptance'], default: 'finish' });
+    expect(settings.change_kind).toBeUndefined();
   });
 
   test('validation is first and authored outcome comes from acceptance status', () => {
     expect(workflow.nodes[0]?.id).toBe('validate-inputs');
-    expect(workflow.returns).toBe('write-acceptance-status');
-    expect(workflow.outcome_field).toBe('ready');
+    expect(workflow.returns).toBe('publish-review-package');
+    expect(workflow.outcome_field).toBe('succeeded');
     expect(readdirSync(pack)).not.toContain('verify-change');
   });
 
   test('every agent declares an approved role, fallback tier and context', () => {
-    const tiers: Record<string, string> = { '@implementor': 'large', '@crosscheck': 'large', '@reviewer': 'medium', '@tester': 'medium' };
+    const tiers: Record<string, string> = { '@implementor': 'large', '@reviewer': 'medium', '@tester': 'medium' };
     const all = ['implement-change', 'check-definition', 'commit-definition'].flatMap(name => flatten(load(name).nodes));
     for (const entry of all.filter(candidate => candidate.model)) {
       expect(entry.model).toHaveLength(2);
-      expect(entry.model?.[1]).toBe(tiers[entry.model?.[0] ?? '']);
+      expect(entry.model?.[1]).toBe(entry.id === 'audit' ? 'large' : tiers[entry.model?.[0] ?? '']);
       expect(entry.context).toBeDefined();
     }
   });
@@ -326,7 +308,7 @@ describe('merged workflow contracts', () => {
       expect(members.length).toBeGreaterThan(1);
       for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
     }
-    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(16);
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(23);
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {
@@ -335,4 +317,14 @@ describe('merged workflow contracts', () => {
     expect(body.filter(entry => entry.id === 'fix-round-findings')).toHaveLength(1);
     expect(body.some(entry => entry.loop_group)).toBe(false);
   });
+});
+
+test('report mode preserves fatal defaults and emits a failure report for blocked late repairs', () => {
+  const module = join(import.meta.dir, '../.archon/workflows/codagent/.shared/lib/check.ts');
+  const source = `import {runCheck,fail} from ${JSON.stringify(module)}; runCheck(()=>fail('specific failure'));`;
+  const run = (env: Record<string,string>) => Bun.spawnSync([process.execPath,'-e',source],{env:{...process.env,...env}});
+  const fatal = run({INPUTS_STRICT:'true'});expect(fatal.exitCode).toBe(1);
+  const report = run({INPUTS_STRICT:'true',INPUTS_ON_FAILURE:'report'});expect(report.exitCode).toBe(0);expect(JSON.parse(report.stdout.toString()).problems).toBe('specific failure');
+  const blocked = run({INPUTS_STRICT:'true',INPUTS_ON_FAILURE:'report',INPUTS_BLOCKED:'true',INPUTS_REASON:'missing permission'});
+  expect(blocked.exitCode).toBe(0);expect(JSON.parse(blocked.stdout.toString()).problems).toContain('missing permission');
 });

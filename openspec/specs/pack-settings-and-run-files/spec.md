@@ -10,37 +10,7 @@ A launch of `codagent-implement-change` SHALL need only `change_name`.
 
 #### Scenario: Defaults suit an OpenSpec repository
 - **WHEN** a launch gives only `change_name`
-- **THEN** the change kind is `openspec`, the changes root is `openspec/changes`, the label is `OpenSpec change`, and the allowed rounds are 3
-
-### Requirement: Other values come from pack settings
-Every other value SHALL come from a pack setting with a default for an OpenSpec repository.
-
-#### Scenario: Project overrides the settings
-- **WHEN** `.archon/packs/codagent.yaml` under `settings:` sets `change_kind: spec-driven` and a `changes_root`
-- **THEN** the run uses them
-
-#### Scenario: One run overrides a setting
-- **WHEN** a launch passes `--input <setting>=<value>`
-- **THEN** the value reaches the workflows the run includes, because the including workflow passes each setting on
-
-#### Scenario: Invalid change kind
-- **WHEN** `change_kind` is neither `openspec` nor `spec-driven`
-- **THEN** the run is refused before any node runs
-
-#### Scenario: Invalid review strategy
-- **WHEN** `review_strategy` is neither `builtin` nor `none`
-- **THEN** the run is refused before any node runs
-
-### Requirement: The change folder is derived from the root and name
-The workflow SHALL compute the change's folder as `<changes_root>/<change_name>`.
-
-#### Scenario: Default folder
-- **WHEN** the changes root is `openspec/changes` and the change is `add-greeting`
-- **THEN** the folder is `openspec/changes/add-greeting`
-
-#### Scenario: Trailing slash
-- **WHEN** the changes root ends in slashes
-- **THEN** the folder has a single slash before the name
+- **THEN** the change folder is `openspec/changes/<change_name>`, and the allowed rounds are 3
 
 ### Requirement: Later nodes read the derived folder
 Every node after input validation SHALL read the derived folder.
@@ -49,23 +19,12 @@ Every node after input validation SHALL read the derived folder.
 - **WHEN** a later node needs the change folder
 - **THEN** it takes the value that input validation printed
 
-### Requirement: Validation sentence is derived for OpenSpec
-When the kind is `openspec` and the setting is empty, the workflow SHALL tell agents to run `openspec validate --type change "<name>"` when an approved artifact changed.
-
-#### Scenario: Setting wins
-- **WHEN** the setting is not empty
-- **THEN** agents get the setting's sentence
-
-#### Scenario: Empty setting, OpenSpec kind
-- **WHEN** the setting is empty and the kind is `openspec`
-- **THEN** agents get the sentence naming the change
-
 ### Requirement: Agent nodes name a role with a tier fallback
 Every agent node SHALL name a role alias with a tier fallback.
 
 #### Scenario: Roles and tiers
 - **WHEN** the workflows are read
-- **THEN** the implementor and crosscheck use `large`, the tester and reviewer use `medium`, and no node names `@lead`
+- **THEN** the implementor and the audit use `large`, the tester, the completion judge and the code review use `medium`, and no node names `@lead` or `@crosscheck`
 
 #### Scenario: Alias is unbound
 - **WHEN** a role alias has no binding in the launch checkout's config
@@ -131,37 +90,51 @@ The acceptance loop SHALL complete, not fail, when its rounds are used.
 - **WHEN** the acceptance rounds are used without convergence
 - **THEN** the loop completes instead of failing, so the final status step records the outcome
 
-### Requirement: Agents and scripts share named files under the artifacts folder
-Agents and scripts SHALL share the files `implementation-blocked.md`, `acceptance-assumptions.md`, `implementor-decisions.md`, `evidence/`, `planned-checklist.md`, `evidence-problems.txt`, `session-report.md`, the acceptance round files, `pr-title.txt`, `pr-body.md`, `pull-request.json`, `ci/round-<n>.md` and the review results under `review/` under the run's artifacts folder.
+### Requirement: The review's fix loop completes when its rounds run out
+The fix loop before the pull request SHALL complete, not fail, when its rounds are used.
 
-#### Scenario: Evidence problems are recorded
-- **WHEN** the evidence check fails
-- **THEN** `evidence-problems.txt` lists each problem, and a later passing check removes it
+#### Scenario: Fix rounds run out
+- **WHEN** findings are still open after the last fix round
+- **THEN** the loop completes, and the open `high` and `medium` findings go to the run's `dispute-log.md`
 
-#### Scenario: Ruling is recorded
-- **WHEN** an agent rules on a question a human might have decided
-- **THEN** it appends a `## ` section to `acceptance-assumptions.md` with the question, requirement, ruling, rationale and pending decision
+### Requirement: Every other value comes from a pack setting
+Every value other than `change_name` SHALL come from a pack setting with a default for an OpenSpec repository.
 
-#### Scenario: Ordinary decision is recorded
-- **WHEN** the implementor makes a decision that could change behavior, scope or integration
-- **THEN** it records it in `implementor-decisions.md`
+#### Scenario: Project overrides a setting
+- **WHEN** `.archon/packs/codagent.yaml` under `settings:` sets `acceptance_rounds: 5`
+- **THEN** the run uses it
 
-#### Scenario: Review result is recorded
-- **WHEN** a review ends
-- **THEN** its result is in `review/before-pr.md` or `review/acceptance.md`, for the place it ran
+#### Scenario: One run overrides a setting
+- **WHEN** a launch passes `--input <setting>=<value>`
+- **THEN** the value reaches the workflows the run includes, because the including workflow passes each setting on
 
-### Requirement: The checklist is committed with the change
-The checklist SHALL live at `<change_dir>/checklist.md` and be committed on the change's branch.
+#### Scenario: Invalid review strategy
+- **WHEN** `review_strategy` is neither `builtin` nor `none`
+- **THEN** the run is refused before any node runs
 
-#### Scenario: Checklist is committed
-- **WHEN** the checklist step passes
-- **THEN** the commit holds only the checklist, with a message naming the change
+#### Scenario: Invalid stop point
+- **WHEN** `stop_after` is neither `finish` nor `acceptance`
+- **THEN** the run is refused before any node runs
 
-#### Scenario: Change folder is outside the repository
-- **WHEN** the change folder is not inside the repository
-- **THEN** the checklist stays uncommitted and the checks do not require a commit
+### Requirement: A run can end after the acceptance rounds
+With `stop_after: acceptance`, the workflow SHALL end after the acceptance rounds and the recheck of the rows still not verified, without committing the logs, archiving the change, finalizing the pull request or publishing the review package, and its outcome SHALL be succeeded exactly when acceptance converged. With the default, `finish`, every step SHALL run.
 
-### Requirement: The implement workflow validates its inputs first
+#### Scenario: Acceptance converges
+- **WHEN** a launch sets `stop_after: acceptance` and acceptance converges
+- **THEN** the run succeeds, with its pull request a draft and the change unarchived
+
+#### Scenario: Acceptance does not converge
+- **WHEN** a launch sets `stop_after: acceptance` and acceptance does not converge
+- **THEN** the run's outcome is failed, and no review package is written
+
+### Requirement: The change folder is fixed by the change name
+The workflow SHALL use `openspec/changes/<change_name>` as the change's folder.
+
+#### Scenario: Folder for a change
+- **WHEN** the change is `add-greeting`
+- **THEN** the folder is `openspec/changes/add-greeting`
+
+### Requirement: Launch inputs are validated before any other node
 `codagent-implement-change` SHALL validate all its inputs before any other node and report every problem at once.
 
 #### Scenario: Bad change name
@@ -172,17 +145,70 @@ The checklist SHALL live at `<change_dir>/checklist.md` and be committed on the 
 - **WHEN** `acceptance_rounds` is not a whole number from 1 to 10
 - **THEN** the run fails, because the acceptance loop's ceiling is a literal 10
 
-#### Scenario: OpenSpec change with another root
-- **WHEN** the kind is `openspec` and `changes_root` is not `openspec/changes`
+### Requirement: Agents get the OpenSpec validation sentence
+The workflow SHALL tell agents to run `openspec validate --type change "<name>"` when an approved artifact changed.
+
+#### Scenario: Sentence names the change
+- **WHEN** an agent's prompt includes the validation sentence
+- **THEN** it names the run's change
+
+### Requirement: The checklist is committed on the change's branch
+The checklist SHALL live at `openspec/changes/<name>/checklist.md` and be committed on the change's branch.
+
+#### Scenario: Checklist is committed
+- **WHEN** the checklist step passes
+- **THEN** the commit holds only the checklist, with a message naming the change
+
+### Requirement: A failed step after the acceptance rounds does not stop the run
+When a check in the archive, in finalize, or on an acceptance round's push still fails after its repair, or its repair reports itself blocked, the workflow SHALL record the failure for the review package and go on. When an acceptance fix reports itself blocked, the rounds SHALL end as not converged, and the workflow SHALL record it and go on. Before the acceptance rounds end, any other check that still fails after its repairs SHALL still fail the run.
+
+#### Scenario: Archive check fails after its repair
+- **WHEN** the archive commit check still fails after its repair
+- **THEN** the failure is recorded for the review package, and finalize runs
+
+#### Scenario: Finalize repair is blocked
+- **WHEN** a finalize repair reports itself blocked
+- **THEN** finalize fails, the failure is recorded for the review package, and the package is written
+
+#### Scenario: Acceptance push still fails
+- **WHEN** an acceptance round's push still fails after its repair, or its repair reports itself blocked
+- **THEN** the rounds end as not converged, the failure is recorded for the review package, and the logs, the archive, finalize and the package run
+
+#### Scenario: Acceptance fix is blocked
+- **WHEN** an acceptance fix fixes what it safely can, records a decision only the user can make, and reports itself blocked
+- **THEN** the rounds end as not converged, the round's committed fixes are pushed in finalize, and the logs, the archive, finalize and the package run
+
+#### Scenario: Check before the acceptance rounds
+- **WHEN** the clean-worktree check before the pull request still fails after its repair
 - **THEN** the run fails
 
-#### Scenario: Spec-driven change without a validation sentence
-- **WHEN** the kind is `spec-driven` and `artifact_validation_instruction` is empty
-- **THEN** the run fails saying it must not be empty
+### Requirement: Agents and scripts share named run files
+Agents and scripts SHALL share these files under the run's artifacts folder: `implementation-blocked.md`, `implementation-complete.md`, `decision-log.md`, `dispute-log.md`, `evidence/`, `planned-checklist.md`, `evidence-problems.txt`, `session-report.md`, the acceptance round files, `pr-title.txt`, `pr-body.md`, `pull-request.json`, `ci/round-<n>.md` and the review results under `review/`, plus the files of the steps this change adds.
 
-### Requirement: The review's fix loop completes when its rounds run out
-The fix loop before the pull request SHALL complete, not fail, when its rounds are used.
+#### Scenario: Evidence problems are recorded
+- **WHEN** the evidence check fails
+- **THEN** `evidence-problems.txt` lists each problem, and a later passing check removes it
 
-#### Scenario: Fix rounds run out
-- **WHEN** findings are still open after the last fix round
-- **THEN** the loop completes, and the open `high` and `medium` findings go to `acceptance-assumptions.md`
+#### Scenario: Decision is recorded
+- **WHEN** an agent settles on its own a question the definition did not settle that could change behavior, scope or integration
+- **THEN** it appends a `## ` section to `decision-log.md` with the step, the question, the requirement, the decision, the alternatives, the rationale, what breaks if it is wrong and any decision pending from the user
+
+#### Scenario: Dispute is recorded
+- **WHEN** the implementor holds that an audit finding is not a violation, or a review cycle ends with a `high` or `medium` finding that is not closed
+- **THEN** a `## ` section for it is appended to `dispute-log.md`
+
+#### Scenario: Review result is recorded
+- **WHEN** a review ends
+- **THEN** its result is in `review/before-pr.md` or `review/acceptance.md`, for the place it ran
+
+#### Scenario: Completion verdict is recorded
+- **WHEN** the completion judge gives a verdict
+- **THEN** the verdict and the judgment it closes are recorded in `completion-verdict.json` and `completion-loop.jsonl`, so a resumed run keeps a verdict already given
+
+#### Scenario: Files of the added steps
+- **WHEN** the workflows are read
+- **THEN** the completion loop uses `completion-problems.txt`, `completion-check.json`, `completion-verdict.json`, `completion-loop.jsonl`, `continue-snapshot.json`, `implementation-remaining.md` and `implementor-response.md`; the archive uses `archive/state.json`; finalize writes `ci/finalize-<n>.md` and `ci/final.md`; and the review package uses `step-results.json`, `review-attention.json` and `review-package.md`
+
+#### Scenario: Step results are recorded
+- **WHEN** the archive or finalize ends, whether it succeeded or failed
+- **THEN** `step-results.json` records the outcome, what failed and what is left to do, for the review package

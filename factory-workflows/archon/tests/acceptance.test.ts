@@ -1,3 +1,4 @@
+import { endAcceptance, pushRecheck, unverifiedRows } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync, symlinkSync } from 'node:fs';
 
@@ -107,7 +108,7 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
       head,
       "round status is 'NOT_READY'",
       box.path('evidence/acceptance-findings.md'),
-      box.path('evidence/acceptance-assumptions.md'),
+      box.path('evidence/decision-log.md'),
       box.path('evidence/acceptance-handoff-tester.md'),
     ]) {
       expect(handoff).toContain(want);
@@ -246,4 +247,28 @@ describe('clearRetestReason', () => {
     expect(box.exists(`evidence/${ARTIFACTS.retestReason}`)).toBe(false);
     clearRetestReason(evidence);
   });
+});
+
+test('blocked acceptance records failure and a persistent stop marker for the loop',()=>{
+  const dir=box.path('evidence');endAcceptance(dir,'blocked on decision D-01');
+  expect(box.read('evidence/acceptance-stop.txt')).toContain('D-01');
+  const recorded=JSON.parse(box.read('evidence/step-results.json'));
+  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('D-01');
+});
+
+test('the recheck lists only the rows still not verified',()=>{
+  box.write('change/checklist.md','| ID | Behavior | Evidence | Status |\n| --- | --- | --- | --- |\n| I-1 | a | `a.log` | verified |\n| I-2 | b | unit only | not verified |\n| I-3 | c | `c.log` | failed |\n| I-4 | d | stale | `not verified` |\n');
+  expect(unverifiedRows(box.path('change'))).toEqual({rows:'I-2, I-4'});
+  expect(unverifiedRows(box.path('missing'))).toEqual({rows:''});
+});
+test('a recheck push that fails is recorded as an acceptance failure',()=>{
+  box.commitFix();const dir=box.path('evidence');
+  expect(pushRecheck(dir).ok).toBe(false);
+  const recorded=JSON.parse(box.read('evidence/step-results.json'));
+  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('recheck push:');expect(recorded.acceptance.remaining).toContain('lacks the recheck');
+});
+test('a recheck push reaches the remote branch',()=>{
+  const bare=box.addBareOrigin();box.git('push','-q','--set-upstream','origin','HEAD');const head=box.commitFix();
+  expect(pushRecheck(box.path('evidence')).ok).toBe(true);
+  expect(box.gitIn(box.dir,'--git-dir',bare,'rev-parse',`refs/heads/${box.git('branch','--show-current')}`)).toBe(head);
 });

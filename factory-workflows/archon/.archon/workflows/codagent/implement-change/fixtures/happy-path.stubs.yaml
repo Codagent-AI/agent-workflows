@@ -1,17 +1,15 @@
-validate-inputs: {"change_dir":"tests/data/changes/valid-change","artifact_validation_instruction":"Validate any changed spec artifact.","rounds":3,"review":true}
+validate-inputs: {"change_dir":"tests/data/changes/valid-change","artifact_validation_instruction":"Validate any changed spec artifact.","rounds":3,"review":true,"finish":true}
 check-forge: "forge ready"
 check-definition__validate-definition: {"ok":true,"problems":""}
 check-definition__verify-definition: {"ok":true,"problems":""}
-commit-definition__commit-definition: {"ok":true,"problems":"","message":"a spec-driven change commits its definition in its planning step"}
+commit-definition__commit-definition: {"ok":true,"problems":"","message":"definition committed"}
 commit-definition__check-clean-before-implementation: "no tracked changes"
 implementor-checklist: {"blocked":false,"reason":"","actions":[]}
 check-implementor-checklist-not-blocked: "not blocked"
 check-implementor-checklist: "checklist committed"
 verify-checklist: {"ok":true,"problems":""}
 implement: {"blocked":false,"reason":"","actions":[]}
-check-implementation-not-blocked: "not blocked"
-check-evidence: {"ok":true,"problems":""}
-audit: "I-2: the fallback greeting has no test that asserts it (specs/greeting/spec.md)."
+audit: "No findings."
 resolve-findings: {"blocked":false,"reason":"","actions":[]}
 check-findings-not-blocked: "not blocked"
 recheck-evidence: {"ok":true,"problems":""}
@@ -24,36 +22,67 @@ wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/ro
 acceptance-handoff: {"ready":true,"reason":""}
 acceptance-gate: {"ready":true,"fix":false,"reasons":""}
 check-acceptance-progress: {"progressed":true,"push":false}
-verify-assumptions-handoff: {"ok":true,"problems":""}
 verify-clean-for-pr: {"ok":true,"problems":""}
 open-draft-pr: {"blocked":false,"reason":""}
 publish-draft-pr: {"ok":true,"problems":""}
 verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
+list-unverified: {"rows":""}
 prepare-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
 review-change: {"verdicts":[],"findings":[]}
 record-review: {"settled":true,"findings":""}
 hand-off-review: {"ok":true}
 prepare-tail-review: {"needed":false,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
+save-implementor-response: "saved"
+check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
+check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
+commit-logs: {"ok":true,"problems":""}
+archive-change: {"ok":true,"problems":""}
+verify-archive-commit: {"ok":true,"problems":"","archive_state":"{\"owned_delta\":[],\"archive_dir\":\"archive\"}"}
+record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-change"}
+finalize-push: {"ok":true,"problems":""}
+mark-ready: {"ok":true,"problems":""}
+wait-finalize-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":""}
+final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+record-finalize: {"ok":true,"problems":""}
+prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
+rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
+check-ranking: {"ok":true,"problems":""}
+publish-review-package: {"succeeded":true}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: completed
   authored: succeeded
   reached:
-    - verify-assumptions-handoff
     - review-change
     - hand-off-review
     - verify-clean-for-pr
     - open-draft-pr
     - write-acceptance-status
+    - check-completion
+    - check-completion-verdict
+    - commit-logs
+    - archive-change
+    - verify-archive-commit
+    - record-archive
+    - finalize-push
+    - mark-ready
+    - wait-finalize-ci
+    - ci-cycle-status
+    - final-ci
+    - record-finalize
+    - prepare-ranking
+    - rank-review
+    - check-ranking
+    - publish-review-package
   resolved-text-contains:
     implementor-checklist: You are running autonomously with no human in the loop.
     audit: You are running autonomously with no human in the loop.
-    resolve-findings: "I-2: the fallback greeting has no test"
+    resolve-findings: No findings.
     session-report: "# Session report instructions"
     review-change: You are running autonomously with no human in the loop.
+    rank-review: You are running autonomously with no human in the loop.
   inputs:
     change_name: valid-change
-    changes_root: tests/data/changes
-    change_kind: spec-driven
-    artifact_validation_instruction: Validate any changed spec artifact.
     review_strategy: builtin

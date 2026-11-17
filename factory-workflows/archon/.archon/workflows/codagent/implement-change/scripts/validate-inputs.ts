@@ -2,4 +2,8 @@
 import { readInputs, validateRun } from '../../.shared/lib/params.ts';
 
 const inputs = readInputs(process.env);
-validateRun(inputs, { rounds: Number(inputs.acceptanceRounds), review: inputs.reviewStrategy !== 'none' });
+validateRun(inputs, {
+  rounds: Number(inputs.acceptanceRounds),
+  review: inputs.reviewStrategy !== 'none',
+  finish: inputs.stopAfter !== 'acceptance',
+});

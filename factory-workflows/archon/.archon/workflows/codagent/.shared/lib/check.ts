@@ -26,6 +26,7 @@ export const fail = (problems: string | readonly string[]): CheckResult => ({
 
 export interface CheckMode {
   strict: boolean;
+  onFailure?: string;
   blocked: boolean;
   reason: string;
 }
@@ -33,6 +34,7 @@ export interface CheckMode {
 export function checkMode(): CheckMode {
   return {
     strict: process.env.INPUTS_STRICT === 'true',
+    onFailure: process.env.INPUTS_ON_FAILURE ?? 'fail',
     blocked: process.env.INPUTS_BLOCKED === 'true',
     reason: process.env.INPUTS_REASON ?? '',
   };
@@ -47,7 +49,7 @@ function stopIfBlocked(mode: CheckMode): void {
 
 /** Prints the result as the node's output, failing the node on a strict failure. */
 function report(result: CheckResult, mode: CheckMode, extra: Record<string, unknown> = {}): void {
-  if (!result.ok && mode.strict) {
+  if (!result.ok && mode.strict && mode.onFailure !== 'report') {
     process.stderr.write(`${result.problems}\n`);
     process.exit(1);
   }
@@ -60,6 +62,10 @@ function report(result: CheckResult, mode: CheckMode, extra: Record<string, unkn
  */
 export function runCheck(check: () => CheckResult): void {
   const mode = checkMode();
+  if (mode.blocked && mode.onFailure === 'report') {
+    report(fail(`REPAIR_BLOCKED: ${mode.reason || 'no reason given'}`), { ...mode, strict: false });
+    return;
+  }
   stopIfBlocked(mode);
   const { ok, problems, ...extra } = check();
   report({ ok, problems }, mode, extra);

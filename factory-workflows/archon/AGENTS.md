@@ -23,3 +23,12 @@ Add machinery only where it clearly raises the chance of the right outcome. Pref
 - A live trial (README.md, Live trials) is available for testing a pack change with real agents. Start one only when the user allows it, in the change's test plan or in conversation, and clean it up when the run stops.
 - Only `PROVENANCE.md` names the projects the pack was ported from. Record there any change that moves the pack further from its source.
 - Commit messages: `type: lowercase description`, with type one of `fix`, `feat`, `chore`, `refactor`, `test`, or `docs`.
+
+## Finish path
+
+- Only OpenSpec changes under the target repository's `openspec/changes/<name>` are supported. Do not restore change-kind settings or provider-specific code.
+- The inspection audit runs on `@reviewer` with a large fallback; code review and ranking use reviewer/medium and completion judgment uses tester/medium.
+- Keep completion verdict limits and progress checks independent of the judge. Preserve report-mode continuation from the end of acceptance through archive and finalize to the package; earlier checks keep their fatal defaults.
+- Commit the decision and dispute logs before archive; later agent entries belong to the committed current change folder. Preserve unrelated index and worktree changes during archive commits.
+- PR state and description mutations use the forge. The finalize fixer may reply/resolve comment threads with gh; mark every reply with `<!-- codagent-reply -->`. Never merge.
+- Ranking requirements are inventoried independently of the ranking agent. Preserve external PR text and verify the published generated body by reading it back.

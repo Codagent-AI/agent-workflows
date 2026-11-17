@@ -1,10 +1,25 @@
 exec-code: true
+save-implementor-response: "saved"
+check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
+check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
+commit-logs: {"ok":true,"problems":""}
+archive-change: {"ok":true,"problems":""}
+verify-archive-commit: {"ok":true,"problems":"","archive_state":"{\"owned_delta\":[],\"archive_dir\":\"archive\"}"}
+record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-change"}
+finalize-push: {"ok":true,"problems":""}
+mark-ready: {"ok":true,"problems":""}
+wait-finalize-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":""}
+final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+record-finalize: {"ok":true,"problems":""}
+prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
+rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
+check-ranking: {"ok":true,"problems":""}
+publish-review-package: {"succeeded":true}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
   expect: failed
   fail-node: check-forge
   inputs:
     change_name: valid-change
-    changes_root: tests/data/changes
-    change_kind: spec-driven
-    artifact_validation_instruction: Validate any changed spec artifact.
     review_strategy: none

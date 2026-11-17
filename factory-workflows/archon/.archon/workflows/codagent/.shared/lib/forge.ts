@@ -17,6 +17,7 @@ export const OPS = {
   create: 'pr.create',
   editBody: 'pr.edit-body',
   draft: 'pr.draft',
+  ready: 'pr.ready',
   checks: 'checks.state',
   logs: 'checks.logs',
   reviews: 'pr.reviews',

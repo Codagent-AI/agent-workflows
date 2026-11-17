@@ -7,8 +7,6 @@ description: >-
 inputs:
   change_name: { required: true }
   change_dir: { required: true }
-  change_label: { required: true }
-  change_kind: { required: true }
 
 nodes:
   - id: validate-definition
@@ -20,7 +18,6 @@ nodes:
       reason: ""
       change_name: $INPUTS.change_name
       change_dir: $INPUTS.change_dir
-      change_kind: $INPUTS.change_kind
     output_format: &check
       type: object
       properties:
@@ -45,7 +42,6 @@ nodes:
           context: fresh
           command: repair-definition
           with:
-            change_label: $INPUTS.change_label
             change_name: $INPUTS.change_name
             change_dir: $INPUTS.change_dir
             validation_output: $validate-definition.output.problems
@@ -65,7 +61,6 @@ nodes:
           with:
             change_name: $INPUTS.change_name
             change_dir: $INPUTS.change_dir
-            change_kind: $INPUTS.change_kind
             strict: false
             blocked: $repair-definition.output.blocked
             reason: $repair-definition.output.reason
@@ -84,5 +79,4 @@ nodes:
       reason: ""
       change_name: $INPUTS.change_name
       change_dir: $INPUTS.change_dir
-      change_kind: $INPUTS.change_kind
     output_format: *check
