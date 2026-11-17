@@ -62,11 +62,11 @@ settings:
   review_strategy: builtin
 ```
 
-Only OpenSpec changes are supported. Remove `change_kind`, `changes_root`, `change_label` and `artifact_validation_instruction` from existing project settings: Archon refuses these undeclared keys at launch. Agents receive the OpenSpec validation sentence derived from the change name.
+Only OpenSpec changes are supported. Agents receive the OpenSpec validation sentence derived from the change name.
 
 Archon reads this file from the run's own checkout, so an isolated run (a worktree) sees it only if it is committed or listed under `worktree.copyFiles`. `--input <setting>=<value>` overrides a setting for one run; the override reaches the blocks the run includes, because the workflow passes each setting on to them. An unknown key, or a value of the wrong type (`review_strategy` must be `builtin` or `none`, `stop_after` `finish` or `acceptance`), refuses the run before any node runs.
 
-Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it. Unknown `review_strategy` values are refused before any node runs.
+Review is on by default and adds agent time and cost. Set `review_strategy: none` in project settings or with `--input` to disable it.
 
 ### The forge
 
@@ -81,7 +81,7 @@ The comments and threads read stays on `gh` because the forge's actor record has
 
 ### Roles
 
-Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@tester', medium]`, and `['@reviewer', medium]` (the inspection audit uses reviewer with `large`). Existing `@crosscheck` bindings are unused. No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
+Each agent node names a role alias with a tier fallback: `['@implementor', large]`, `['@tester', medium]`, and `['@reviewer', medium]` (the inspection audit uses reviewer with `large`). No node sets a provider, model or effort, so the binding decides all three. A run reads repository config from the launch checkout (`--cwd`), not from the workflow source, so bind the aliases in the target's `.archon/config.yaml`, in `~/.archon/config.yaml`, in a file passed with `--config`, or per alias with `--model '@tester=<provider>/<model>'`. An unbound alias falls back to its tier.
 
 ```yaml
 aliases:
