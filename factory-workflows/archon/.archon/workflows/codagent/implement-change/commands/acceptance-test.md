@@ -93,6 +93,10 @@ the running product against the spec, not the suite.
 A scenario that describes a failure or error is a floor item too: trigger it, with an injected fault or
 a scratch fixture if needed, instead of leaving it to the suite.
 
+When a floor item is the behavior of an agent following a skill, prompt or other instructions the
+change adds, you are that agent: follow the instructions yourself in a scratch project, answer their
+questions as the person would, and keep the exchange as evidence.
+
 Group floor items that one realistic journey exercises together, and keep each one brief: predict,
 act, record the observed values. Anything in the floor you could not exercise is a limitation; name it
 with its reason. If a floor run failed, back an external limitation reason with the failure evidence
