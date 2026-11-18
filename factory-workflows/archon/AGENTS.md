@@ -21,7 +21,7 @@ Add machinery only where it clearly raises the chance of the right outcome. Pref
 - With any change to a check, a repair, or a branch condition, add or change a fixture. With any change to `.shared/lib/`, add or change a bun test. Before committing, run both test layers and the lint as README.md's Tests section describes. None of them makes model calls. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment.
 - Add tests to the existing fixtures and `tests/*.test.ts`. Do not add a test suite or CI job.
 - A live trial (README.md, Live trials) is available for testing a pack change with real agents. Start one only when the user allows it, in the change's test plan or in conversation, and clean it up when the run stops.
-- Only `PROVENANCE.md` names the projects the pack was ported from. Record there any change that moves the pack further from its source.
+- Only `PROVENANCE.md` names the projects the pack was ported from.
 - Commit messages: `type: lowercase description`, with type one of `fix`, `feat`, `chore`, `refactor`, `test`, or `docs`.
 
 ## Finish path
