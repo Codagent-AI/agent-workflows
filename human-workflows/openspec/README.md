@@ -27,10 +27,10 @@ codex plugin add define-openspec-change@agent-workflows
 
 | CLI | Start or resume a define |
 |---|---|
-| Claude Code | `/define-openspec-change:define <change-name> [what you want]` |
-| Codex | `$define <change-name> [what you want]` |
+| Claude Code | `/define-openspec-change:define [change-name] [what you want]` |
+| Codex | `$define [change-name] [what you want]` |
 
-The change name uses lowercase letters, digits, and hyphens, for example `add-dark-mode`.
+The change name is optional. Without one, the agent names the change from what you want, without asking. A name uses lowercase letters, digits, and hyphens, for example `add-dark-mode`.
 
 The agent works through each step with you, and can't move on until the step's file is written. In the proposal and approach-review steps, a second agent reviews the work. It can read your repository but can't change it, and your agent checks each finding before bringing it to you.
 

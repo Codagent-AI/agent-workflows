@@ -62,6 +62,7 @@ test("invalid change names are refused before anything is created", async () => 
   const missing = await next({ start: true });
   assert.equal(missing.isError, true);
   assert.match(missing.text, /start needs a change_name/);
+  assert.match(missing.text, /Do not ask the user for one/);
   assert.deepEqual(fakeLog(fixture), []);
 });
 
