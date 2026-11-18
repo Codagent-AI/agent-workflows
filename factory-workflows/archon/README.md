@@ -2,7 +2,7 @@
 
 The `codagent` workflow pack for the [Archon](https://github.com/coleam00/Archon) engine. It takes an approved change definition, has agents implement it against a checklist of how each spec behavior is verified, audits the result, opens a draft pull request, runs acceptance rounds, archives the OpenSpec change, marks the pull request ready, fixes CI and comments, and publishes the evidence for human review. A run never merges.
 
-This folder is the workflow source Archon reads: pass it to `--workflow-source`. `PROVENANCE.md` says where the workflows came from and how they differ from their source.
+This folder is the workflow source Archon reads: pass it to `--workflow-source`. `PROVENANCE.md` says where the workflows came from.
 
 ## Workflows
 
