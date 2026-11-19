@@ -27,13 +27,11 @@ test.each(['check','pending','review','conflict','comment','head','error','unkno
   if(kind==='unknown')result.mergeable='unknown';
   if(kind==='comment')result.comments={hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'author',body:'fix'}],informationalBotComments:[]};
   if(kind==='head')result.headSha='stale';if(kind==='error')result.error='missing credential';
-  const token: Record<string,string> = {check: 'lint', pending: 'build', review: 'reviewer', conflict: 'conflict', error: 'missing credential', unknown: 'unknown'};
-  const problems=finalizeProblems(result,box.head());
-  expect(problems.length).toBeGreaterThan(0);
-  if(token[kind])expect(problems.join('\n')).toContain(token[kind]);
+  const expected: Record<string,string> = {'check': 'failed check: lint', 'pending': 'pending check: build', 'review': 'blocking review: reviewer', 'conflict': 'merge state: conflict', 'comment': 'review comments remain actionable', 'head': 'CI report does not cover the final head', 'error': 'missing credential', 'unknown': 'merge state: unknown'};
+  expect(finalizeProblems(result,box.head())).toContain(expected[kind]);
 });
 test('INT-010 clean and no-CI heads pass; missing reports fail',()=>{
-  expect(finalizeProblems(report(),box.head())).toEqual([]);expect(finalizeProblems(null,box.head())).toHaveLength(1);
+  expect(finalizeProblems(report(),box.head())).toEqual([]);expect(finalizeProblems(null,box.head())).toEqual(['final CI report is missing']);
 });
 test('INT-010 final report reuse avoids waiting; pending or moved heads wait again',()=>{
   const api=tools();const args={tools:api,sleep:noSleep,dir:box.path('artifacts'),report:'ci/final.md',options:{maxMinutes:0,intervalSeconds:30}};
@@ -54,7 +52,7 @@ test('INT-010 cycle status and record-finalize scripts use saved reports across 
     expect(result.status).toBe(0);expect(JSON.parse(result.stdout)).toMatchObject({done:i===2,fix:false,cycle:i+1});
   }
   const result=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:'record-finalize'}});
-  expect(JSON.parse(result.stdout).ok).toBe(false);
+  expect(JSON.parse(result.stdout).ok).toBe(false);expect(JSON.parse(box.read('artifacts/step-results.json')).finalize.remaining).toContain('before merging');
 });
 test('INT-010 cycle gate reads the saved wait result, so comments reach fix-pr when the re-wait is skipped',()=>{
   tools();
@@ -78,7 +76,7 @@ test.each([true,false])('INT-012 ready operation accepted %s or refused with for
 });
 test('INT-012 push failure names the work and never force pushes',()=>{
   box.addBareOrigin();box.git('remote','set-url','origin',box.path('missing.git'));
-  const result=acceptancePush(box.exec,'the CI fixes');expect(result.ok).toBe(false);expect(result.problems).toContain('the CI fixes');expect(result.problems).not.toContain('--force');
+  const result=acceptancePush(box.exec,'the CI fixes');expect(result.ok).toBe(false);expect(result.problems).toContain('the CI fixes push:');expect(result.problems).not.toContain('--force');
 });
 test('INT-012 forge preflight requests pr.ready and reports its absence before agents',()=>{
   box.forgeTools([rule(['forge','check'],failed('unsupported_operation','pr.ready unavailable'))]);box.git('remote','set-url','origin','git@github.com:owner/repo.git');
@@ -94,8 +92,7 @@ test.each(['fix-pr','push repair'])('INT-010 blocked %s ends the cycle and canno
     const r=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:op,...extra}});
     expect(r.status).toBe(0);return JSON.parse(r.stdout);
   };
-  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`})).toMatchObject({ok:false});
-  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`}).problems).toContain(`${cause} missing permission`);
+  expect(run('finalize-push',{INPUTS_STEP:'push-ci-fix',INPUTS_BLOCKED:'true',INPUTS_REASON:`${cause} missing permission`})).toEqual({ok:false,problems:`REPAIR_BLOCKED: ${cause} missing permission`});
   expect(run('end-ci-cycle',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'0'})).toMatchObject({done:true,fix:false});
   expect(run('ci-cycle-status',{INPUTS_STATUS:'failed',INPUTS_PREVIOUS:'1'}).fix).toBe(false);
   recordFinalizeCheck(box.path('artifacts'),'push-ci-fix',{ok:true,problems:''});
@@ -107,8 +104,5 @@ test('INT-010 final diagnostics name every simultaneous blocker',()=>{
   result.pendingChecks=[{name:'build',state:'pending',detail:'running',unit:{kind:'check',id:'build',name:'build'}}];
   result.blockingReviews=[{login:'alice',state:'CHANGES_REQUESTED',body:'fix'}];result.mergeable='conflict';
   result.comments={hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'bob',body:'fix'}],informationalBotComments:[]};
-  const problems=finalizeProblems(result,box.head());
-  expect(problems).toHaveLength(8);
-  const text=problems.join('\n');
-  for(const token of ['forge permission denied','lint','build','alice','conflict'])expect(text).toContain(token);
+  expect(finalizeProblems(result,box.head())).toEqual(['forge permission denied','CI report does not cover the final head','failed check: lint','pending check: build','blocking review: alice','merge state: conflict','review comments remain actionable','final CI status: failed']);
 });

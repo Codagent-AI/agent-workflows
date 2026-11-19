@@ -22,7 +22,7 @@ describe('changeNameProblems (validate-change-name.sh)', () => {
     name => {
       const problems = changeNameProblems(name);
       expect(problems).toHaveLength(1);
-      expect(problems[0]).toContain('change_name');
+      expect(problems[0]).toContain('change_name must use lowercase letters, digits, and hyphens');
     }
   );
 });
@@ -36,7 +36,7 @@ describe('booleanProblems (validate-boolean-param.sh)', () => {
   test.each(['', 'TRUE', 'yes', '1', ' true', 'false '])('rejects %p and names the parameter', value => {
     const problems = booleanProblems('skip_validator', value);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('skip_validator');
+    expect(problems[0]).toContain('skip_validator must be true or false');
   });
 });
 
@@ -65,10 +65,7 @@ describe('nonEmptyProblems (TestValidateNonemptyParam)', () => {
   ];
   test.each(rows)('%s', (_name, value, empty) => {
     const problems = nonEmptyProblems('acceptance_fix_scope', value);
-    if (empty) {
-      expect(problems).toHaveLength(1);
-      expect(problems[0]).toContain('acceptance_fix_scope');
-    }
+    if (empty) expect(problems).toEqual(['acceptance_fix_scope must not be empty']);
     else expect(problems).toEqual([]);
   });
 });
@@ -86,13 +83,14 @@ describe('acceptanceRoundsProblems', () => {
   test.each(['0', '11', '', '-1', '1.5', 'three', ' 3', '3 ', '1e1'])('rejects %p', value => {
     const problems = acceptanceRoundsProblems(value, 10);
     expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('from 1 to 10');
   });
 });
 
 describe('fixed OpenSpec values', () => {
   test('folder and validation sentence name the change', () => {
     expect(changeDir('demo')).toBe('openspec/changes/demo');
-    expect(validationInstruction('demo')).toContain('demo');
+    expect(validationInstruction('demo')).toBe('When an approved artifact changed, run `openspec validate --type change "demo"`.');
   });
 });
 

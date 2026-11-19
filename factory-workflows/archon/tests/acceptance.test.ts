@@ -44,39 +44,38 @@ describe('convergence gate (acceptance-gate.sh action check)', () => {
     expect(checkGate(box.exec, evidence, false)).toEqual({ ready: true, fix: false, reasons: '' });
   });
 
-  const failing: [string, () => void, string | undefined][] = [
-    ['tester reported not ready', () => put(ARTIFACTS.roundStatus, 'NOT_READY\n'), 'NOT_READY'],
-    ['tester recorded no status', () => remove(ARTIFACTS.roundStatus), ARTIFACTS.roundStatus],
-    ['head moved after testing', () => void box.commitFix(), undefined],
-    ['exploration log missing', () => remove(ARTIFACTS.explorationLog), ARTIFACTS.explorationLog],
+  const failing: [string, () => void, string][] = [
+    ['tester reported not ready', () => put(ARTIFACTS.roundStatus, 'NOT_READY\n'), "round status is 'NOT_READY'"],
+    ['tester recorded no status', () => remove(ARTIFACTS.roundStatus), 'recorded no round status'],
+    ['head moved after testing', () => void box.commitFix(), "not 'READY"],
+    ['exploration log missing', () => remove(ARTIFACTS.explorationLog), 'exploration-log.md is missing or empty'],
     [
       'tester did not record the tested revision',
       () => remove(ARTIFACTS.testedRevision),
-      ARTIFACTS.testedRevision,
+      "acceptance-tested-revision.txt names ''",
     ],
     [
       'tested revision is an earlier pass',
       () => put(ARTIFACTS.testedRevision, '0123456789012345678901234567890123456789\n'),
-      '0123456789012345678901234567890123456789',
+      "acceptance-tested-revision.txt names '0123456789012345678901234567890123456789'",
     ],
-    ['handoff missing', () => remove(ARTIFACTS.handoff), ARTIFACTS.handoff],
-    ['tracked changes are uncommitted', () => box.write('file.txt', 'dirty\n'), undefined],
+    ['handoff missing', () => remove(ARTIFACTS.handoff), 'acceptance-handoff.md is missing or empty'],
+    ['tracked changes are uncommitted', () => box.write('file.txt', 'dirty\n'), 'tracked files have uncommitted changes'],
   ];
   test.each(failing)('does not converge when %s', (_name, mutate, want) => {
     converged();
     mutate();
     const reasons = convergenceReasons(box.exec, evidence);
-    expect(reasons.length).toBeGreaterThan(0);
-    if (want !== undefined) expect(reasons.join('\n')).toContain(want);
+    expect(reasons.join('\n')).toContain(want);
     const gate = checkGate(box.exec, evidence, false);
     expect(gate.ready).toBe(false);
-    expect(gate.reasons).toContain(reasons[0]);
+    expect(gate.reasons).toContain(`- ${reasons[0]}`);
   });
 
   test('an empty handoff file does not count', () => {
     converged();
     put(ARTIFACTS.handoff, '');
-    expect(convergenceReasons(box.exec, evidence).join('\n')).toContain(ARTIFACTS.handoff);
+    expect(convergenceReasons(box.exec, evidence)).toContain('acceptance-handoff.md is missing or empty');
   });
 
   test('the gate asks for a fix unless it is the last round', () => {
@@ -105,8 +104,9 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
     expect(read(ARTIFACTS.testerHandoff)).toBe('tester handoff\n');
     const handoff = read(ARTIFACTS.handoff);
     for (const want of [
+      'did not converge within 3 rounds',
       head,
-      'NOT_READY',
+      "round status is 'NOT_READY'",
       box.path('evidence/acceptance-findings.md'),
       box.path('evidence/decision-log.md'),
       box.path('evidence/acceptance-handoff-tester.md'),
@@ -123,6 +123,7 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
       expect(read(ARTIFACTS.preparationStatus)).toBe('ACCEPTANCE_FAILED\n');
       expect(read(ARTIFACTS.testerHandoff)).toBe('tester handoff\n');
     }
+    expect(read(ARTIFACTS.handoff)).toContain('did not converge within 3 rounds');
   });
 
   test('reports whether acceptance converged', () => {
@@ -136,7 +137,7 @@ describe('finalize (acceptance-gate.sh action finalize)', () => {
     converged();
     // A write to /dev/null succeeds and leaves nothing to read.
     symlinkSync('/dev/null', box.path(`evidence/${ARTIFACTS.preparationStatus}`));
-    expect(() => finalize(box.exec, evidence, '3')).toThrow();
+    expect(() => finalize(box.exec, evidence, '3')).toThrow("acceptance preparation status is '', not 'ACCEPTANCE_COMPLETE'");
   });
 
   test('writes a handoff when the tester wrote nothing', () => {
@@ -222,7 +223,7 @@ describe('checkProgress (check-acceptance-progress)', () => {
     put(ARTIFACTS.testedRevision, `${box.head()}\n`);
     const broken: typeof box.exec = (command, args, options) =>
       command === 'git' && args[0] === 'status' ? { status: 128, stdout: '', stderr: 'fatal\n' } : box.exec(command, args, options);
-    expect(() => checkProgress(broken, evidence, true)).toThrow();
+    expect(() => checkProgress(broken, evidence, true)).toThrow('could not inspect the worktree');
   });
 });
 
@@ -264,7 +265,7 @@ test('a recheck push that fails is recorded as an acceptance failure',()=>{
   box.commitFix();const dir=box.path('evidence');
   expect(pushRecheck(dir).ok).toBe(false);
   const recorded=JSON.parse(box.read('evidence/step-results.json'));
-  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).not.toBe('');
+  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('recheck push:');expect(recorded.acceptance.remaining).toContain('lacks the recheck');
 });
 test('a recheck push reaches the remote branch',()=>{
   const bare=box.addBareOrigin();box.git('push','-q','--set-upstream','origin','HEAD');const head=box.commitFix();

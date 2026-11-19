@@ -45,7 +45,7 @@ test.each(['none', 'two'])('INT-008 missing or doubled archive %s fails naming f
   box.git('rm', '-r', active); box.commit('removed');
   if (kind === 'two') for (const date of ['2026-11-15','2026-11-16']) box.write(`openspec/changes/archive/${date}-demo/proposal.md`, 'archive');
   box.fake('openspec', [{ args: [], responses: [{ stdout: '' }] }]);
-  const result = archiveChange(input()); expect(result.ok).toBe(false);
+  const result = archiveChange(input()); expect(result.ok).toBe(false); expect(result.problems).toContain('archive folder');
 });
 test('INT-008 failed validation records active folder and retains other work', () => {
   box.fake('openspec', [{ args: ['validate'], responses: [{ status: 1, stderr: 'delta conflict' }] }]);
@@ -60,24 +60,24 @@ test('INT-008 rejected commit keeps moved archive and commit repair can verify i
   expect(verifyArchive(input()).ok).toBe(true);
 });
 test('INT-008 verification rejects unrelated commits or altered earlier work', () => {
-  archive(); box.commitFix(); expect(verifyArchive(input()).ok).toBe(false);
+  archive(); box.commitFix(); expect(verifyArchive(input()).problems).toContain('archive paths');
 });
 test('INT-009 numbered logs commit only logs; empty logs and ticket messages', () => {
   box.write('artifacts/decision-log.md', '## Choice\nQuestion: API?\nDecision: preserve it.\n');
   box.write('file.txt','unrelated staged');box.git('add','file.txt');
   const result = run('commit-logs');expect(JSON.parse(result.stdout).ok).toBe(true);
-  expect(box.read(`${active}/decision-log.md`)).toContain('## D-01: Choice');expect(box.exists(`${active}/dispute-log.md`)).toBe(true);
+  expect(box.read(`${active}/decision-log.md`)).toContain('## D-01: Choice');expect(box.read(`${active}/dispute-log.md`)).toBe('No entries.\n');
   expect(box.git('show','--format=','--name-only','HEAD').split('\n').sort()).toEqual([`${active}/decision-log.md`,`${active}/dispute-log.md`]);
   expect(box.git('diff','--cached','--name-only')).toBe('file.txt');
   expect(numberLog('## DP-01: First\ntext\n## Next\nmore','DP')).toContain('## DP-02: Next');
-  expect(archiveMessage('abc-123-demo')).toContain('ABC-123');
+  expect(archiveMessage('abc-123-demo')).toBe('ABC-123: Archive change');
 });
 test('INT-009 rejected log commit reports failure for archive fallback', () => {
   box.write('hooks/commit-msg','#!/bin/sh\nexit 1\n');chmodSync(box.path('hooks/commit-msg'),0o755);box.git('config','core.hooksPath',box.path('hooks'));
   expect(commitLogs(box.exec,box.path('artifacts'),'demo').ok).toBe(false);
-  expect(JSON.parse(box.read('artifacts/step-results.json')).logs.ok).toBe(false);
+  expect(JSON.parse(box.read('artifacts/step-results.json')).logs.remaining).toContain('archive commit');
   box.git('config','core.hooksPath','/dev/null'); expect(archive().ok).toBe(true);
-  expect(box.git('show',`HEAD:${archived}/decision-log.md`)).not.toBe('');
+  expect(box.git('show',`HEAD:${archived}/decision-log.md`)).toBe('No entries.');
 });
 test('INT-008 unrelated preexisting main-spec edits remain outside owned delta', () => {
   box.write('openspec/specs/other/spec.md','baseline');box.git('add','openspec/specs/other/spec.md');box.commit('other spec');
@@ -103,12 +103,12 @@ test('INT-008 staged and unstaged edits in the archived spec survive without ent
   expect(box.git('show',`:${path}`)).toContain('user staged');expect(box.git('show',`:${path}`)).not.toContain('user unstaged');
   expect(box.read(path)).toContain('user unstaged');expect(box.read(path)).toContain('archived requirement');
   expect(verifyArchive(input()).ok).toBe(true);
-  box.write(path,box.read(path).replace('user unstaged','tampered'));expect(verifyArchive(input()).ok).toBe(false);
+  box.write(path,box.read(path).replace('user unstaged','tampered'));expect(verifyArchive(input()).problems).toContain('restored staged or unstaged');
 });
-test.each(['demo','abc-123-demo'])('INT-009 log commit message names the change or ticket for %s',name=>{
+test.each(['demo','abc-123-demo'])('INT-009 log commit message is exact for %s',name=>{
   box.write(`openspec/changes/${name}/proposal.md`,'proposal');
   expect(commitLogs(box.exec,box.path('artifacts'),name).ok).toBe(true);
-  expect(box.git('log','-1','--format=%s')).toContain(name==='demo'?'demo':'ABC-123');
+  expect(box.git('log','-1','--format=%s')).toBe(name==='demo'?'[logs] chore: add the decision and dispute logs for demo':'ABC-123: Add decision and dispute logs');
 });
 test('INT-008 same-file local layers survive archive commit rejection and repair',()=>{
   const {path}=localSpecArchive();
@@ -129,5 +129,5 @@ test('INT-008 conflicting spec restoration fails verification and retains origin
   archive();recordArchive(input());
   expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
   const local=JSON.parse(box.read('artifacts/archive/local-specs.json'));
-  expect(local.staged).toContain('local change');expect(local.error).toBeTruthy();expect(box.git('show',`HEAD:${path}`)).toBe('new');
+  expect(local.staged).toContain('local change');expect(local.error).toContain('original patches retained');expect(box.git('show',`HEAD:${path}`)).toBe('new');
 });

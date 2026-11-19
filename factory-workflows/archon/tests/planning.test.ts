@@ -64,7 +64,7 @@ describe('validatePlanningArtifacts (definition checks)', () => {
     box.write('openspec/changes/demo/test-plan.md', '');
     const result = validate();
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('openspec/changes/demo/test-plan.md');
+    expect(result.problems).toContain('missing or empty openspec/changes/demo/test-plan.md');
   });
 
   test('a failing openspec validate reports its output', () => {
@@ -81,7 +81,7 @@ describe('validatePlanningArtifacts (definition checks)', () => {
     box.write('openspec/changes/demo/specs/widgets/spec.md', '');
     const result = validate();
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('openspec/changes/demo/specs/');
+    expect(result.problems).toContain('no non-empty specification under openspec/changes/demo/specs/');
   });
 });
 
@@ -90,15 +90,16 @@ describe('validatePlanningArtifacts input checks', () => {
     writeOpenSpecChange();
     const result = validate({ changeName: 'Bad Name' });
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('validate-planning-artifacts: change_name must use lowercase');
     expect(box.calls('openspec')).toEqual([]);
   });
 
   test('rejects an empty change dir', () => {
-    expect(validate({ changeDir: '' }).ok).toBe(false);
+    expect(validate({ changeDir: '' }).problems).toContain('change_dir must not be empty');
   });
 });
 
 test.each(['proposal.md','design.md','test-plan.md'])('empty required definition artifact %s fails',file=>{
   writeOpenSpecChange();box.write(`openspec/changes/demo/${file}`,'');
-  const result=validate();expect(result.ok).toBe(false);expect(result.problems).toContain(`openspec/changes/demo/${file}`);
+  const result=validate();expect(result.ok).toBe(false);expect(result.problems).toContain(`missing or empty openspec/changes/demo/${file}`);
 });

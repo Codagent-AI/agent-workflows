@@ -47,6 +47,7 @@ test('INT-011 discretionary PR style disputes retain yellow and merged types are
 test('INT-011 placement fills omissions corrects floors and names uncovered late commits',()=>{
   box.commitFix();const source=inv();const ranking=emptyRanking();ranking.white=[item()];
   const placed=placeRanking(ranking,source.required);expect(checkRanking(placed,source.required).ok).toBe(true);
+  expect(placed.orange.find(i=>i.type==='Late commit')?.detail).toContain('Tests: none named.');
   const late = placed.orange.find(i=>i.type==='Late commit');
   if (!late) throw new Error('missing late commit');
   late.detail='Tests: test';expect(checkRanking(placed,source.required).ok).toBe(false);
@@ -55,14 +56,21 @@ test('INT-011 a late commit sized without openspec/ passes, and placement keeps 
   const sha=box.commitFix();const source=inv();
   const own={...item('Late commit',sha),title:`Commit ${sha.slice(0,7)} after acceptance`,detail:'Size: 7 files changed, 9 insertions(+)\n\nTests: none cover it.'};
   const ranking=emptyRanking();ranking.orange=[own];ranking.red=[item('Verification','I-1')];
+  expect(checkRanking(ranking,source.required).problems).not.toContain('needs shortstat');
   const placed=placeRanking(ranking,source.required);
   expect(placed.orange.find(entry=>entry.source.includes(sha))?.detail).toBe(own.detail);
 });
 test('INT-011 review-first ordering counts types collapsed sections and evidence',()=>{
   const ranking=emptyRanking();ranking.red=[{...item(),type:'Verification, Dispute'}];ranking.orange=Array.from({length:7},(_,i)=>item(i===6?'Late commit':'Decision',`D-${i}`));ranking.yellow=[item('Human check','manual review')];ranking.white=[item('Verification','I-3')];ranking.evidence='Screenshot text equivalent. Unexercised behavior has named unit coverage.';
   const body=renderPackage({ranking,failures:[item('Failure','finalize failed')],summary:'SUMMARY',decisions:'DECISIONS',disputes:'DISPUTES',base:'https://github.com/owner/repo',head:accepted});
-  const top=body.split('SUMMARY')[0];expect(top).not.toContain('D-4');expect(top.indexOf('D-6')).toBeLessThan(top.indexOf('D-0'));
-  expect(body).toContain('DECISIONS');expect(body).toContain('#L12-L18');
+  const top=body.split('SUMMARY')[0];expect(top).toContain('Run needs attention. 2 red items block the merge.');expect(top).toContain('2 orange and 1 yellow');expect(top).not.toContain('D-4');expect(top.indexOf('D-6')).toBeLessThan(top.indexOf('D-0'));
+  expect(body).toContain('Verification, Dispute:');expect(body).toContain(`<summary>Testing evidence</summary>`);expect(body).toContain('DECISIONS');expect(body).toContain('#L12-L18');
+});
+test('INT-011 a succeeded run counts the red items that block the merge',()=>{
+  const ranking=emptyRanking();ranking.red=[item('Verification','I-1')];
+  const render=(red:typeof ranking.red)=>renderPackage({ranking:{...ranking,red},failures:[],summary:'S',decisions:'',disputes:'',base:'https://github.com/owner/repo',head:accepted});
+  expect(render(ranking.red)).toContain('Run succeeded. 1 red item blocks the merge.');
+  expect(render([])).toContain('Run succeeded.\n');
 });
 test.each([true,false])('INT-011 publication preserves human text and declares clean outcome %s',clean=>{
   if (!clean) box.write('artifacts/step-results.json',JSON.stringify({archive:{ok:false,problems:'archive failed',remaining:'repair'}}));
@@ -77,11 +85,11 @@ test.each([true,false])('INT-011 publication preserves human text and declares c
   box.git('add','openspec');box.commit('late logs');
   const ranking=placeRanking(emptyRanking(),inv().required);
   expect(publishPackage(tools,box.path('artifacts'),folder,ranking).succeeded).toBe(clean);
-  expect(body).toStartWith('Human intro\n');expect(body).toEndWith('\nHuman footer');expect(body).toContain('D-01: Later choice');expect(box.exists('artifacts/review-package.md')).toBe(true);
+  expect(body).toStartWith('Human intro\n');expect(body).toEndWith('\nHuman footer');expect(body).toContain('D-01: Later choice');expect(box.read('artifacts/review-package.md')).toContain('Review first');
 });
 test.each(['write','readback'])('INT-011 package %s failure throws',kind=>{
   const tools=box.forgeTools([rule(['forge','pr.view'],ok('pr.view',prView())),rule(['forge','pr.edit-body'],kind==='write'?failed('permission','refused'):ok('pr.edit-body',{}))]);
-  expect(()=>publishPackage(tools,box.path('artifacts'),folder,emptyRanking())).toThrow(kind==='write'?'refused':undefined);
+  expect(()=>publishPackage(tools,box.path('artifacts'),folder,emptyRanking())).toThrow(kind==='write'?'refused':'read-back');
 });
 test('INT-011 failed steps are independent red Failure items and drive authored outcome',()=>{
   box.write('artifacts/step-results.json',JSON.stringify({archive:{ok:false,problems:'delta failed',remaining:'repair delta'},finalize:{ok:false,problems:'check lint failed',remaining:'fix lint'},acceptance:{ok:false,problems:'blocked D-01',remaining:'choose D-01; push failed unless finalize pushed it'}}));
@@ -105,17 +113,17 @@ test('INT-011 finish entry points prepare reject place and publish with fake for
   expect(run('check-ranking',emptyRanking()).ok).toBe(false);
   expect(run('place-ranking',emptyRanking()).ok).toBe(true);
   expect(run('publish-review-package').succeeded).toBe(true);
-  expect(box.exists('artifacts/review-package.md')).toBe(true);
+  expect(box.read('artifacts/review-package.md')).toContain('Review first');
 });
 test('INT-011 an agent Failure cannot hide a failed checklist row during publication',()=>{
   const ranking=emptyRanking();ranking.red=[item('Failure')];
   expect(checkRanking(ranking,[required()[0]]).ok).toBe(false);
   const placed=placeRanking(ranking,[required()[0]]);expect(placed.red).toHaveLength(1);expect(placed.red[0].type).toBe('Verification');
-  const body=renderPackage({ranking:placed,failures:[],summary:'summary',decisions:'',disputes:'',base:'url',head:accepted});expect(body).toContain('I-1');
+  const body=renderPackage({ranking:placed,failures:[],summary:'summary',decisions:'',disputes:'',base:'url',head:accepted});expect(body).toContain('Verification:');expect(body).toContain('I-1');
 });
 test('INT-011 wrong source type is rejected and deterministic placement repairs it',()=>{
   const ranking=emptyRanking();ranking.red=[item('Decision')];
-  expect(checkRanking(ranking,[required()[0]]).ok).toBe(false);
+  expect(checkRanking(ranking,[required()[0]]).problems).toContain('wrong type');
   expect(checkRanking(placeRanking(ranking,[required()[0]]),[required()[0]]).ok).toBe(true);
 });
 test('INT-011 grouped late commits retain every size tests and merged symptom after placement',()=>{
@@ -147,10 +155,9 @@ test.each([false,true])('INT-011 actual failed acceptance push reports subsequen
   const push=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/acceptance-push.ts');
   const failedPush=Bun.spawnSync([process.execPath,push],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:dir,INPUTS_ON_FAILURE:'report',INPUTS_STRICT:'true',INPUTS_BLOCKED:'false'}});
   expect(failedPush.exitCode).toBe(0);expect(JSON.parse(failedPush.stdout.toString()).ok).toBe(false);
-  const detail=()=>failedItems(dir).find(entry=>entry.source.includes('failure:acceptance'))?.detail;
-  const before=detail();expect(before).toBeDefined();
   if(pushAgain){box.addBareOrigin();const finish=join(import.meta.dir,'../.archon/workflows/codagent/implement-change/scripts/finish.ts');const pushed=Bun.spawnSync([process.execPath,finish],{cwd:box.dir,env:{...process.env,ARTIFACTS_DIR:dir,INPUTS_OP:'finalize-push',INPUTS_STEP:'finalize-push',INPUTS_RESULT:'the round fixes'}});expect(JSON.parse(pushed.stdout.toString()).ok).toBe(true);}
-  expect(detail()===before).toBe(!pushAgain);
+  const failure=failedItems(dir).find(entry=>entry.source.includes('failure:acceptance'));
+  expect(failure?.detail).toContain(pushAgain?'Finalize subsequently pushed':"lacks the round's fix unless finalize pushes it");
 });
 test.each([['ACCEPTANCE_COMPLETE',true],['ACCEPTANCE_FAILED',false]] as const)('stop_after acceptance: %s ends the run without a package, succeeded %s',(status,succeeded)=>{
   const dir=box.path('artifacts');box.write('artifacts/acceptance-preparation-status.txt',`${status}\n`);box.write('artifacts/acceptance-handoff.md','Acceptance did not converge.');

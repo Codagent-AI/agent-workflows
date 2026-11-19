@@ -142,7 +142,7 @@ describe('checkEvidence (check-evidence.sh)', () => {
   test('a glob is not expanded against the working directory', () => {
     failsWith(
       { checklist: `${HEADER}| L-1 | Export works | e2e | \`*\` | verified |\n`, evidence: { 'checklist.md': 'not evidence\n' } },
-      'L-1'
+      'L-1 is verified but cites no non-empty file'
     );
   });
 
@@ -154,7 +154,7 @@ describe('checkEvidence (check-evidence.sh)', () => {
   });
 
   test('an open row fails', () => {
-    failsWith({ checklist: `${HEADER}| L-1 | Export works | e2e | | open |\n` }, 'L-1', 'open');
+    failsWith({ checklist: `${HEADER}| L-1 | Export works | e2e | | open |\n` }, "L-1 has status 'open'");
   });
 
   test('a cited acceptance or human-only test fails', () => {
@@ -163,48 +163,48 @@ describe('checkEvidence (check-evidence.sh)', () => {
         checklist: `${HEADER}| L-1 | Export works | AT-003 | \`export.log\` | verified |\n| L-2 | Prints | HT-1 | Needs a printer | not verified |\n`,
         evidence: { 'export.log': 'PASS\n' },
       },
-      'AT-003',
-      'HT-1'
+      'cites manual tests, which are not checklist checks: AT-003, HT-1'
     );
   });
 
   test('a verified row without an evidence file fails', () => {
     failsWith(
       { checklist: `${HEADER}| L-1 | Export works | e2e | Ran \`npm test\`, see \`missing.log\` | verified |\n` },
-      'L-1'
+      'L-1 is verified but cites no non-empty file'
     );
   });
 
   test('an empty evidence file does not count', () => {
     failsWith(
       { checklist: `${HEADER}| L-1 | Export works | e2e | \`export.log\` | verified |\n`, evidence: { 'export.log': '' } },
-      'L-1'
+      'L-1 is verified but cites no non-empty file'
     );
   });
 
   test('paths outside the evidence directory do not count', () => {
     failsWith(
       { checklist: `${HEADER}| L-1 | Export works | e2e | \`../checklist.md\` and \`/etc/hosts\` | verified |\n` },
-      'L-1'
+      'L-1 is verified but cites no non-empty file'
     );
   });
 
   test('a failed or unverified row must say why', () => {
     failsWith(
       { checklist: `${HEADER}| L-1 | Export works | e2e | | failed |\n| L-2 | Import works | e2e |  | not verified |\n` },
-      'L-1',
-      'L-2'
+      'L-1 is failed but its Evidence cell does not say why',
+      'L-2 is not verified but its Evidence cell does not say why'
     );
   });
 
   test('a list without Status and Evidence columns fails', () => {
     failsWith(
-      { checklist: '| ID | Behavior |\n|----|----|\n| L-1 | Export works |\n', plan: PLAN_HEADER }
+      { checklist: '| ID | Behavior |\n|----|----|\n| L-1 | Export works |\n', plan: PLAN_HEADER },
+      'no Markdown table with Status and Evidence columns'
     );
   });
 
   test('a table without rows fails', () => {
-    failsWith({ checklist: HEADER });
+    failsWith({ checklist: HEADER }, 'the checklist table has no rows');
   });
 
   test('filled-in planned rows match the plan, including repeated rows', () => {
@@ -239,9 +239,9 @@ describe('checkEvidence (check-evidence.sh)', () => {
         checklist: `${HEADER}| L-1 | Export works | build | \`export.log\` | verified |\n| I-9 | Extra | unit | \`export.log\` | verified |\n`,
         evidence: { 'export.log': 'PASS\n' },
       },
-      'L-1',
-      'L-2',
-      'I-9'
+      'L-1 was changed or removed',
+      'L-2 was changed or removed',
+      'I-9 is not in the planned checklist'
     );
   });
 
@@ -252,7 +252,7 @@ describe('checkEvidence (check-evidence.sh)', () => {
         checklist: `${HEADER}| L-1 | Export works | e2e | \`export.log\` | verified |\n`,
         evidence: { 'export.log': 'PASS\n' },
       },
-      'spec reference'
+      'lost the planned column(s) spec reference'
     );
   });
 
@@ -273,12 +273,13 @@ describe('checkEvidence (check-evidence.sh)', () => {
         checklist: `${HEADER}| L-1 | Export works | build | \`export.log\` | verified |\n`,
         evidence: { 'export.log': 'PASS\n' },
       },
-      'L-1'
+      'L-1 was changed or removed',
+      'only a row an audit finding names may change them'
     );
   });
 
   test('a missing list fails', () => {
-    failsWith({});
+    failsWith({}, 'is missing or empty');
   });
 
   test('an unreadable plan fails', () => {
@@ -291,6 +292,7 @@ describe('checkEvidence (check-evidence.sh)', () => {
       planFile: planFile(),
     });
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('cannot read');
   });
 
   test('the problems file records each failure and is removed on success', () => {
@@ -299,11 +301,12 @@ describe('checkEvidence (check-evidence.sh)', () => {
     box.write('output/planned-checklist.md', `${PLAN_HEADER}| L-1 | Export works | e2e |\n`);
 
     expect(checkEvidence(input).ok).toBe(false);
-    expect(box.read('output/problems.txt')).not.toBe('');
+    expect(box.read('output/problems.txt')).toContain('is missing or empty');
 
     box.write('checklist.md', `${HEADER}| L-1 | Export works | e2e | \`export.log\` | verified |\n`);
     expect(checkEvidence(input).ok).toBe(false);
-    expect(box.read('output/problems.txt')).toContain('L-1');
+    expect(box.read('output/problems.txt')).toContain('L-1 is verified but cites no non-empty file');
+    expect(box.read('output/problems.txt')).toStartWith('- ');
 
     box.write('output/evidence/export.log', 'PASS\n');
     expect(checkEvidence(input).ok).toBe(true);
@@ -312,6 +315,6 @@ describe('checkEvidence (check-evidence.sh)', () => {
 
   test('planProblems reports an unreadable checklist', () => {
     box.write('output/planned-checklist.md', `${PLAN_HEADER}| L-1 | x | y |\n`);
-    expect(planProblems(box.path('nope.md'), planFile(), undefined).length).toBeGreaterThan(0);
+    expect(planProblems(box.path('nope.md'), planFile(), undefined)[0]).toContain('cannot read');
   });
 });

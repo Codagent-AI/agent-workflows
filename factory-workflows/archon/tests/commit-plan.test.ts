@@ -29,7 +29,7 @@ describe('commitChangePlan', () => {
     box.write('unrelated.txt', 'leave me alone\n');
     const result = commitPlan();
     expect(result.ok).toBe(true);
-    expect(result.message).toContain('openspec/changes/demo');
+    expect(result.message).toBe('committed openspec/changes/demo');
     expect(committedFiles()).toEqual(['openspec/changes/demo/proposal.md', 'openspec/config.yaml']);
     expect(box.git('status', '--porcelain', '--', 'openspec/config.yaml', 'unrelated.txt')).toBe('?? unrelated.txt');
   });
@@ -37,13 +37,13 @@ describe('commitChangePlan', () => {
   test('uses a ticket-style subject from a ticket-named change', () => {
     box.write('openspec/changes/plateng-1949-promote-to-eod/proposal.md', 'proposal\n');
     expect(commitPlan('openspec/changes/plateng-1949-promote-to-eod', 'plateng-1949-promote-to-eod').ok).toBe(true);
-    expect(box.git('log', '-1', '--format=%s')).toContain('PLATENG-1949');
+    expect(box.git('log', '-1', '--format=%s')).toBe('PLATENG-1949: Add change plan');
   });
 
   test('uses the chore subject for an ordinary change name', () => {
     box.write('openspec/changes/demo/proposal.md', 'proposal\n');
     commitPlan();
-    expect(box.git('log', '-1', '--format=%s')).toContain('demo');
+    expect(box.git('log', '-1', '--format=%s')).toBe('[commit-plan] chore: add change documents for demo');
   });
 
   test('restricts the commit to the change directory', () => {
@@ -63,6 +63,7 @@ describe('commitChangePlan', () => {
     };
     const result = commitPlan('.', 'demo', exec);
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('change_dir must be a confined relative path');
     expect(invoked).toEqual([]);
   });
 
@@ -73,6 +74,7 @@ describe('commitChangePlan', () => {
     box.write('unrelated.txt', 'dirty\n');
     const result = commitPlan();
     expect(result.ok).toBe(true);
+    expect(result.message).toContain('already committed');
     expect(box.head()).toBe(before);
     expect(box.git('status', '--porcelain', '--', 'unrelated.txt')).toBe('?? unrelated.txt');
   });
@@ -89,11 +91,13 @@ describe('commitChangePlan', () => {
   test('rejects an invalid change name', () => {
     const result = commitPlan('openspec/changes/demo', 'Bad_Name');
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('commit-change-plan: change_name must use lowercase');
   });
 
   test('fails when the change directory does not exist', () => {
     const result = commitPlan();
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('git add failed');
   });
 });
 
@@ -111,6 +115,7 @@ describe('commitChangePlan with an openspec symbolic link', () => {
     const before = box.head();
     const result = commitPlan();
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('openspec is a symbolic link');
     expect(box.head()).toBe(before);
   });
 
@@ -118,7 +123,7 @@ describe('commitChangePlan with an openspec symbolic link', () => {
     symlinkSync(outside, box.path('openspec'));
     const result = commitPlan();
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('openspec/changes/demo');
+    expect(result.problems).toContain('change directory not found: openspec/changes/demo');
   });
 });
 
@@ -137,10 +142,10 @@ describe('isConfinedRelativePath (rejects dot segments)', () => {
 
 describe('commitMessage', () => {
   test('ticket-style names', () => {
-    expect(commitMessage('plateng-1949-promote-to-eod')).toContain('PLATENG-1949');
+    expect(commitMessage('plateng-1949-promote-to-eod')).toBe('PLATENG-1949: Add change plan');
   });
 
   test.each(['demo', 'add-widget', 'abc-123', 'abc-x1-thing'])('plain subject for %s', name => {
-    expect(commitMessage(name)).toContain(name);
+    expect(commitMessage(name)).toBe(`[commit-plan] chore: add change documents for ${name}`);
   });
 });

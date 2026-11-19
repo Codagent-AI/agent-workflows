@@ -30,7 +30,7 @@ function checkInvalidState(status: FindingState, perform: (state: ReviewState) =
   if (!finding) throw new Error('missing finding');
   finding.state = status; perform(state);
   expect(finding.state).toBe(status); expect(finding.history).toHaveLength(0);
-  expect(state.ignored).toHaveLength(1);
+  expect(state.ignored).toHaveLength(1); expect(renderResult(state)).toContain('invalid action');
 }
 function checkInvalidActions(status: FindingState): void {
   const allowedFixer: Partial<Record<FindingState, string[]>> = { open: ['fixed', 'declined'], contested: ['fixed', 'replied'] };
@@ -82,7 +82,7 @@ describe('review finding state', () => {
       act(state, 'fixed'); judge(state, 'confirmed');
       expect(finding.state).toBe(status);
       expect(state.ignored).toHaveLength(4);
-      expect(renderResult(state)).toContain('unknown');
+      expect(renderResult(state)).toContain('Ignored unknown');
     }
     const state = stateWithFinding(); judge(state, 'confirmed'); act(state, 'replied');
     expect(state.findings[0]?.state).toBe('open');
@@ -93,7 +93,7 @@ describe('review finding state', () => {
     const states: FindingState[] = ['open', 'fixed', 'declined', 'contested', 'replied', 'closed', 'disputed'];
     for (const status of states) checkInvalidActions(status);
   });
-  test('ignored submissions retain attempted action, actor and note', () => {
+  test('ignored submissions retain attempted action, actor, note and the actual rejection reason', () => {
     const state = stateWithFinding();
     applyActions(state, [{ id: 'unknown', action: 'fixed', note: 'unknown attempt' }]);
     judge(state, 'confirmed');
@@ -105,14 +105,16 @@ describe('review finding state', () => {
     cycle(state, 1); addFindings(state, [defect()]);
     cycle(state, 2);
     applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'earlier cycle' }]);
-    expect(state.ignored.map(entry => [entry.actor, entry.action, entry.note])).toEqual([
-      ['fixer', 'fixed', 'unknown attempt'],
-      ['reviewer', 'confirmed', 'reviewer confirmed'],
-      ['fixer', 'declined', 'fixer declined'],
-      ['reviewer', 'accepted', 'earlier cycle'],
+    expect(state.ignored.map(entry => [entry.actor, entry.action, entry.note, entry.reason])).toEqual([
+      ['fixer', 'fixed', 'unknown attempt', 'unknown finding ID'],
+      ['reviewer', 'confirmed', 'reviewer confirmed', 'invalid action for finding state open'],
+      ['fixer', 'declined', 'fixer declined', 'finding was already handed off'],
+      ['reviewer', 'accepted', 'earlier cycle', 'finding belongs to a different cycle'],
     ]);
     expect(state.ignored[0]).toMatchObject({ cycle: 0, id: 'unknown', round: 1 });
-    for (const note of ['unknown attempt', 'reviewer confirmed', 'fixer declined']) expect(result).toContain(note);
+    expect(result).toContain('Ignored unknown: fixer fixed (unknown attempt); unknown finding ID');
+    expect(result).toContain('Ignored R1: reviewer confirmed (reviewer confirmed); invalid action for finding state open');
+    expect(result).toContain('Ignored R1: fixer declined (fixer declined); finding was already handed off');
     expect(state.findings.map(entry => entry.state)).toEqual(['open', 'open']);
   });
   test('contest happens once; second and third turns settle accepted replies or disputed findings', () => {
@@ -143,17 +145,19 @@ describe('review finding state', () => {
     addFindings(state, ['high', 'medium', 'low'].map(severity => defect({ severity: severity as Defect['severity'] })));
     expect(activeFindings(state).map(f => f.severity)).toEqual(['high', 'medium', 'low']);
     expect(settled(state)).toBe(false);
+    expect(findingText(state)).not.toContain('R1 [');
   });
 });
 
 describe('review rendering and handoff', () => {
-  test('result shows ranges, ignored actions and blocked reason', () => {
+  test('empty review says exactly No open findings and result shows ranges, ignored actions and blocked reason', () => {
     const state = emptyState(); cycle(state);
+    expect(renderResult(state)).toContain('\nNo open findings.\n');
     addFindings(state, [defect()]); act(state, 'declined'); judge(state, 'contested');
     act(state, 'replied'); judge(state, 'contested'); act(state, 'fixed');
     currentCycle(state).blocked = 'credential missing';
     const text = renderResult(state);
-    for (const expected of ['base..head', 'disputed', 'R1', 'credential missing', 'reviewer contested']) {
+    for (const expected of ['base..head', '[disputed]', 'Ignored R1', 'credential missing', 'reviewer contested']) {
       expect(text).toContain(expected);
     }
   });
@@ -165,13 +169,13 @@ describe('review rendering and handoff', () => {
     applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'agreed' }]);
     currentCycle(state).blocked = 'missing access';
     const ledger = handoff(state, 'No unresolved assumptions or context gaps.\n');
-    for (const expected of ['R1', 'R2', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
-      'intentional compatibility', 'review/before-pr.md']) expect(ledger).toContain(expected);
-    expect(ledger).not.toContain('R3');
+    for (const expected of ['## Review finding R1', '## Review finding R2', 'Question:', 'Requirement:', 'Decision:',
+      'Rationale:', 'Pending decision:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
+      'intentional compatibility', 'The reviewer accepted it.', 'review/before-pr.md']) expect(ledger).toContain(expected);
+    expect(ledger).not.toContain('## Review finding R3');
     expect(ledger).not.toContain('No unresolved assumptions');
     expect(renderResult(state)).toContain('Low');
-    expect(handedOff(state)).toContain('R2');
-    expect(handedOff(state)).toContain('Accepted');
+    expect(handedOff(state)).toContain('R2: Accepted (file.txt:0)');
     expect(handoff(state, ledger)).toBe(ledger);
   });
   test('confirmed fixes add nothing; unfinished earlier cycles hand off and latest acceptance result replaces earlier cycle', () => {
@@ -180,7 +184,7 @@ describe('review rendering and handoff', () => {
     cycle(state, 1); addFindings(state, [defect({ title: 'Unfinished' })]);
     cycle(state, 2); addFindings(state, [defect({ title: 'Latest' })]);
     const ledger = handoff(state, '');
-    expect(ledger).toContain('Unfinished');
+    expect(ledger).toContain('acceptance round 1'); expect(ledger).toContain('acceptance round 2');
     const text = renderResult(state);
     expect(text).toContain('Latest'); expect(text).not.toContain('Unfinished');
     expect(activeFindings(state)).toHaveLength(0);
@@ -246,12 +250,15 @@ describe('INT-009 review scripts against real git', () => {
     const prepared = prepare('initial', start);
     expect(Object.keys(prepared).sort()).toEqual(['end', 'files', 'findings', 'handed_off', 'needed', 'start']);
     expect(prepared.needed).toBe(true); expect(prepared.files).toBe('file.txt');
-    const bad = ['', JSON.stringify({ kind: 'not_git' }), observation('0'.repeat(40))];
-    for (const badStart of bad) {
-      run('prepare-review', { mode: 'initial', place: 'before-pr', start: badStart, change_dir: 'openspec/changes/demo' }, true);
+    const bad: [string, string][] = [['', 'could not read where the node started'],
+      [JSON.stringify({ kind: 'not_git' }), 'the checkout is not_git'], [observation('0'.repeat(40)), 'cannot read start revision']];
+    for (const [badStart, error] of bad) {
+      const output = run('prepare-review', { mode: 'initial', place: 'before-pr', start: badStart, change_dir: 'openspec/changes/demo' }, true);
+      expect(output.error).toContain(error);
     }
     box.commitFix('reviewer moved head\n');
-    run('record-review', { ...prepared, review_name: 'review-change', result: { findings: [] } }, true);
+    const failed = run('record-review', { ...prepared, review_name: 'review-change', result: { findings: [] } }, true);
+    expect(failed.error).toContain('review-change: HEAD moved');
   });
   test('missing and malformed results and re-review head movement fail with named output location', () => {
     const start = box.head(); box.commitFix(); const prepared = prepare('initial', start);
@@ -264,7 +271,7 @@ describe('INT-009 review scripts against real git', () => {
     expect(run('end-review-round', endInput, true).error).toContain('nodes/re-review.md');
     box.commitFix('reviewer committed incorrectly');
     expect(run('end-review-round', { ...endInput, result: { verdicts: [], findings: [] } }, true).error)
-      .toContain('re-review');
+      .toContain('re-review: HEAD moved');
   });
   test('disputed ledger persists both sides and no later cycle handles handed-off findings', () => {
     const start = box.head(); box.commitFix(); record(prepare('initial', start), [defect()]);
@@ -276,16 +283,16 @@ describe('INT-009 review scripts against real git', () => {
     }
     run('hand-off-review');
     const ledger = read('dispute-log.md');
-    for (const text of ['R1', 'fixer declined because compatibility', 'fixer replied because compatibility',
+    for (const text of ['## Review finding R1', 'fixer declined because compatibility', 'fixer replied because compatibility',
       'reviewer disagrees with declined', 'reviewer disagrees with replied', 'review/before-pr.md']) expect(ledger).toContain(text);
-    expect(read('review/before-pr.md')).toContain('disputed');
+    expect(read('review/before-pr.md')).toContain('[disputed]');
     expect(persisted().findings[0]).toMatchObject({ state: 'disputed', handed_off: true });
     box.commitFix('later'); expect(prepare('acceptance', '', 1).handed_off).toContain('R1:');
   });
-  test('empty range needs no reviewer and records the exact head', () => {
+  test('empty range needs no reviewer and records No open findings at exact head', () => {
     const prepared = prepare('initial', box.head()); expect(prepared.needed).toBe(false);
     record(prepared);
-    expect(persisted().findings).toEqual([]);
+    expect(read('review/before-pr.md')).toContain('No open findings.');
     expect(persisted().last_reviewed).toBe(box.head());
     const tail = prepare('tail'); expect(tail.needed).toBe(false);
     run('hand-off-review'); expect(existsSync(join(artifacts, 'dispute-log.md'))).toBe(false);
@@ -321,7 +328,7 @@ describe('INT-009 review scripts against real git', () => {
     expect(read('review/before-pr.md')).toContain(box.head());
     const ledger = read('dispute-log.md');
     expect(ledger).toContain('missing credential'); expect(ledger).toContain('Tail defect');
-    expect(ledger).not.toContain('R3');
+    expect(ledger).not.toContain('## Review finding R3');
     run('hand-off-review'); expect(read('dispute-log.md')).toBe(ledger);
   });
   test('one acceptance fixer turn hands off contested declines with both sides before any reply', () => {
@@ -342,12 +349,11 @@ describe('INT-009 review scripts against real git', () => {
       expect(finding.handed_off).toBe(true);
       expect(finding.history.map(entry => entry.action)).toEqual(['declined', 'contested']);
       const ledger = read('dispute-log.md');
-      for (const expected of [finding.id, finding.problem,
+      for (const expected of [`## Review finding ${finding.id}, acceptance round 1`, finding.problem,
         finding.fix, `compatibility ${finding.id}`, `unsafe behavior ${finding.id}`, 'review/acceptance.md']) {
         expect(ledger).toContain(expected);
       }
-      expect(read('review/acceptance.md')).toContain(finding.title);
-      expect(read('review/acceptance.md')).toContain('contested');
+      expect(read('review/acceptance.md')).toContain(`${finding.id}: ${finding.title} [contested]`);
     }
   });
   test('acceptance includes tracked working tree and re-review uses last covered revision; verdicts and output replacement persist', () => {
@@ -365,7 +371,7 @@ describe('INT-009 review scripts against real git', () => {
     expect(output.stop).toBe(true);
     writeFileSync(join(artifacts, 'decision-log.md'), 'No unresolved assumptions or context gaps.\n');
     run('hand-off-review'); const ledger = read('decision-log.md');
-    expect(ledger).not.toContain('R1'); expect(ledger).toContain('R2');
+    expect(ledger).not.toContain('Review finding R1'); expect(ledger).toContain('Review finding R2');
     expect(ledger).toContain('compatibility'); expect(ledger).not.toContain('No unresolved assumptions');
     box.commitFix('second round\n');
     const next = prepare('acceptance', '', 2);

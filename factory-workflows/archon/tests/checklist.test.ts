@@ -44,16 +44,17 @@ describe('tableShapeProblems (verify-checklist table shape)', () => {
 
   test('an unescaped pipe splits a row into too many cells', () => {
     const problems = tableShapeProblems(`${PLAN_HEADER}| L-1 | Reads a | b | e2e |\n`);
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('L-1');
+    expect(problems).toEqual(['checklist row L-1 does not have 3 cells; escape any | inside a cell as \\|']);
   });
 
   test('text with no table fails', () => {
-    expect(tableShapeProblems('# Checklist\n\nNothing.\n')).toHaveLength(1);
+    expect(tableShapeProblems('# Checklist\n\nNothing.\n')).toEqual(['checklist has no table with an ID column']);
   });
 
   test('a table without an ID column fails', () => {
-    expect(tableShapeProblems('| Name | Value |\n|----|----|\n| a | b |\n')).toHaveLength(1);
+    expect(tableShapeProblems('| Name | Value |\n|----|----|\n| a | b |\n')).toEqual([
+      'checklist has no table with an ID column',
+    ]);
   });
 
   test('an earlier table without an ID column does not hide a later one', () => {
@@ -82,9 +83,9 @@ describe('verifyChecklist (verify-checklist)', () => {
   });
 
   test('fails when the checklist is missing or empty', () => {
-    expect(verifyChecklist(box.exec, dir, plan()).ok).toBe(false);
+    expect(verifyChecklist(box.exec, dir, plan()).problems).toContain('change/checklist.md is missing or empty');
     box.write(`${dir}/checklist.md`, '');
-    expect(verifyChecklist(box.exec, dir, plan()).ok).toBe(false);
+    expect(verifyChecklist(box.exec, dir, plan()).problems).toContain('is missing or empty');
   });
 
   test('fails when the checklist has uncommitted changes', () => {
@@ -93,6 +94,7 @@ describe('verifyChecklist (verify-checklist)', () => {
     box.write(`${dir}/checklist.md`, `${PLAN_HEADER}| L-1 | x | y |\n`);
     const result = verifyChecklist(box.exec, dir, plan());
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('has uncommitted changes');
     expect(box.exists('output/planned-checklist.md')).toBe(false);
   });
 
@@ -101,7 +103,7 @@ describe('verifyChecklist (verify-checklist)', () => {
     commitList();
     const result = verifyChecklist(box.exec, dir, plan());
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('L-1');
+    expect(result.problems).toContain('checklist row L-1 does not have 3 cells');
     expect(box.exists('output/planned-checklist.md')).toBe(false);
   });
 });
@@ -120,7 +122,9 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
   test('commits the checklist when it is the only change', () => {
     box.write(`${dir}/checklist.md`, `${PLAN_HEADER}| I-1 | x | y |\n`);
     expect(run()).toEqual({ ok: true, problems: '' });
-    expect(box.git('log', '-1', '--format=%s')).toContain('demo');
+    expect(box.git('log', '-1', '--format=%s')).toBe(
+      '[check-implementor-checklist] docs: add verification checklist for demo'
+    );
     expect(box.git('show', '--pretty=', '--name-only', 'HEAD')).toBe('change/checklist.md');
     expect(box.git('status', '--porcelain')).toBe('');
   });
@@ -130,6 +134,7 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
     box.commitFix();
     const result = run();
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('implementor-checklist committed work; it may only write change/checklist.md');
   });
 
   test('fails when other files changed', () => {
@@ -137,6 +142,7 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
     box.write('stray.txt', 'stray\n');
     const result = run();
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('changed files other than change/checklist.md');
     expect(result.problems).toContain('stray.txt');
     expect(box.head()).toBe(definitionHead);
   });
@@ -168,11 +174,12 @@ describe('checkImplementorChecklist (check-implementor-checklist)', () => {
   test('fails when no checklist was written', () => {
     const result = run();
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('did not write change/checklist.md');
   });
 
   test('fails when the checklist is empty', () => {
     box.write(`${dir}/checklist.md`, '');
-    expect(run().ok).toBe(false);
+    expect(run().problems).toContain('did not write');
   });
 
   test('refuses a checklist outside the repository', () => {
@@ -234,14 +241,14 @@ describe('checkoutStart (a node.execution.checkoutStart binding)', () => {
   });
 
   test.each([
-    ['a manifest that is missing', () => dirty('0'.repeat(64))],
-    ['a manifest that does not match its digest', () => dirty(mismatched())],
-    ['a checkout that is not git', () => JSON.stringify({ kind: 'not_git' })],
-    ['an observation that could not be made', () => JSON.stringify({ kind: 'unavailable', reason: 'git_failed' })],
-    ['an unborn branch', () => git({ status: 'clean' }, { commit: null })],
-    ['text that is not JSON', () => 'not json'],
-  ])('refuses %s', (_name, raw) => {
+    ['a manifest that is missing', () => dirty('0'.repeat(64)), 'is unreadable'],
+    ['a manifest that does not match its digest', () => dirty(mismatched()), 'does not match its recorded digest'],
+    ['a checkout that is not git', () => JSON.stringify({ kind: 'not_git' }), 'the checkout is not_git'],
+    ['an observation that could not be made', () => JSON.stringify({ kind: 'unavailable', reason: 'git_failed' }), 'the checkout is unavailable'],
+    ['an unborn branch', () => git({ status: 'clean' }, { commit: null }), 'no commit yet'],
+    ['text that is not JSON', () => 'not json', 'the checkout is unreadable'],
+  ])('refuses %s', (_name, raw, why) => {
     const observed = checkoutStart(raw(), box.path('artifacts'));
-    expect('failure' in observed).toBe(true);
+    expect('failure' in observed && observed.failure.problems).toContain(why);
   });
 });

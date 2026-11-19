@@ -136,6 +136,6 @@ test.each(['missing cursor','read failed'])('INT-013 incomplete thread paginatio
   try{
     const first={data:{repository:{pullRequest:{reviewThreads:{nodes:[{id:'thread',isResolved:false,comments:{nodes:[inline(user('author'),'reply\n<!-- codagent-reply -->')],pageInfo:{hasNextPage:true,endCursor:cause==='missing cursor'?null:'next'}}}]}}}}};
     box.fake('gh',[rule(['api','graphql'],reply(JSON.stringify(first)),reply('',1,'permission denied'))]);
-    const result=fetchComments(box.exec,'owner','repo',7);expect(typeof result).toBe('string');if(cause==='read failed')expect(String(result)).toContain('permission denied');
+    const result=fetchComments(box.exec,'owner','repo',7);expect(typeof result).toBe('string');expect(String(result)).toContain(cause==='missing cursor'?'cursor':'permission denied');
   }finally{box.dispose();}
 });

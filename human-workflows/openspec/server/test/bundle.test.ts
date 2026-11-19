@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { CHANGE, currentStep, defined, fakeCall, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
+import { CHANGE, defined, fakeCall, fakeLog, makeFixture, PLUGIN_ROOT, writeArtifacts } from "./helpers.js";
 
 type TextResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
 
@@ -39,10 +39,11 @@ test("the committed bundle serves the four tools over stdio", async () => {
 
     const started = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE, start: true } });
     assert.equal((started as TextResult).isError, undefined);
-    assert.equal(currentStep(fixture), "proposal");
+    assert.match(text(started), /The current step is "proposal" \(step 1 of 5\)/);
 
     const early = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE } });
     assert.equal((early as TextResult).isError, true);
+    assert.match(text(early), /^Refused: step "proposal"/);
 
     writeArtifacts(fixture, CHANGE, "proposal");
     const review = JSON.parse(text(await client.callTool({ name: "call_agent", arguments: { agent: "crosscheck", prompt: "Review." } })));
@@ -50,8 +51,7 @@ test("the committed bundle serves the four tools over stdio", async () => {
     assert.equal(review.cli, "codex", "the client name claude-code makes Codex the crosscheck");
 
     const specs = await client.callTool({ name: "next_step", arguments: {} });
-    assert.equal((specs as TextResult).isError, undefined);
-    assert.equal(currentStep(fixture), "specs");
+    assert.match(text(specs), /^Continuing to step "specs"/);
   } finally {
     await client.close();
   }
@@ -80,10 +80,10 @@ test("started in the plugin folder as Codex does, it works in the session direct
   try {
     const started = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE, start: true }, _meta });
     assert.equal((started as TextResult).isError, undefined, text(started));
-    assert.equal(currentStep(fixture), "proposal");
+    assert.equal(JSON.parse(fixture.read(`openspec/changes/${CHANGE}/.define-openspec-change.json`)).current_step, "proposal");
 
     const early = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE }, _meta });
-    assert.equal((early as TextResult).isError, true);
+    assert.match(text(early), /^Refused: step "proposal"/);
 
     const review = JSON.parse(text(await client.callTool({ name: "call_agent", arguments: { agent: "crosscheck", prompt: "Review." }, _meta })));
     assert.equal(review.status, "succeeded");
@@ -136,7 +136,5 @@ test("the tools carry annotations, call_agent only takes crosscheck, and an inte
     throw new Error("boom");
   });
   assert.equal(failed.isError, true);
-  const message = failed.content[0]?.text ?? "";
-  assert.ok(message.includes("boom"));
-  assert.equal(message.includes("\n"), false, "no stack trace");
+  assert.equal(failed.content[0]?.text, "define-openspec-change internal error: boom");
 });

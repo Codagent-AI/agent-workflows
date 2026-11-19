@@ -39,12 +39,12 @@ test.each(['record', 'evidence', 'commit', 'status'])('INT-007 missing completio
 });
 test('INT-007 judge-only commits do not count', () => {
   input.start = box.head(); box.write('file.txt', 'record'); box.commit('[judge-completion] docs: record', 'file.txt');
-  expect(checkCompletion(input).complete).toBe(false); expect(box.read('artifacts/completion-problems.txt')).not.toBe('');
+  expect(checkCompletion(input).complete).toBe(false); expect(box.read('artifacts/completion-problems.txt')).toContain('no commit');
 });
 test.each(['failed', 'not verified'])('INT-007 complete rejects unsupported gaps %s', status => {
   box.write('openspec/changes/demo/checklist.md', checklist(status, status === 'failed' ? 'failure' : ''));
   checkCompletion(input);
-  expect(() => checkVerdict(input, { verdict: 'complete', reason: 'done', remaining: '' })).toThrow();
+  expect(() => checkVerdict(input, { verdict: 'complete', reason: 'done', remaining: '' })).toThrow('disagrees');
 });
 test('INT-007 complete accepts reasoned unverified gaps only when other prerequisites pass', () => {
   box.write('openspec/changes/demo/checklist.md', checklist('not verified', 'tool unavailable; decision D-01'));
@@ -53,12 +53,12 @@ test('INT-007 complete accepts reasoned unverified gaps only when other prerequi
 });
 test.each(['unknown', '', 'continue', 'blocked'])('INT-007 invalid verdict %s fails', verdict => {
   box.write('artifacts/implementation-complete.md', ''); checkCompletion(input);
-  expect(() => checkVerdict(input, { verdict, reason: 'reason', remaining: '' })).toThrow();
+  expect(() => checkVerdict(input, { verdict, reason: 'reason', remaining: '' })).toThrow('no valid verdict');
 });
 test('INT-007 missing and malformed verdicts fail', () => {
   box.write('artifacts/implementation-complete.md', ''); checkCompletion(input);
-  expect(() => checkVerdict(input, null)).toThrow();
-  expect(() => checkVerdict(input, {} as never)).toThrow();
+  expect(() => checkVerdict(input, null)).toThrow('no valid verdict');
+  expect(() => checkVerdict(input, {} as never)).toThrow('no valid verdict');
 });
 test('INT-007 persisted verdict is reused once and a fourth continue is refused', () => {
   box.write('artifacts/implementation-complete.md', ''); checkCompletion(input);
@@ -69,20 +69,20 @@ test('INT-007 persisted verdict is reused once and a fourth continue is refused'
     expect(box.read('artifacts/completion-loop.jsonl').trim().split('\n')).toHaveLength(i);
     box.commitFix(`pass ${i}`); checkCompletion(input);
   }
-  input.judgment = '4'; expect(() => checkVerdict(input, verdict)).toThrow();
+  input.judgment = '4'; expect(() => checkVerdict(input, verdict)).toThrow('continue passes exhausted');
 });
 test('INT-007 third consecutive record fix fails and a continue resets its counter', () => {
   box.write('artifacts/implementation-complete.md', ''); checkCompletion(input);
   const verdict = { verdict: 'fix-record', reason: 'record missing', remaining: '' };
   checkVerdict(input, verdict); input.judgment = '2'; checkVerdict(input, verdict); input.judgment = '3';
-  expect(() => checkVerdict(input, verdict)).toThrow();
+  expect(() => checkVerdict(input, verdict)).toThrow('record could not be fixed');
   checkVerdict(input, { verdict: 'continue', reason: 'work', remaining: 'fix' }); input.judgment = '4';
   expect(checkVerdict(input, verdict).verdict).toBe('fix-record');
 });
 test('INT-007 a continue with neither commit nor changed row stalls; row changes are progress', () => {
   box.write('artifacts/implementation-complete.md', ''); checkCompletion(input);
   checkVerdict(input, { verdict: 'continue', reason: 'work', remaining: 'fix' });
-  expect(() => checkCompletion(input)).toThrow();
+  expect(() => checkCompletion(input)).toThrow('stalled');
   box.write('openspec/changes/demo/checklist.md', checklist('not verified', 'specific reason'));
   expect(checkCompletion(input).complete).toBe(false);
 });
@@ -92,7 +92,7 @@ test.each(['returned', 'record', 'judge'])('INT-007 blocked %s stops and prints 
   if (which === 'judge') {
     box.write('artifacts/completion-check.json', JSON.stringify({ passed: false, only_unverified_with_reason: false }));
     expect(() => checkVerdict(input, { verdict: 'blocked', reason: 'decision', remaining: '' })).toThrow('choose the approved behavior');
-  } else expect(() => checkCompletion(input)).toThrow();
+  } else expect(() => checkCompletion(input)).toThrow('Update the definition and start a new run');
 });
 
 test('INT-007 replay after a continue commit keeps the original progress snapshot',()=>{
@@ -104,14 +104,14 @@ test('INT-007 replay after a continue commit keeps the original progress snapsho
 });
 test('INT-007 malformed JSON and malformed remaining get the required verdict diagnostic',()=>{
   box.write('artifacts/implementation-complete.md','');checkCompletion(input);
-  expect(()=>checkVerdict(input,{verdict:'continue',reason:'work',remaining:[]} as never)).toThrow();
+  expect(()=>checkVerdict(input,{verdict:'continue',reason:'work',remaining:[]} as never)).toThrow('no valid verdict');
   const result=spawnSync(process.execPath,[join(scripts,'check-completion-verdict.ts')],{cwd:box.dir,encoding:'utf8',env:{...process.env,ARTIFACTS_DIR:input.dir,INPUTS_CHANGE_DIR:input.changeDir,INPUTS_START:JSON.stringify({kind:'git',commit:input.start}),INPUTS_ITERATION:'1',INPUTS_RESULT:'{bad'}});
-  expect(result.status).toBe(1);
+  expect(result.status).toBe(1);expect(result.stderr).toContain('judge returned no valid verdict');
 });
 test('INT-007 valid blocked judge record stops the actual verifier with its question',()=>{
   box.write('artifacts/implementation-blocked.md','Question: which fallback is approved?\nDecision needed: choose the fallback.');
   box.write('artifacts/completion-check.json',JSON.stringify({passed:false,only_unverified_with_reason:false}));
   const result=spawnSync(process.execPath,[join(scripts,'check-completion-verdict.ts')],{cwd:box.dir,encoding:'utf8',env:{...process.env,ARTIFACTS_DIR:input.dir,INPUTS_CHANGE_DIR:input.changeDir,INPUTS_START:JSON.stringify({kind:'git',commit:input.start}),INPUTS_ITERATION:'1',INPUTS_RESULT:JSON.stringify({verdict:'blocked',reason:'human choice',remaining:''})}});
-  expect(result.status).toBe(1);expect(result.stdout).toBe('');expect(result.stderr).toContain('which fallback is approved?');
+  expect(result.status).toBe(1);expect(result.stdout).toBe('');expect(result.stderr).toContain('which fallback is approved?');expect(result.stderr).toContain('Update the definition and start a new run');expect(result.stderr).not.toContain('without record');
   expect(JSON.parse(box.read('artifacts/completion-verdict.json')).verdict).toBe('blocked');
 });

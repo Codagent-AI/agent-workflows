@@ -23,18 +23,20 @@ describe('checkNotBlocked (check-not-blocked.sh)', () => {
     expect(checkNotBlocked(box.dir)).toEqual({ ok: true, problems: '' });
   });
 
-  test('fails with the record when one exists', () => {
+  test('fails with the record and the restart advice when one exists', () => {
     box.write(ARTIFACTS.blocked, 'Decision needed: which export format?\n');
     const result = checkNotBlocked(box.dir);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('Decision needed: which export format?');
+    for (const want of ['without a user decision', 'Decision needed: which export format?', 'start a new run']) {
+      expect(result.problems).toContain(want);
+    }
   });
 
   test('fails with the returned reason when the step returned blocked without a record', () => {
     const result = checkNotBlocked(box.dir, { blocked: true, reason: 'Which export format?' });
     expect(result.ok).toBe(false);
     expect(result.problems).toContain('Which export format?');
-    expect(checkNotBlocked(box.dir, { blocked: true, reason: ' ' }).ok).toBe(false);
+    expect(checkNotBlocked(box.dir, { blocked: true, reason: ' ' }).problems).toContain('the implementor gave no reason');
   });
 
   test('prefers the record to the returned reason', () => {
@@ -55,6 +57,7 @@ describe('checkTrackedClean', () => {
     box.write('file.txt', 'dirty\n');
     const result = checkTrackedClean(box.exec, 'tracked files have changes');
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('tracked files have changes');
     expect(result.problems).toContain('file.txt');
   });
 });
@@ -76,6 +79,7 @@ describe('checkCommitsSince', () => {
   test('fails when nothing was committed since the start head', () => {
     const result = checkCommitsSince(box.exec, box.head());
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('the change was not implemented');
   });
 
   test('passes after a commit', () => {
@@ -87,6 +91,7 @@ describe('checkCommitsSince', () => {
   test('fails when the start head is unknown', () => {
     const result = checkCommitsSince(box.exec, '0123456789012345678901234567890123456789');
     expect(result.ok).toBe(false);
+    expect(result.problems).toContain('could not count commits');
   });
 });
 

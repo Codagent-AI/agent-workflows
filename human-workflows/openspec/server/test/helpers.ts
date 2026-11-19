@@ -19,7 +19,6 @@ import { fileURLToPath } from "node:url";
 import { CallManager } from "../src/agentcall.js";
 import type { Context } from "../src/context.js";
 import { nextStep, type NextStepArgs } from "../src/define.js";
-import { STATE_FILE } from "../src/state.js";
 import { loadWorkflow } from "../src/steps.js";
 
 /** The real plugin folder, so tests use the shipped workflow.yaml. */
@@ -288,9 +287,4 @@ export async function driveToApproachReview(next: (args?: NextStepArgs) => Promi
     const result = await next({ change_name: CHANGE });
     if (result.isError) throw new Error(result.text);
   }
-}
-
-/** The define's current step, read from its state file. */
-export function currentStep(fixture: Fixture, change = CHANGE): string | null {
-  return JSON.parse(fixture.read(`openspec/changes/${change}/${STATE_FILE}`)).current_step;
 }
