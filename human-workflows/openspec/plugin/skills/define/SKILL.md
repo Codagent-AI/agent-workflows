@@ -12,7 +12,9 @@ steps and returns each step's instructions; do not run the steps from memory.
 1. Find the change name. Never ask the user for a name, and never ask them to confirm one.
    - If the request names the change, for example `add-dark-mode`, use that name.
    - If the user wants to continue a define that is in progress, use that change's name. Each one has
-     a `.define-openspec-change.json` file in its folder under `openspec/changes/`.
+     a `.define-openspec-change.json` file in its folder under `openspec/changes/`. If more than one
+     is in progress, continue the one that matches what the user said. Only if none clearly matches,
+     ask which change they mean, saying what each one is about.
    - Otherwise name the change yourself from what the user said it is about. Use a short name that
      starts with a verb, in lowercase letters, digits, and hyphens, such as `add-dark-mode` or
      `fix-login-timeout`. No change under `openspec/changes/`, archived ones included, may already
