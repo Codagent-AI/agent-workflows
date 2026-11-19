@@ -59,9 +59,6 @@ fixture:
     - write-acceptance-status
     - recheck-unverified
     - commit-logs
-  resolved-text-contains:
-    acceptance-test: "OpenSpec change \"valid-change\""
-    acceptance-handoff: "CI status: passed"
   inputs:
     change_name: valid-change
     review_strategy: none

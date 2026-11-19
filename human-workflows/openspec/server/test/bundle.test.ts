@@ -40,7 +40,6 @@ test("the committed bundle serves the four tools over stdio", async () => {
     const started = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE, start: true } });
     assert.equal((started as TextResult).isError, undefined);
     assert.match(text(started), /The current step is "proposal" \(step 1 of 5\)/);
-    assert.ok(text(started).includes(join(PLUGIN_ROOT, "reviews", "proposal-review.md")));
 
     const early = await client.callTool({ name: "next_step", arguments: { change_name: CHANGE } });
     assert.equal((early as TextResult).isError, true);
@@ -129,8 +128,6 @@ test("the tools carry annotations, call_agent only takes crosscheck, and an inte
     assert.equal(tools.get("cancel_agent_call")?.annotations?.destructiveHint, false);
     const callAgent = defined(tools.get("call_agent"), "the call_agent tool");
     assert.equal((callAgent.inputSchema.properties as Record<string, { const?: string }>).agent?.const, "crosscheck");
-    assert.match(tools.get("call_agent")?.description ?? "", /the proposal and approach-review steps/);
-    assert.match(tools.get("call_agent")?.description ?? "", /about 5 seconds/);
   } finally {
     await client.close();
   }

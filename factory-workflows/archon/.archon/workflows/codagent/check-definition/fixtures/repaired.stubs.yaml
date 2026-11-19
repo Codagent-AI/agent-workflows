@@ -11,5 +11,3 @@ fixture:
     - repair-definition
     - definition-recheck
     - verify-definition
-  resolved-text-contains:
-    repair-definition: You are running autonomously with no human in the loop.

@@ -9,6 +9,20 @@
 - Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.
 - OpenSpec changes for every project live in the one OpenSpec project at the repository root, `openspec/`. Do not add an `openspec/` folder inside a project. `openspec/config.yaml` holds the context for all projects.
 
+## Hard rule: don't test static content
+
+This applies to every project in this repository, with no exceptions. Models add these tests by reflex. Before you write any assertion on text, check it against this rule.
+
+Static content is text with no logic behind it: skills, command and prompt files, review instructions and other markdown, prompts in YAML such as `workflow.yaml` and the Archon workflows, and tool descriptions. A test of its words only restates it and breaks on every edit. Never write one. That includes:
+
+- reading a skill, prompt, markdown, or YAML prompt file in a test to check what it says;
+- checking that a resolved prompt contains text that came from a prompt file, for example with `resolved-text-contains` in an Archon fixture;
+- checking the instructions inside a message the code returns, when the rest of the message already shows which branch ran, such as "Do not ask the user for one" in a refusal.
+
+Test code. Where code picks different text on different branches, or builds text from data, test that: the right branch's text came out, the data went in, the parts are in the right order. Match only as much text as it takes to tell the branch or the data apart.
+
+If you find a test of static content in a test file you touch, delete it in the same change.
+
 ## Paul's workflow
 
 Paul changes the pack (`factory-workflows/archon`) in one Claude session, from definition to evals:

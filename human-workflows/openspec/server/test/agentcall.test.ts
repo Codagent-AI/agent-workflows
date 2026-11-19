@@ -147,13 +147,11 @@ test("an unknown lead uses the first configured CLI that is installed", async ()
   assert.equal(body.cli, "codex");
 });
 
-test("call_agent without a usable config is refused and points at the setup skill", async () => {
+test("call_agent without a usable config is refused before any child starts", async () => {
   const { fixture, calls } = await atProposal({ client: "claude-code" });
   writeConfig(fixture, null);
   const missing = parse(await calls.start("crosscheck", "Review."));
   assert.equal(missing.error?.code, "crosscheck_not_configured");
-  assert.match(missing.error?.message ?? "", /~\/\.agent-workflows\/config\.yaml/);
-  assert.match(missing.error?.message ?? "", /define-openspec-change:setup/);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
 });
 
@@ -211,7 +209,6 @@ test("a slow child returns running, then get_agent_call returns the result", asy
   const started = parse(await calls.start("crosscheck", "Review."));
   assert.equal(started.status, "running");
   assert.match(String(started.call_id), /^call-[0-9a-f]{8}$/);
-  assert.match(String(started.next), /get_agent_call/);
   assert.equal(started.response, undefined);
 
   const busy = await calls.start("crosscheck", "Another review.");
@@ -256,7 +253,7 @@ test("next_step and call_agent never overlap", async () => {
     const blocked = parse(await calls.start("crosscheck", "Review."));
     assert.equal(blocked.error?.code, "step_in_progress");
     const second = await next({ change_name: CHANGE });
-    assert.equal(second.text, "Refused: another next_step call is still running. Wait for it to return.");
+    assert.match(second.text, /^Refused: another next_step call is still running\./);
   });
   assert.equal(calls.stepGate.held, false);
   const advanced = await next({ change_name: CHANGE });

@@ -54,11 +54,8 @@ fixture:
     - end-after-acceptance
     - publish-review-package
   resolved-text-contains:
-    implementor-checklist: You are running autonomously with no human in the loop.
-    audit: You are running autonomously with no human in the loop.
     resolve-findings: "I-2: the fallback greeting has no test"
-    session-report: "# Session report instructions"
-    recheck-unverified: "still marked `not verified`: I-2"
+    recheck-unverified: I-2
   inputs:
     change_name: valid-change
     review_strategy: none

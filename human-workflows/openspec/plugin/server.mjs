@@ -45436,7 +45436,7 @@ function resolveName(workflow2, root, args) {
     return isValidChangeName(name) ? name : refuse(nameRuleMessage(name));
   }
   if (args.start) {
-    return refuse("start needs a change_name. Ask the user for one.");
+    return refuse("start needs a change_name. Use the name the user gave, or name the change yourself from what it is about. Do not ask the user for one.");
   }
   const active = inProgressChanges(workflow2, root);
   const only = active[0];
