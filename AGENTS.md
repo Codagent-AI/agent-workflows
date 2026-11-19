@@ -9,6 +9,29 @@
 - Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.
 - OpenSpec changes for every project live in the one OpenSpec project at the repository root, `openspec/`. Do not add an `openspec/` folder inside a project. `openspec/config.yaml` holds the context for all projects.
 
+## Hard rule: tests check code, never wording
+
+This applies to every project in this repository, with no exceptions. Models write these tests by reflex. Before you write any assertion on a string, check it against this rule.
+
+Never write a test that checks the wording of text a person or agent authored. That covers:
+
+- skills, command and prompt files, review instructions, and any other markdown;
+- prompts in YAML, such as `workflow.yaml` and the Archon workflows;
+- tool and parameter descriptions;
+- fixed sentences in what code returns: refusals, errors, `problems`, `reason`, next-step guidance, and the prose of reports, handoffs and PR bodies.
+
+It covers every form: `toContain`, `toMatch`, `assert.match`, `includes`, `toThrow('...')`, exact string equality, negated checks, snapshots, and `resolved-text-contains` in Archon fixtures. A test that reads a shipped prompt or markdown file to look at its content is never allowed.
+
+A test may check:
+
+- what the code did: return values, flags, statuses, error codes, counts, ids, state files, files written or left alone, git state, which branch ran, and the order of steps;
+- data the code computed or passed through: names, paths, SHAs, URLs, field paths in a validation error, a fake command's output or stderr, and text the test supplied itself, such as stub output or input fixtures;
+- text the code builds, by comparing it with the code's own output (for example `renderStep(...)`), never with a literal sentence.
+
+When only the wording tells two cases apart, check the outcome instead (refused or not, state unchanged, problems non-empty), or match only the data the code put into the message. If nothing but wording is left to check, there is no test to write. People review prompt and message wording; tests don't.
+
+If you find a wording assertion in a test you touch, delete it in the same change.
+
 ## Paul's workflow
 
 Paul changes the pack (`factory-workflows/archon`) in one Claude session, from definition to evals:
