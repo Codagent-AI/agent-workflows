@@ -9,28 +9,19 @@
 - Each project folder keeps the rules for changing it in its own `AGENTS.md`, such as `human-workflows/openspec/AGENTS.md`.
 - OpenSpec changes for every project live in the one OpenSpec project at the repository root, `openspec/`. Do not add an `openspec/` folder inside a project. `openspec/config.yaml` holds the context for all projects.
 
-## Hard rule: tests check code, never wording
+## Hard rule: don't test static content
 
-This applies to every project in this repository, with no exceptions. Models write these tests by reflex. Before you write any assertion on a string, check it against this rule.
+This applies to every project in this repository, with no exceptions. Models add these tests by reflex. Before you write any assertion on text, check it against this rule.
 
-Never write a test that checks the wording of text a person or agent authored. That covers:
+Static content is text with no logic behind it: skills, command and prompt files, review instructions and other markdown, prompts in YAML such as `workflow.yaml` and the Archon workflows, and tool descriptions. A test of its words only restates it and breaks on every edit. Never write one. That includes:
 
-- skills, command and prompt files, review instructions, and any other markdown;
-- prompts in YAML, such as `workflow.yaml` and the Archon workflows;
-- tool and parameter descriptions;
-- fixed sentences in what code returns: refusals, errors, `problems`, `reason`, next-step guidance, and the prose of reports, handoffs and PR bodies.
+- reading a skill, prompt, markdown, or YAML prompt file in a test to check what it says;
+- checking that a resolved prompt contains text that came from a prompt file, for example with `resolved-text-contains` in an Archon fixture;
+- checking the instructions inside a message the code returns, when the rest of the message already shows which branch ran, such as "Do not ask the user for one" in a refusal.
 
-It covers every form: `toContain`, `toMatch`, `assert.match`, `includes`, `toThrow('...')`, exact string equality, negated checks, snapshots, and `resolved-text-contains` in Archon fixtures. A test that reads a shipped prompt or markdown file to look at its content is never allowed.
+Test code. Where code picks different text on different branches, or builds text from data, test that: the right branch's text came out, the data went in, the parts are in the right order. Match only as much text as it takes to tell the branch or the data apart.
 
-A test may check:
-
-- what the code did: return values, flags, statuses, error codes, counts, ids, state files, files written or left alone, git state, which branch ran, and the order of steps;
-- data the code computed or passed through: names, paths, SHAs, URLs, field paths in a validation error, a fake command's output or stderr, and text the test supplied itself, such as stub output or input fixtures;
-- text the code builds, by comparing it with the code's own output (for example `renderStep(...)`), never with a literal sentence.
-
-When only the wording tells two cases apart, check the outcome instead (refused or not, state unchanged, problems non-empty), or match only the data the code put into the message. If nothing but wording is left to check, there is no test to write. People review prompt and message wording; tests don't.
-
-If you find a wording assertion in a test you touch, delete it in the same change.
+If you find a test of static content in a test file you touch, delete it in the same change.
 
 ## Paul's workflow
 
