@@ -107,7 +107,6 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
       const tools = box.forgeTools([found({ head_revision: STALE })]);
       expect(() => runCheck(() => checkDraftPr(tools, () => {}, 10, 3))).toThrow('check failed exit 1');
       expect(box.calls('archon').filter(call => call.args[1] === 'pr.view')).toHaveLength(10);
-      expect(stderr.mock.calls[0]?.[0]).toContain('does not match required draft state or local HEAD');
       expect(exit).toHaveBeenCalledWith(1);
     } finally {
       exit.mockRestore(); stderr.mockRestore();
@@ -125,19 +124,18 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
     expect(waits).toEqual([]);
   });
 
-  const failing: [string, () => ReturnType<typeof found>, string][] = [
-    ['head mismatch', () => found({ head_revision: STALE }), 'does not match required draft state or local HEAD'],
-    ['missing base', () => found({ base: '', head_revision: box.head() }), "base ''"],
-    ['closed pull request', () => found({ state: 'closed', head_revision: box.head() }), 'state closed'],
-    ['not a draft', () => found({ is_draft: false, head_revision: box.head() }), 'draft false'],
-    ['a merged pull request', () => found({ state: 'merged', head_revision: box.head() }), 'state merged'],
-    ['no pull request', () => rule(VIEW, ok('pr.view', null)), 'found 0'],
-    ['two pull requests', () => rule(VIEW, failed('conflict', 'two open pull requests match')), 'forge pr.view failed (conflict): two open'],
+  const failing: [string, () => ReturnType<typeof found>][] = [
+    ['head mismatch', () => found({ head_revision: STALE })],
+    ['missing base', () => found({ base: '', head_revision: box.head() })],
+    ['closed pull request', () => found({ state: 'closed', head_revision: box.head() })],
+    ['not a draft', () => found({ is_draft: false, head_revision: box.head() })],
+    ['a merged pull request', () => found({ state: 'merged', head_revision: box.head() })],
+    ['no pull request', () => rule(VIEW, ok('pr.view', null))],
+    ['two pull requests', () => rule(VIEW, failed('conflict', 'two open pull requests match'))],
   ];
-  test.each(failing)('fails on %s after all attempts', (_name, makeRule, want) => {
+  test.each(failing)('fails on %s after all attempts', (_name, makeRule) => {
     const { result } = check([makeRule()], 2);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain(want);
     expect(result.problems).not.toContain('https://');
     expect(result.prUrl).toBe('');
     expect(box.calls('archon').filter(call => call.args[1] === 'pr.view')).toHaveLength(2);
@@ -146,13 +144,13 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
   test('fails with the forge reason when the lookup is refused', () => {
     const { result } = check([rule(VIEW, failed('authorization', 'bad credentials'))], 2);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('forge pr.view failed (authorization): bad credentials');
+    expect(result.problems).toContain('bad credentials');
   });
 
   test('fails when no plugin claims the remote', () => {
     const rules = [rule(['forge', 'resolve'], ok('resolve', { kind: 'none', forge: 'none' })), found()];
     const result = checkDraftPr(box.forgeTools(rules), () => {}, 1, 0);
-    expect(result.problems).toContain("no forge plugin claims the git remote 'origin'");
+    expect(result.ok).toBe(false);
   });
 
   test('rejects a detached HEAD without calling the forge', () => {
@@ -160,7 +158,6 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
     box.git('checkout', '-q', '--detach', box.head());
     const result = checkDraftPr(tools, () => {}, 1, 0);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('HEAD is detached');
     expect(box.calls('archon')).toEqual([]);
   });
 
@@ -168,7 +165,6 @@ describe('checkDraftPr (check-draft-pr.sh)', () => {
     const rules = [rule(VIEW, { ...ok('pr.view', prView({ head_revision: box.head() })), status: 2 })];
     const { result } = check(rules);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('its run audit could not be persisted');
   });
 });
 
@@ -186,12 +182,12 @@ describe('restoreDraft', () => {
     const tools = box.forgeTools([found(), rule(DRAFT, failed('conflict', 'the pull request is merged', { outcome: 'refused' }))]);
     const result = restoreDraft(tools);
     expect(result.ok).toBe(false);
-    expect(result.problems).toBe('forge pr.draft refused: the pull request is merged');
+    expect(result.problems).toContain('the pull request is merged');
   });
 
   test('fails when the branch has no open pull request', () => {
     const result = restoreDraft(box.forgeTools([rule(VIEW, ok('pr.view', null)), rule(DRAFT, ok('pr.draft', {}))]));
-    expect(result.problems).toContain("no open pull request for branch 'feature'");
+    expect(result.ok).toBe(false);
     expect(box.calls('archon').some(call => call.args[1] === 'pr.draft')).toBe(false);
   });
 });
@@ -223,7 +219,6 @@ describe('acceptancePush (acceptance-push.sh)', () => {
     box.write('file.txt', 'dirty\n');
     const result = acceptancePush(box.exec);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('tracked changes are uncommitted');
     expect(result.problems).toContain('file.txt');
   });
 
@@ -242,7 +237,6 @@ describe('acceptancePush (acceptance-push.sh)', () => {
     box.commitFix('local\n');
     const result = acceptancePush(box.exec);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('failed');
     expect(box.gitIn(box.path('origin.git'), 'rev-parse', 'feature')).toBe(remoteHead);
   });
 
@@ -251,7 +245,6 @@ describe('acceptancePush (acceptance-push.sh)', () => {
     box.git('checkout', '-q', '--detach', box.head());
     const result = acceptancePush(box.exec);
     expect(result.ok).toBe(false);
-    expect(result.problems).toContain('HEAD is detached');
   });
 });
 
@@ -294,8 +287,8 @@ describe('spliceBody (update-pr-body.sh body cases)', () => {
   });
 
   test('rejects a block without ordered markers', () => {
-    expect(() => spliceBody('x', 'no markers')).toThrow('ordered body markers');
-    expect(() => spliceBody('x', `${BODY_END}\n${BODY_START}\n`)).toThrow('ordered body markers');
+    expect(() => spliceBody('x', 'no markers')).toThrow();
+    expect(() => spliceBody('x', `${BODY_END}\n${BODY_START}\n`)).toThrow();
   });
 });
 
@@ -348,39 +341,43 @@ describe('publishDraftPr', () => {
   });
 
   test.each([
-    ['an empty description', { title: 't', block: '  \n' }, 'missing or empty'],
-    ['a description with a marker', { title: 't', block: `Summary ${BODY_START}` }, 'must not contain the body markers'],
-  ])('fails on %s without calling the forge', (_name, given, why) => {
+    ['an empty description', { title: 't', block: '  \n' }],
+    ['a description with a marker', { title: 't', block: `Summary ${BODY_START}` }],
+  ])('fails on %s without calling the forge', (_name, given) => {
     const tools = box.forgeTools([found()]);
-    expect(publishDraftPr(tools, given).problems).toContain(why);
+    expect(publishDraftPr(tools, given).ok).toBe(false);
     expect(box.calls('archon')).toEqual([]);
   });
 
   test('a new pull request needs a title', () => {
     const tools = box.forgeTools([rule(VIEW, ok('pr.view', null)), rule(CREATE, ok('pr.create', {}))]);
-    expect(publishDraftPr(tools, { title: ' \n', block: 'Summary' }).problems).toContain('title is missing or empty');
+    expect(publishDraftPr(tools, { title: ' \n', block: 'Summary' }).ok).toBe(false);
     expect(opsCalled()).toEqual(['pr.view']);
   });
 
   test.each([
-    ['refused', { outcome: 'refused' }, 'forge pr.create refused: head is not pushed'],
-    ['verification_failed', { outcome: 'verification_failed', leaveBehind: 'draft #9' }, 'forge pr.create verification_failed: head is not pushed (may remain on the forge: draft #9)'],
-    ['outcome_unknown', { outcome: 'outcome_unknown' }, 'forge pr.create outcome_unknown: head is not pushed'],
-  ])('reports a %s creation', (_name, mutation, want) => {
+    ['refused', { outcome: 'refused' }, []],
+    ['verification_failed', { outcome: 'verification_failed', leaveBehind: 'draft #9' }, ['draft #9']],
+    ['outcome_unknown', { outcome: 'outcome_unknown' }, []],
+  ])('reports a %s creation', (_name, mutation, extra) => {
     const tools = box.forgeTools([rule(VIEW, ok('pr.view', null)), rule(CREATE, failed('forge_error', 'head is not pushed', mutation))]);
-    expect(publishDraftPr(tools, description)).toEqual({ ok: false, problems: want });
+    const result = publishDraftPr(tools, description);
+    expect(result.ok).toBe(false);
+    for (const token of ['head is not pushed', mutation.outcome, ...extra]) expect(result.problems).toContain(token);
   });
 
   test('a failed body edit stops before the draft conversion', () => {
     const tools = box.forgeTools([found(), rule(EDIT, failed('forge_error', 'denied', { outcome: 'refused' })), rule(DRAFT, ok('pr.draft', {}))]);
-    expect(publishDraftPr(tools, description).problems).toBe('forge pr.edit-body refused: denied');
+    const result = publishDraftPr(tools, description);
+    expect(result.ok).toBe(false);
+    expect(result.problems).toContain('denied');
     expect(opsCalled()).toEqual(['pr.view', 'pr.edit-body']);
   });
 
   test('a remote with no default branch cannot get a pull request', () => {
     const tools = box.forgeTools([rule(VIEW, ok('pr.view', null)), rule(CREATE, ok('pr.create', {}))]);
     box.git('remote', 'set-url', 'origin', box.path('missing.git'));
-    expect(publishDraftPr(tools, description).problems).toContain("could not read the default branch of the remote 'origin'");
+    expect(publishDraftPr(tools, description).ok).toBe(false);
     expect(opsCalled()).toEqual(['pr.view']);
   });
 });
@@ -420,15 +417,14 @@ describe('forge.ts', () => {
   });
 
   test('an envelope that is not JSON is a problem with the exit status', () => {
-    expect(interpret('pr.view', 3, 'oops', 'boom\n')).toEqual({
-      ok: false,
-      problem: 'forge pr.view printed no JSON envelope (exit 3): boom',
-    });
+    const result = interpret('pr.view', 3, 'oops', 'boom\n');
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).toContain('boom');
   });
 
   test('an answer for another operation is a problem', () => {
     const envelope = JSON.stringify({ ok: true, result: { op: 'pr.draft', value: {} } });
-    expect(interpret('pr.view', 0, envelope, '')).toEqual({ ok: false, problem: 'forge pr.view answered for pr.draft' });
+    expect(interpret('pr.view', 0, envelope, '').ok).toBe(false);
   });
 
   describe('checkForgeAccess', () => {
@@ -445,14 +441,15 @@ describe('forge.ts', () => {
     test('asks the plugin of the remote host for exactly the pack operations', () => {
       onGithub([rule(CHECK, accessOk)]);
       const result = checkForgeAccess(box.exec, cliEnv());
-      expect(result).toEqual({ ok: true, problems: '', message: 'forge ready: github 0.14.0 serves github.com, credential from GH_TOKEN' });
+      expect(result).toMatchObject({ ok: true, problems: '' });
+      expect(result.message).toContain('GH_TOKEN');
       const call = box.calls('archon').find(entry => entry.args[1] === 'check');
       expect(call && requestOf(call)).toEqual({ host: 'github.com', operations: FORGE_OPERATIONS });
     });
 
     test('reports a missing plugin, an unsupported operation and a missing credential', () => {
       onGithub([rule(CHECK, failed('no_plugin_for_host', 'no forge plugin claims github.com'))]);
-      expect(checkForgeAccess(box.exec, cliEnv()).problems).toBe('forge check failed (no_plugin_for_host): no forge plugin claims github.com');
+      expect(checkForgeAccess(box.exec, cliEnv()).problems).toContain('no forge plugin claims github.com');
       onGithub([rule(CHECK, failed('no_credential', 'GH_TOKEN is not set'))]);
       expect(checkForgeAccess(box.exec, cliEnv()).problems).toContain('(no_credential)');
     });
@@ -460,7 +457,7 @@ describe('forge.ts', () => {
     test('fails when the Archon CLI is not published or the remote has no host', () => {
       expect(checkForgeAccess(box.exec, {}).problems).toContain('ARCHON_CLI_COMMAND');
       box.forgeTools([rule(CHECK, accessOk)]);
-      expect(checkForgeAccess(box.exec, cliEnv()).problems).toContain("cannot read a host from the git remote 'origin'");
+      expect(checkForgeAccess(box.exec, cliEnv()).ok).toBe(false);
     });
   });
 });

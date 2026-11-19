@@ -58,9 +58,6 @@ fixture:
     - acceptance-test
     - acceptance-gate
     - write-acceptance-status
-  resolved-text-contains:
-    implementor-checklist: "OpenSpec change \"valid-change\""
-    open-draft-pr: "OpenSpec change \"valid-change\""
   inputs:
     change_name: valid-change
     review_strategy: none

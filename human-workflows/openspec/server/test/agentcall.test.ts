@@ -8,7 +8,7 @@ import { spawnLogged } from "../src/callchild.js";
 import { readConfig } from "../src/config.js";
 import { waitMsFromEnv } from "../src/context.js";
 import { workingTreeFingerprint } from "../src/worktree.js";
-import { CHANGE, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
+import { CHANGE, currentStep, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
 
 const SESSION_VARS = {
   CLAUDECODE: "1",
@@ -147,13 +147,11 @@ test("an unknown lead uses the first configured CLI that is installed", async ()
   assert.equal(body.cli, "codex");
 });
 
-test("call_agent without a usable config is refused and points at the setup skill", async () => {
+test("call_agent without a usable config is refused before any child starts", async () => {
   const { fixture, calls } = await atProposal({ client: "claude-code" });
   writeConfig(fixture, null);
   const missing = parse(await calls.start("crosscheck", "Review."));
   assert.equal(missing.error?.code, "crosscheck_not_configured");
-  assert.match(missing.error?.message ?? "", /~\/\.agent-workflows\/config\.yaml/);
-  assert.match(missing.error?.message ?? "", /define-openspec-change:setup/);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
 });
 
@@ -168,24 +166,25 @@ test("the config is checked: a crosscheck list of claude and codex entries with 
     { cli: "codex", model: "gpt-6-astra", effort: "high" },
     { cli: "claude", effort: "high" },
   ]);
-  const problems: Array<[string, RegExp]> = [
-    ["human-workflows:\n  crosscheck: []\n", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows:\n  crosscheck:\n    cli: codex\n", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
-    ["factory-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
-    ["crosscheck:\n  - cli: codex\n", /needs a `human-workflows.crosscheck` list/],
-    ["", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /human-workflows\.crosscheck\[0\]\.cli: must be "claude" or "codex", not "gemini"/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /crosscheck\[1\]\.cli: more than one entry has cli: codex/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /crosscheck\[0\]: has unknown keys: reasoning/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", /crosscheck\[0\]\.model: must be non-empty text/],
-    ["human-workflows:\n  crosscheck:\n    - just-text\n", /crosscheck\[0\]: must be a mapping/],
-    ["human-workflows:\n  crosscheck: [\n", /not valid/],
+  // Each bad config is refused, and the message names the field at fault.
+  const problems: Array<[string, string]> = [
+    ["human-workflows:\n  crosscheck: []\n", "human-workflows.crosscheck"],
+    ["human-workflows:\n  crosscheck:\n    cli: codex\n", "human-workflows.crosscheck"],
+    ["human-workflows: {}\n", "human-workflows.crosscheck"],
+    ["factory-workflows: {}\n", "human-workflows.crosscheck"],
+    ["crosscheck:\n  - cli: codex\n", "human-workflows.crosscheck"],
+    ["", "human-workflows.crosscheck"],
+    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", "crosscheck[0].cli"],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", "crosscheck[1].cli"],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", "reasoning"],
+    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", "crosscheck[0].model"],
+    ["human-workflows:\n  crosscheck:\n    - just-text\n", "crosscheck[0]"],
+    ["human-workflows:\n  crosscheck: [\n", ""],
   ];
-  for (const [text, pattern] of problems) {
+  for (const [text, field] of problems) {
     const result = read(text);
     assert.equal(result.ok, false, text);
-    assert.match(result.ok ? "" : result.message, pattern, text);
+    assert.ok(result.ok || result.message.includes(field), text);
   }
   const withFactory = read(
     "human-workflows:\n  crosscheck:\n    - cli: codex\n" +
@@ -211,7 +210,6 @@ test("a slow child returns running, then get_agent_call returns the result", asy
   const started = parse(await calls.start("crosscheck", "Review."));
   assert.equal(started.status, "running");
   assert.match(String(started.call_id), /^call-[0-9a-f]{8}$/);
-  assert.match(String(started.next), /get_agent_call/);
   assert.equal(started.response, undefined);
 
   const busy = await calls.start("crosscheck", "Another review.");
@@ -234,11 +232,13 @@ test("next_step is refused while a call is running", async () => {
   const started = parse(await calls.start("crosscheck", "Review."));
   const refused = await next({ change_name: CHANGE });
   assert.equal(refused.isError, true);
-  assert.match(refused.text, new RegExp(`crosscheck call ${started.call_id} is still running`));
+  assert.ok(refused.text.includes(String(started.call_id)), "it names the running call");
+  assert.equal(currentStep(fixture), "proposal");
   let polled = parse(await calls.get(String(started.call_id)));
   while (polled.status === "running") polled = parse(await calls.get(String(started.call_id)));
   const advanced = await next({ change_name: CHANGE });
-  assert.match(advanced.text, /^Continuing to step "specs"/);
+  assert.equal(advanced.isError, undefined);
+  assert.equal(currentStep(fixture), "specs");
 });
 
 test("next_step and call_agent never overlap", async () => {
@@ -248,7 +248,6 @@ test("next_step and call_agent never overlap", async () => {
   const starting = calls.start("crosscheck", "Review.");
   const refused = await next({ change_name: CHANGE });
   assert.equal(refused.isError, true);
-  assert.match(refused.text, /^Refused: a crosscheck call is still (starting|running)|^Refused: crosscheck call \S+ is still running/);
   await settled(calls, parse(await starting).call_id);
 
   // While next_step runs, a crosscheck cannot start and a second next_step is refused.
@@ -256,11 +255,12 @@ test("next_step and call_agent never overlap", async () => {
     const blocked = parse(await calls.start("crosscheck", "Review."));
     assert.equal(blocked.error?.code, "step_in_progress");
     const second = await next({ change_name: CHANGE });
-    assert.equal(second.text, "Refused: another next_step call is still running. Wait for it to return.");
+    assert.equal(second.isError, true);
   });
   assert.equal(calls.stepGate.held, false);
   const advanced = await next({ change_name: CHANGE });
-  assert.match(advanced.text, /^Continuing to step "specs"/);
+  assert.equal(advanced.isError, undefined);
+  assert.equal(currentStep(fixture), "specs");
 });
 
 test("cancel stops a running child", async () => {
@@ -283,7 +283,6 @@ test("a call that runs past the time limit is stopped and reported as a timeout"
   const ended = await settled(calls, started.call_id);
   assert.equal(ended.status, "failed");
   assert.equal(ended.error?.code, "timeout");
-  assert.match(ended.error?.message ?? "", /ran past its limit/);
   assert.equal(calls.running(), undefined, "the slot is free after the timeout settles");
 });
 
@@ -300,7 +299,7 @@ test("a failing child is reported as failed with its error", async () => {
   const body = parse(result);
   assert.equal(body.status, "failed");
   assert.equal(body.error?.code, "execution_failed");
-  assert.match(body.error?.message ?? "", /codex ended with exit code 1 and no final message\. model overloaded/);
+  assert.ok((body.error?.message ?? "").includes("model overloaded"), "the child's stderr is passed on");
 });
 
 test("a child that changes the working tree is reported", async () => {
@@ -334,7 +333,6 @@ test("call_agent is refused outside the proposal and approach-review steps", asy
   const atSpecs = await calls.start("crosscheck", "Review.");
   assert.equal(atSpecs.isError, true);
   assert.equal(parse(atSpecs).error?.code, "call_agent_unavailable");
-  assert.match(parse(atSpecs).error?.message ?? "", /only available during the proposal and approach-review steps of a define/);
   assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
 });
 

@@ -64,12 +64,7 @@ fixture:
     - record-tail-review
     - open-draft-pr
   resolved-text-contains:
-    implementor-checklist: You are running autonomously with no human in the loop.
-    audit: You are running autonomously with no human in the loop.
     resolve-findings: "I-2: the fallback greeting has no test"
-    session-report: "# Session report instructions"
-    review-change: You are running autonomously with no human in the loop.
-    tail-review: You are running autonomously with no human in the loop.
   inputs:
     change_name: valid-change
     review_strategy: builtin

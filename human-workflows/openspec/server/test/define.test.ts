@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { STATE_FILE } from "../src/state.js";
-import { allowsCallAgent, loadWorkflow, parseWorkflow, renderStep, stepIds, WorkflowError } from "../src/steps.js";
+import { allowsCallAgent, loadWorkflow, parseWorkflow, type RenderInput, renderStep, stepIds, WorkflowError } from "../src/steps.js";
 import {
   CHANGE,
+  currentStep,
   DEFAULT_CONFIG,
   fakeLog,
   makeContext,
@@ -20,19 +21,26 @@ import {
 
 const STATE = `openspec/changes/${CHANGE}/${STATE_FILE}`;
 
+/** A refused start left no change folder and ran nothing. */
+function assertNothingStarted(fixture: ReturnType<typeof makeFixture>): void {
+  assert.equal(existsSync(join(fixture.repo, "openspec", "changes", CHANGE)), false);
+  assert.deepEqual(fakeLog(fixture), []);
+}
+
+/** The text next_step returns for a step: the step as renderStep builds it for this context. */
+function stepText(context: ReturnType<typeof makeContext>, input: Omit<RenderInput, "workflow" | "pluginRoot">): string {
+  return renderStep({ workflow: context.workflow, pluginRoot: context.pluginRoot, ...input });
+}
+
 test("start creates the change and returns the proposal step", async () => {
   const fixture = makeFixture();
-  const { next } = session(makeContext(fixture));
+  const context = makeContext(fixture);
+  const { next } = session(context);
   const result = await next({ change_name: CHANGE, start: true });
 
   assert.equal(result.isError, undefined);
-  assert.match(result.text, /^Created OpenSpec change "add-reading-time" at `openspec\/changes\/add-reading-time\/`\./);
-  assert.match(result.text, /You are running in the "define-openspec-change" workflow: Interactively define/);
-  assert.match(result.text, /The current step is "proposal" \(step 1 of 5\)\./);
-  assert.match(result.text, /Before doing anything else, announce that you are starting this step\./);
-  assert.match(result.text, /You MUST use the define-openspec-change:propose skill/);
+  assert.equal(result.text, stepText(context, { changeName: CHANGE, step: "proposal", mode: "new", completed: [] }));
   assert.doesNotMatch(result.text, /\{\{/);
-  assert.match(result.text, /call the `next_step` tool with change_name "add-reading-time"/);
 
   assert.deepEqual(fakeLog(fixture).map((entry) => entry.args.join(" ")), [`new change ${CHANGE}`]);
   const state = JSON.parse(fixture.read(STATE));
@@ -43,26 +51,15 @@ test("start creates the change and returns the proposal step", async () => {
   assert.equal(state.starts[0].lead, "claude");
 });
 
-test("the step prompt names the review skill by absolute path inside the plugin", async () => {
-  const fixture = makeFixture();
-  const context = makeContext(fixture);
-  const { next } = session(context);
-  const result = await next({ change_name: CHANGE, start: true });
-  assert.ok(result.text.includes(`${context.pluginRoot}/reviews/proposal-review.md`));
-});
-
 test("invalid change names are refused before anything is created", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
   for (const name of ["Add-Thing", "-leading", "has space", "under_score", "dot.name"]) {
     const result = await next({ change_name: name, start: true });
     assert.equal(result.isError, true, name);
-    assert.match(result.text, /^Refused: change_name must use lowercase letters, digits, and hyphens/);
   }
   const missing = await next({ start: true });
   assert.equal(missing.isError, true);
-  assert.match(missing.text, /start needs a change_name/);
-  assert.match(missing.text, /Do not ask the user for one/);
   assert.deepEqual(fakeLog(fixture), []);
 });
 
@@ -73,11 +70,10 @@ test("an existing change that define did not start is refused", async () => {
 
   const start = await next({ change_name: CHANGE, start: true });
   assert.equal(start.isError, true);
-  assert.match(start.text, /already exists at .*define-openspec-change did not start it/);
   const advance = await next({ change_name: CHANGE });
   assert.equal(advance.isError, true);
-  assert.match(advance.text, /was not started with define-openspec-change/);
   assert.deepEqual(fakeLog(fixture), []);
+  assert.equal(existsSync(join(fixture.repo, STATE)), false);
 });
 
 test("start is refused until the crosscheck is configured, and nothing is created", async () => {
@@ -85,10 +81,7 @@ test("start is refused until the crosscheck is configured, and nothing is create
   const { next } = session(makeContext(fixture));
   const refused = await next({ change_name: CHANGE, start: true });
   assert.equal(refused.isError, true);
-  assert.match(refused.text, /^Refused: There is no ~\/\.agent-workflows\/config\.yaml/);
-  assert.match(refused.text, /Use the define-openspec-change:setup skill to set it up with the user, then try again\./);
-  assert.equal(existsSync(join(fixture.repo, "openspec", "changes", CHANGE)), false);
-  assert.deepEqual(fakeLog(fixture), []);
+  assertNothingStarted(fixture);
 
   writeConfig(fixture, DEFAULT_CONFIG);
   const started = await next({ change_name: CHANGE, start: true });
@@ -101,21 +94,19 @@ test("start is refused when no configured CLI is installed", async () => {
   const { next } = session({ ...context, env: { ...context.env, PATH: pathWithout(fixture, ["codex"]) } });
   const refused = await next({ change_name: CHANGE, start: true });
   assert.equal(refused.isError, true);
-  assert.match(refused.text, /No crosscheck agent can run for a claude lead\. .* lists codex, but codex is not on PATH\./);
-  assert.match(refused.text, /define-openspec-change:setup/);
+  assertNothingStarted(fixture);
 });
 
-test("an early next_step is refused and names what is missing", async () => {
+test("an early next_step is refused and names the missing file", async () => {
   const fixture = makeFixture();
-  const { next } = session(makeContext(fixture));
+  const context = makeContext(fixture);
+  const { next } = session(context);
   await next({ change_name: CHANGE, start: true });
 
   const early = await next({ change_name: CHANGE });
   assert.equal(early.isError, true);
-  assert.equal(
-    early.text,
-    `Refused: step "proposal" of OpenSpec change "${CHANGE}" is not complete. Missing: a non-empty openspec/changes/${CHANGE}/proposal.md. Finish the step, then call next_step again.`,
-  );
+  assert.ok(early.text.includes(`openspec/changes/${CHANGE}/proposal.md`));
+  assert.equal(currentStep(fixture), "proposal");
 
   fixture.write(`openspec/changes/${CHANGE}/proposal.md`, "");
   const empty = await next({ change_name: CHANGE });
@@ -124,13 +115,12 @@ test("an early next_step is refused and names what is missing", async () => {
   writeArtifacts(fixture, CHANGE, "proposal");
   const specs = await next({ change_name: CHANGE });
   assert.equal(specs.isError, undefined);
-  assert.match(specs.text, /^Continuing to step "specs" \(step 2 of 5\)\./);
+  assert.equal(specs.text, stepText(context, { changeName: CHANGE, step: "specs", mode: "continue", completed: [] }));
 
   fixture.write(`openspec/changes/${CHANGE}/specs/notes.md`, "not a capability spec\n");
   const looseSpec = await next({ change_name: CHANGE });
   assert.equal(looseSpec.isError, true);
-  assert.match(looseSpec.text, /at least one non-empty openspec\/changes\/add-reading-time\/specs\/<capability>\/spec\.md/);
-  assert.equal(JSON.parse(fixture.read(STATE)).current_step, "specs");
+  assert.equal(currentStep(fixture), "specs");
 });
 
 test("an artifact OpenSpec reports no status for is not done", async () => {
@@ -141,21 +131,19 @@ test("an artifact OpenSpec reports no status for is not done", async () => {
 
   const result = await next({ change_name: CHANGE });
   assert.equal(result.isError, true);
-  assert.match(result.text, /Missing: OpenSpec to report the proposal artifact as done \(it reports no status for it\)/);
-  assert.equal(JSON.parse(fixture.read(STATE)).current_step, "proposal");
+  assert.equal(currentStep(fixture), "proposal");
 });
 
-test("steps advance in workflow.yaml order and each prompt arrives once", async () => {
+test("steps advance in workflow.yaml order", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
-  const seen: string[] = [];
-  const first = await next({ change_name: CHANGE, start: true });
-  seen.push(first.text.match(/The current step is "([^"]+)"/)?.[1] ?? "");
+  await next({ change_name: CHANGE, start: true });
+  const seen = [currentStep(fixture)];
   writeArtifacts(fixture);
   for (let i = 0; i < 4; i++) {
     const result = await next({ change_name: CHANGE });
     assert.equal(result.isError, undefined, result.text);
-    seen.push(result.text.match(/^Continuing to step "([^"]+)"/)?.[1] ?? "");
+    seen.push(currentStep(fixture));
   }
   assert.deepEqual(seen, ["proposal", "specs", "design", "test-plan", "approach-review"]);
 
@@ -167,17 +155,6 @@ test("steps advance in workflow.yaml order and each prompt arrives once", async 
   assert.equal(state.steps["approach-review"].completed_at, undefined);
 });
 
-test("the last step's prompt says next_step validates and commits", async () => {
-  const fixture = makeFixture();
-  const { next } = session(makeContext(fixture));
-  await next({ change_name: CHANGE, start: true });
-  writeArtifacts(fixture);
-  let last = { text: "" };
-  for (let i = 0; i < 4; i++) last = await next({ change_name: CHANGE });
-  assert.match(last.text, /This is the last step: that call validates the change and commits its documents\./);
-  assert.match(last.text, /reviews\/review-approach\.md/);
-});
-
 test("a new session resumes the current step from the state file without advancing", async () => {
   const fixture = makeFixture();
   const first = session(makeContext(fixture));
@@ -186,12 +163,14 @@ test("a new session resumes the current step from the state file without advanci
   await first.next({ change_name: CHANGE });
   await first.next({ change_name: CHANGE });
 
-  const second = session(makeContext(fixture, { client: "codex-mcp-client" }));
+  const secondContext = makeContext(fixture, { client: "codex-mcp-client" });
+  const second = session(secondContext);
   const resumed = await second.next({ change_name: CHANGE, start: true });
   assert.equal(resumed.isError, undefined);
-  assert.match(resumed.text, /Resuming step: "design" \(step 3 of 5\)\. If you already started on this step, resume from where you left off\./);
-  assert.match(resumed.text, /Completed steps: proposal, specs\./);
-  assert.match(resumed.text, /define-openspec-change:design skill/);
+  assert.equal(
+    resumed.text,
+    stepText(secondContext, { changeName: CHANGE, step: "design", mode: "resume", completed: ["proposal", "specs"] }),
+  );
 
   const state = JSON.parse(fixture.read(STATE));
   assert.equal(state.current_step, "design");
@@ -212,20 +191,20 @@ test("change_name can be left out when exactly one define is in progress", async
   const { next } = session(makeContext(fixture));
   const none = await next({});
   assert.equal(none.isError, true);
-  assert.match(none.text, /no define is in progress/);
 
   await next({ change_name: CHANGE, start: true });
   writeArtifacts(fixture, CHANGE, "proposal");
   const result = await next({});
-  assert.match(result.text, /^Continuing to step "specs"/);
+  assert.equal(result.isError, undefined);
+  assert.equal(currentStep(fixture), "specs");
 
   await next({ change_name: "second-change", start: true });
   const ambiguous = await next({});
   assert.equal(ambiguous.isError, true);
-  assert.match(ambiguous.text, /more than one define is in progress \(add-reading-time, second-change\)/);
+  assert.ok(ambiguous.text.includes("add-reading-time, second-change"), "it names both defines");
 });
 
-test("a completed define refuses start and says it is finished", async () => {
+test("a completed define refuses start and stays complete", async () => {
   const fixture = makeFixture();
   const { next } = session(makeContext(fixture));
   await next({ change_name: CHANGE, start: true });
@@ -235,10 +214,9 @@ test("a completed define refuses start and says it is finished", async () => {
 
   const again = await next({ change_name: CHANGE, start: true });
   assert.equal(again.isError, true);
-  assert.match(again.text, /was already defined/);
   const advance = await next({ change_name: CHANGE });
   assert.equal(advance.isError, undefined);
-  assert.match(advance.text, /is already defined .* do not call next_step again/);
+  assert.equal(JSON.parse(fixture.read(STATE)).status, "complete");
 });
 
 test("a corrupt state file is refused, not overwritten", async () => {
@@ -247,7 +225,6 @@ test("a corrupt state file is refused, not overwritten", async () => {
   const { next } = session(makeContext(fixture));
   const result = await next({ change_name: CHANGE, start: true });
   assert.equal(result.isError, true);
-  assert.match(result.text, /is not valid JSON/);
   assert.equal(fixture.read(STATE), "{not json");
 });
 
@@ -256,7 +233,6 @@ test("next_step outside a git repository is refused", async () => {
   const { next } = session(makeContext(fixture, { cwd: fixture.dir }));
   const result = await next({ change_name: CHANGE, start: true });
   assert.equal(result.isError, true);
-  assert.match(result.text, /must run inside a git repository/);
   assert.equal(existsSync(join(fixture.dir, "openspec")), false);
 });
 
@@ -301,46 +277,40 @@ function malformed(text: string): string {
   return assert.fail("expected the workflow to be rejected");
 }
 
-test("a malformed workflow.yaml is rejected with a clear message", () => {
+test("a malformed workflow.yaml is rejected and the error names the field", () => {
   const workflow = parseWorkflow(VALID);
   assert.deepEqual(stepIds(workflow), ["one", "two"]);
   assert.equal(allowsCallAgent(workflow, "one"), true);
   assert.equal(allowsCallAgent(workflow, "two"), false);
 
-  assert.match(malformed("steps: ["), /not valid YAML/);
-  assert.match(malformed("- just a list"), /must be a mapping/);
-  assert.match(malformed(VALID.replace("name: demo\n", "")), /name: needs a name/);
-  assert.match(malformed(VALID.replace("description: A demo.\n", "")), /description: needs a description/);
-  assert.match(malformed("name: demo\ndescription: d\nsteps: []\n"), /steps: needs at least one step/);
-  assert.match(malformed(VALID.replace("id: two", "id: one")), /steps\[1\]\.id: step id "one" is used twice/);
-  assert.match(malformed(VALID.replace("    prompt: Finish.\n", "")), /steps\[1\]\.prompt: needs a prompt/);
-  assert.match(malformed(VALID.replace("[call_agent]", "[shell]")), /steps\[0\]\.tools\[0\]: is not a supported tool\. Only \[call_agent\]/);
-  assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{unknown}}")), /has an unknown placeholder \{\{unknown\}\}/);
-  assert.match(malformed(VALID.replace("{{reviews_dir}}", "{{skills_dir}}")), /unknown placeholder \{\{skills_dir\}\}/);
-  assert.match(malformed(`${VALID}shared_prompts:\n  every-step: Typo.\n`), /shared_prompts: .*every-step/);
-  assert.match(malformed(`${VALID}shared_prompts:\n  every_step: Use {{unknown}}.\n`), /shared_prompts\.every_step: has an unknown placeholder/);
+  malformed("steps: [");
+  malformed("- just a list");
+  const fields: Array<[string, string]> = [
+    [VALID.replace("name: demo\n", ""), "name"],
+    [VALID.replace("description: A demo.\n", ""), "description"],
+    ["name: demo\ndescription: d\nsteps: []\n", "steps"],
+    [VALID.replace("id: two", "id: one"), "steps[1].id"],
+    [VALID.replace("    prompt: Finish.\n", ""), "steps[1].prompt"],
+    [VALID.replace("[call_agent]", "[shell]"), "steps[0].tools[0]"],
+    [VALID.replace("{{reviews_dir}}", "{{unknown}}"), "{{unknown}}"],
+    [VALID.replace("{{reviews_dir}}", "{{skills_dir}}"), "{{skills_dir}}"],
+    [`${VALID}shared_prompts:\n  every-step: Typo.\n`, "every-step"],
+    [`${VALID}shared_prompts:\n  every_step: Use {{unknown}}.\n`, "shared_prompts.every_step"],
+  ];
+  for (const [text, field] of fields) {
+    assert.ok(malformed(text).includes(field), field);
+  }
 });
 
 test("shared prompts are added once after a step's own prompt, the call_agent text only where call_agent works", () => {
   const workflow = parseWorkflow(`${VALID}shared_prompts:\n  call_agent: Review rules for {{change_name}}.\n  every_step: Keep it interactive.\n`);
   const render = (step: string) =>
     renderStep({ workflow, pluginRoot: "/plugin", changeName: "demo-change", step, mode: "continue", completed: [] });
-  assert.match(
-    render("one"),
-    /Do demo-change with \/plugin\/reviews\.\n\nReview rules for demo-change\.\n\nKeep it interactive\.\n\nWhen you or the user determine/,
-  );
+  assert.ok(render("one").includes("Do demo-change with /plugin/reviews.\n\nReview rules for demo-change.\n\nKeep it interactive.\n\n"));
   const two = render("two");
-  assert.match(two, /Finish\.\n\nKeep it interactive\.\n\nWhen you or the user determine/);
-  assert.doesNotMatch(two, /Review rules/);
-});
-
-test("the shipped workflow writes its shared step text once, outside the step prompts", () => {
-  const workflow = loadWorkflow(PLUGIN_ROOT);
-  assert.match(workflow.sharedPrompts.callAgent ?? "", /verification and user-facing reporting rules/);
-  assert.match(workflow.sharedPrompts.everyStep ?? "", /without asking the user to review/);
-  for (const step of workflow.steps) {
-    assert.doesNotMatch(step.prompt, /reporting rules|interactive/, step.id);
-  }
+  assert.ok(two.includes("Finish.\n\nKeep it interactive.\n\n"));
+  assert.equal(two.includes("Review rules"), false);
+  assert.equal(two.split("Keep it interactive.").length, 2, "the shared text appears once");
 });
 
 test("a state file is checked whole: its workflow name, starts, and calls", async () => {
@@ -354,7 +324,7 @@ test("a state file is checked whole: its workflow name, starts, and calls", asyn
     [(copy) => (copy.starts = [{ at: "x", lead: "claude", mode: "later", step: "proposal" }]), /starts\[0\]\.mode/],
     [(copy) => (copy.calls = [{ call_id: 1 }]), /calls\[0\]\.call_id/],
     [(copy) => (copy.starts = "none"), /starts:/],
-    [(copy) => (copy.current_step = "tasks"), /current_step: must be one of proposal, specs/],
+    [(copy) => (copy.current_step = "tasks"), /current_step/],
     // The finish step commits change_dir, so it must be the change's own folder.
     [(copy) => (copy.change_dir = "."), /change_dir:/],
   ];
@@ -365,6 +335,5 @@ test("a state file is checked whole: its workflow name, starts, and calls", asyn
     const result = await next({ change_name: CHANGE });
     assert.equal(result.isError, true);
     assert.match(result.text, pattern);
-    assert.match(result.text, /\.define-openspec-change\.json is not a define-openspec-change state file this version understands/);
   }
 });

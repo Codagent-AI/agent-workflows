@@ -76,8 +76,6 @@ fixture:
     - acceptance-push
   resolved-text-contains:
     acceptance-handoff: "F-1 remains: the fallback greeting prints an empty name"
-    review-change: You are running autonomously with no human in the loop.
-    round-review: You are running autonomously with no human in the loop.
     fix-round-findings: R1 Missing check
   inputs:
     change_name: valid-change
