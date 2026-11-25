@@ -202,17 +202,29 @@ const workflow = Bun.YAML.parse(readFileSync(join(scripts, '../implement-change.
 const flattenNodes = (entries: ScriptNode[]): ScriptNode[] => entries.flatMap(entry => [entry, ...flattenNodes(entry.loop_group?.nodes ?? [])]);
 const outputSchemas = new Map(flattenNodes(workflow.nodes).filter(entry => entry.script && entry.output_format)
   .map(entry => [entry.script, entry.output_format]));
-function checkOutput(name: string, value: Record<string, unknown>): void {
-  const schema = outputSchemas.get(name);
-  if (!schema) throw new Error(`No output schema for ${name}`);
-  expect(Object.keys(value).sort()).toEqual(Object.keys(schema.properties ?? {}).sort());
+function checkOutput(schema: OutputSchema, value: Record<string, unknown>): void {
+  const properties = schema.properties ?? {};
   expect(schema.additionalProperties).toBe(false);
   for (const key of schema.required ?? []) expect(Object.hasOwn(value, key)).toBe(true);
-  for (const [key, field] of Object.entries(schema.properties ?? {})) {
-    expect(typeof value[key]).toBe(field.type === 'integer' ? 'number' : field.type);
-    if (field.type === 'integer') expect(Number.isInteger(value[key])).toBe(true);
+  for (const [key, actual] of Object.entries(value)) {
+    expect(Object.hasOwn(properties, key)).toBe(true);
+    const type = properties[key].type;
+    expect(typeof actual).toBe(type === 'integer' ? 'number' : type);
+    if (type === 'integer') expect(Number.isInteger(actual)).toBe(true);
   }
 }
+
+test('review script output check permits optional fields and enforces required and declared fields', () => {
+  const schema: OutputSchema = {
+    type: 'object', properties: { files: { type: 'string' }, revisions: { type: 'string' } },
+    required: ['files'], additionalProperties: false,
+  };
+  expect(() => checkOutput(schema, { files: 'file.txt' })).not.toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', revisions: 'abc' })).not.toThrow();
+  expect(() => checkOutput(schema, { revisions: 'abc' })).toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', revisions: 123 })).toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', unexpected: '' })).toThrow();
+});
 
 let box: Sandbox;
 let artifacts: string;
@@ -227,7 +239,9 @@ function run(name: string, inputs: Record<string, unknown> = {}, fails = false):
   expect(output.stderr).toBe(''); expect(output.status).toBe(0);
   const parsed = JSON.parse(output.stdout) as Record<string, unknown>;
   expect(output.stdout.trim().split('\n')).toHaveLength(1);
-  checkOutput(name, parsed);
+  const schema = outputSchemas.get(name);
+  if (!schema) throw new Error(`No output schema for ${name}`);
+  checkOutput(schema, parsed);
   return parsed;
 }
 const read = (file: string): string => readFileSync(join(artifacts, file), 'utf8');
