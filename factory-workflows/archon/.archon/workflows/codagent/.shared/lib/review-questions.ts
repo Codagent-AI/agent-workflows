@@ -1,5 +1,5 @@
 export interface Option { id: string; label: string; detail?: string }
-export interface Question { prompt: string; options: Option[] }
+export interface Question { source?: string; prompt: string; options: Option[] }
 export interface KeyEvidence { file: string; title: string; shows: string }
 export interface LateJourney { code: string; title: string; commit: string }
 

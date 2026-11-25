@@ -1,7 +1,13 @@
-import { emptyRanking } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
-import { placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { acceptedHead, emptyRanking, failedItems, inventory } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
 import { disputeQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { expect, test } from 'bun:test';
+import { renameSync, mkdirSync } from 'node:fs';
+import { rankingForPublication } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
+import { feedbackFiles } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
+import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
+import { createSandbox, type Sandbox } from './helpers.ts';
 import { runInNewContext } from 'node:vm';
 import { collectReview, initialChoice, sendReview, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
@@ -145,4 +151,175 @@ test('placing a dispute grouped with a late commit retains a separate Retest que
   const placed = placeRanking({ ...emptyRanking(), orange: [item] }, [{ tier: 'red', item: expected }], context);
   expect(placed.red[0].questions?.map(question => question.options.map(option => option.id)))
     .toEqual([['follow-up', 'drop'], ['retest', 'leave']]);
+});
+
+test('review submission calls a receiver-sensitive fetch for both actions', async () => {
+  async function browserFetch(this: unknown, url: string, options?: RequestInit) {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    if (url.endsWith('/attention')) {
+      return Response.json({ item: { runId: 'run', occurrence: 'live', message: 'Review round 1: waiting' } });
+    }
+    return Response.json({ message: JSON.parse(options?.body as string).text });
+  }
+  for (const action of ['feedback', 'merge']) {
+    const answer = { action, round: 1, head: 'reviewed' };
+    expect(await sendReview({ address: 'https://archon.example/api/artifacts/run/review-page.html',
+      run: 'run', round: 1, answer, fetch: browserFetch })).toEqual({ kind: 'sent', message: JSON.stringify(answer) });
+  }
+});
+
+test('grouped spec-change disputes keep separate exact questions and answer sources', () => {
+  const disputes = ['Change the default.', ''].map((edit, index) => ({
+    tier: 'red' as const, item: { type: 'Dispute', title: `Dispute ${index + 1}`, detail: 'A spec change',
+      link: '', source: [`DISPUTE-${index + 1}`], specChange: true, questions: [disputeQuestion(edit)] },
+  }));
+  const grouped = { ...disputes[0].item, title: 'Shared cause', source: ['DISPUTE-2', 'DISPUTE-1'] };
+  const raw = { ...emptyRanking(), red: [grouped] };
+  expect(checkRanking(raw, disputes).problems).toContain('one separate question per spec-change dispute');
+  const placed = placeRanking(raw, disputes);
+  expect(placed.red).toHaveLength(1);
+  expect(checkRanking(placed, disputes).ok).toBe(true);
+  expect(placed.red[0].questions?.map(question => [question.source, question.options]))
+    .toEqual([['DISPUTE-2', disputeQuestion('').options], ['DISPUTE-1', disputeQuestion('Change the default.').options]]);
+});
+
+function rankingFixture(box: Sandbox) {
+  const start = box.head();
+  box.write('artifacts/review/accepted-head.txt', start);
+  box.write('openspec/changes/demo/checklist.md', [
+    '| ID | Behavior | Evidence | Status |', '|---|---|---|---|',
+    '| CHECK-1 | Saves | Assertion failed | failed |',
+    '| CHECK-2 | loads | Not run locally | not verified |',
+  ].join('\n'));
+  return { start, exec: box.exec, dir: box.path('artifacts'), changeFolder: 'openspec/changes/demo' };
+}
+
+test('publication rebuilds missing ranking from required items and refuses an unreadable inventory', () => {
+  const box = createSandbox();
+  try {
+    const input = rankingFixture(box);
+    box.write(`${input.changeFolder}/dispute-log.md`, '## DISPUTE-1: Scope\nStatus: spec-change\n');
+    const commit = box.commitFix();
+    const ranking = rankingForPublication(input);
+    expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2', 'DISPUTE-1']);
+    expect(ranking.orange.flatMap(item => item.source)).toEqual([commit]);
+    box.write(`${input.changeFolder}/checklist.md`, '| No status column |');
+    expect(() => rankingForPublication(input)).toThrow('checklist with Status column is missing');
+  } finally {
+    box.dispose();
+  }
+});
+
+test('clean PR-head imports reach the late inventory and feedback files without imported base work', () => {
+  const box = createSandbox();
+  try {
+    const input = rankingFixture(box);
+    box.git('checkout', '-b', 'pr-head');
+    box.write('pr-fix.txt', 'Fix pushed to the PR');
+    box.git('add', 'pr-fix.txt');
+    const pushed = box.commit('Fix pushed to the PR');
+    box.git('checkout', '-b', 'base-tip', input.start);
+    box.write('base-fix.txt', 'Unrelated base work');
+    box.git('add', 'base-fix.txt');
+    box.commit('Unrelated base work');
+    box.git('checkout', '-b', 'round', input.start);
+    box.git('merge', '--no-ff', '--no-edit', 'pr-head');
+    box.git('merge', '--no-ff', '--no-edit', 'base-tip');
+    box.write('artifacts/review/merge-targets.json', '["pr-head","base-tip"]');
+    expect(inventory(input).later_commits.map(item => item.source[0])).toEqual([pushed]);
+    expect(feedbackFiles(box.exec, input.dir, input.start, 'HEAD')).toBe('pr-fix.txt');
+  } finally {
+    box.dispose();
+  }
+});
+
+test('a moved but unsuccessful archive keeps the archived folder for feedback and remains pending', () => {
+  const box = createSandbox();
+  try {
+    const { dir, changeFolder } = rankingFixture(box);
+    const archived = 'openspec/changes/archive/2026-11-24-demo';
+    mkdirSync('openspec/changes/archive');
+    renameSync(changeFolder, archived);
+    box.write('artifacts/step-results.json', '{"archive":{"ok":false,"problems":"commit failed","remaining":"retry"}}');
+    box.write('artifacts/review/pages.json', '[{"round":1,"status":"feedback sent"}]');
+    box.write('artifacts/review-answers-round-1.json', '{"action":"feedback","round":1,"head":"head","time":"now"}');
+    expect(startRound(box.forgeTools([]), { dir, folder: changeFolder, text: '' })).toMatchObject({
+      change_folder: archived, archive_needed: true, mode: 'feedback', round: 2,
+    });
+  } finally {
+    box.dispose();
+  }
+});
+
+test('a no-change response cannot dismiss a checklist failure that still needs work', () => {
+  const box = createSandbox();
+  try {
+    const input = rankingFixture(box);
+    box.write('artifacts/review-response-round-1.json', JSON.stringify([
+      { item: 'CHECK-1', status: 'no-change' }, { item: 'CHECK-2', status: 'no-change' },
+    ]));
+    const result = inventory(input);
+    expect(result.context.dismissed).toEqual(['CHECK-2']);
+    expect(result.required.map(row => [row.tier, row.item.source[0]])).toEqual([['red', 'CHECK-1']]);
+  } finally {
+    box.dispose();
+  }
+});
+
+test('invalid evidence manifests preserve usable entries and become a named review failure', () => {
+  const box = createSandbox();
+  try {
+    const input = rankingFixture(box);
+    const shot = { file: 'one.png', title: 'Start', shows: 'The form', revision: input.start, alt: 'Form' };
+    box.write('artifacts/acceptance-screenshots/round-1/one.png', 'image');
+    box.write('artifacts/acceptance-screenshots/round-1/manifest.json', JSON.stringify([null, shot]));
+    box.write('artifacts/acceptance-screenshots/round-2/manifest.json', '[');
+    box.write('artifacts/acceptance-journeys/round-1.json', '{"journeys":[]}');
+    box.write('artifacts/acceptance-journeys/round-2.json', '[{"code":"JOURNEY-2","title":"Save","scenario":"Save a form","repeat":"Click save"},{}]');
+    const result = inventory(input);
+    expect(result.context.shots).toEqual(['acceptance-screenshots/round-1/one.png']);
+    expect(result.context.journeys).toEqual(['JOURNEY-2']);
+    const failures = failedItems(input.dir);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].source).toEqual(['failure:review-media']);
+    expect(failures[0].link.endsWith('acceptance-screenshots/round-1/manifest.json')).toBe(true);
+    for (const path of ['acceptance-screenshots/round-1/manifest.json', 'acceptance-screenshots/round-2/manifest.json',
+      'acceptance-journeys/round-1.json', 'acceptance-journeys/round-2.json']) expect(failures[0].detail).toContain(path);
+    expect(failures[0].detail).toContain('expected an array');
+    expect(failures[0].detail).toContain('entry 1 needs string fields');
+  } finally {
+    box.dispose();
+  }
+});
+
+test('next-entry numbering continues existing decision and dispute codes', () => {
+  expect(numberLog('## DECIDE-12: Existing\nText\n## Another choice\nText', 'DECIDE')).toContain('## DECIDE-13: Another choice');
+  expect(numberLog('## DP-04: Existing\nText\n## Another dispute\nText', 'DISPUTE')).toContain('## DISPUTE-5: Another dispute');
+});
+
+test('accepted head uses the saved, ready, tested, and recorded PR revisions in order', () => {
+  const box = createSandbox();
+  try {
+    const input = rankingFixture(box);
+    const ready = box.commitFix('accepted');
+    const tested = box.commitFix('tested');
+    const opened = box.commitFix('opened');
+    const head = box.commitFix('head');
+    box.write('artifacts/acceptance-round-status.txt', `READY ${ready}\n`);
+    box.write('artifacts/acceptance-tested-revision.txt', `${input.start}\n${tested}\n`);
+    box.write('artifacts/pull-request.json', JSON.stringify({ opened_head_revision: opened, head_revision: head }));
+    expect(acceptedHead(input)).toBe(input.start);
+    box.write('artifacts/review/accepted-head.txt', '');
+    expect(acceptedHead(input)).toBe(ready);
+    box.write('artifacts/acceptance-round-status.txt', 'FAILED');
+    expect(acceptedHead(input)).toBe(tested);
+    box.write('artifacts/acceptance-tested-revision.txt', '');
+    expect(acceptedHead(input)).toBe(opened);
+    box.write('artifacts/pull-request.json', JSON.stringify({ head_revision: head }));
+    expect(acceptedHead(input)).toBe(head);
+    box.write('artifacts/pull-request.json', JSON.stringify({ head_revision: 'missing' }));
+    expect(() => acceptedHead(input)).toThrow('accepted revision is missing or invalid');
+  } finally {
+    box.dispose();
+  }
 });

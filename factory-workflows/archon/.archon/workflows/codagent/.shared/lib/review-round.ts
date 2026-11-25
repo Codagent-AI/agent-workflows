@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { retainedChangeFolder } from './archive.ts';
 import { OPS, type PrView } from './forge.ts';
 import type { Tools } from './pull-request.ts';
 import { description, type PageEntry, pagesPath, readPages, sentBlock, updateDescription, viewNumber } from './review-pages.ts';
@@ -89,11 +90,10 @@ export function selectedJourneys(dir: string, answeredRound: number): RetestJour
 }
 function roundOutput(input: RoundInput, round: number, mode: Mode, reason = '') {
   const archived = results(input.dir).archive?.ok === true;
-  const archive = readJson<{ archive_dir?: string }>(join(input.dir, 'archive/state.json'), {});
   const work = mode === 'feedback' || mode === 'refused';
   const answers = round > 1 && work ? answersPath(input.dir, round - 1) : '';
   const journeys = mode === 'feedback' ? selectedJourneys(input.dir, round - 1) : [];
-  const changeFolder = archived ? archive.archive_dir || input.folder : input.folder;
+  const changeFolder = retainedChangeFolder(input.folder);
   return { round, mode, reason, work, publish: mode === 'first' || work, change_folder: changeFolder,
     archive_needed: mode === 'first' || !archived, review_head: readPages(input.dir).at(-1)?.head ?? '',
     retest: journeys.length > 0, journeys: JSON.stringify(journeys), answers_file: answers };

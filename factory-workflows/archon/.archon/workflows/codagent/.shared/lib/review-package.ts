@@ -67,35 +67,56 @@ function validQuestions(item: Item, tier: Tier): boolean {
   const retest = questions.some(question => question.options.some(option => option.id === 'retest'));
   return retest === Boolean(item.journeys?.length);
 }
-function isRetestQuestion(question: Question): boolean {
-  const ids = new Set(question.options.map(option => option.id));
+function isRetestQuestion(question?: Question): boolean {
+  const ids = new Set(question?.options.map(option => option.id));
   return ids.size === 2 && ids.has('retest') && ids.has('leave');
 }
 
-function matchesDisputeChoices(item: Item | undefined, expected: Item): boolean {
+function disputeChoices(item: Item, required: RequiredItem[]): Item[] {
+  const disputes = required.filter(row => row.item.specChange).map(row => row.item);
+  return item.source.flatMap(source => disputes.filter(dispute => dispute.source[0] === source));
+}
+
+function matchesDisputeChoices(question: Question | undefined, expected: Item): boolean {
   const allowed = expected.questions?.[0]?.options ?? [];
-  const questions = item?.questions ?? [];
-  const [dispute, ...remaining] = questions;
-  if (dispute?.options.length !== allowed.length) return false;
-  if (remaining.length > 0 && !(item?.journeys?.length && remaining.length === 1 && isRetestQuestion(remaining[0]))) return false;
-  return allowed.every(wanted => dispute.options.some(option =>
+  return question?.options.length === allowed.length && allowed.every(wanted => question.options.some(option =>
     option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)));
 }
 
 function choiceProblems(ranking: Ranking, required: RequiredItem[]): string[] {
-  return required.filter(row => row.item.specChange).flatMap(row => {
-    const item = entries(ranking).find(entry => entry.item.source.includes(row.item.source[0]))?.item;
-    return matchesDisputeChoices(item, row.item) ? [] : [`spec-change dispute ${row.item.source[0]} needs exactly the allowed options`];
+  return entries(ranking).flatMap(({ item }) => {
+    const disputes = disputeChoices(item, required);
+    if (disputes.length === 0) return [];
+    const questions = item.questions ?? [];
+    const retest = item.journeys?.length ? 1 : 0;
+    if (questions.length !== disputes.length + retest || (retest && !isRetestQuestion(questions.at(-1)))) {
+      return [`Give ${item.title} one separate question per spec-change dispute in source order, then Retest if applicable`];
+    }
+    return disputes.flatMap((expected, index) => matchesDisputeChoices(questions[index], expected) ? [] :
+      [`spec-change dispute ${expected.source[0]} needs exactly the allowed options`]);
   });
 }
 
-function disputeQuestions(expected: Item, found: Item): Question[] {
-  const questions = expected.questions ?? [];
+function disputeQuestions(disputes: Item[], found: Item): Question[] {
+  const questions = disputes.flatMap(dispute => dispute.questions ?? []);
   if (!found.journeys?.length) return questions;
   return [...questions, { prompt: 'Retest the affected journeys?', options: [
     { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
   ] }];
 }
+
+export function bindDisputeQuestions(ranking: Ranking, required: RequiredItem[], repair = false): Ranking {
+  for (const tier of TIERS) {
+    ranking[tier] = ranking[tier].map(item => {
+      const disputes = disputeChoices(item, required);
+      if (disputes.length === 0) return item;
+      const questions = repair ? disputeQuestions(disputes, item) : item.questions;
+      return { ...item, questions: questions?.map((question, index) => ({ ...question, source: disputes[index]?.source[0] })) };
+    });
+  }
+  return ranking;
+}
+
 function sourceProblems(item: Item, context: RankingContext): string[] {
   const rejected = item.source.filter(source => context.dismissed.includes(source));
   const journeys = (item.journeys ?? []).filter(entry => !(context.journeys.includes(entry.code) && context.commits.includes(entry.commit)));
@@ -136,7 +157,7 @@ function insertRequired(placed: Ranking, expected: RequiredItem): void {
     const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
     const lacksSize = expected.item.type === 'Late commit' && requiredItemProblems(expected, found.item).length > 0;
     const detail = lacksSize ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
-    const questions = expected.item.specChange ? disputeQuestions(expected.item, found.item) : found.item.questions;
+    const questions = found.item.questions;
     placed[tier].push({ ...found.item, type, detail, questions: questions?.length ? questions : [standardQuestion(type)] });
 }
 function repairedItem(item: Item, tier: Tier, context: RankingContext): Item {
@@ -167,6 +188,7 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[], context
   for (const expected of required.filter(row => !row.item.source[0]?.startsWith('failure:'))) {
     insertRequired(placed, { ...expected, item: repairedItem(expected.item, expected.tier, context) });
   }
+  bindDisputeQuestions(placed, required, true);
   const checked = checkRanking(placed, required, context, true);
   if (!checked.ok) throw new Error(`deterministic ranking failed: ${checked.problems}`);
   return placed;

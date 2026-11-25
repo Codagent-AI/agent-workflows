@@ -328,7 +328,7 @@ describe('checkEvidence (check-evidence.sh)', () => {
 test('code links use the test plan heading and the defining journey artifact', () => {
   const folder = 'openspec/changes/test';
   box.write(`${folder}/test-plan.md`, '## Human-Only Testing\n### HUMAN-2: Inspect the layout\n## End-to-End Tests\n### E2E-1: Submit\n');
-  box.write('artifacts/acceptance-journeys/round-2.json', '[{"code":"JOURNEY-3","title":"Retry"}]');
+  box.write('artifacts/acceptance-journeys/round-2.json', '[{"code":"JOURNEY-3","title":"Retry","scenario":"Failed save","repeat":"Retry the save"}]');
   const known = codeLinks({ base: 'https://github.com/owner/repo', head: box.head(), dir: box.path('artifacts'), folder, exec: box.exec }, []);
   expect(known['E2E-1'].title).toBe('Submit');
   expect(known['JOURNEY-3']).toEqual({ title: 'Retry', href: 'acceptance-journeys/round-2.json' });

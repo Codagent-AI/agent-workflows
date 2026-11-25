@@ -1,7 +1,7 @@
 import { suspendSpecs, restoreSpecs, restoredSpecPaths, localSpecProblems } from './archive-local.ts';
 // Archive transition, isolated commit and independent verification of the owned delta.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { type Exec, output } from './exec.ts';
 import { type CheckResult, fail, pass } from './check.ts';
@@ -12,8 +12,7 @@ interface ArchiveState {
 }
 export interface ArchiveInput { exec: Exec; dir: string; name: string; round?: number; }
 const active = (name: string): string => `openspec/changes/${name}`;
-export function archiveFolders(name: string): string[] {
-  const root = 'openspec/changes/archive';
+export function archiveFolders(name: string, root = 'openspec/changes/archive'): string[] {
   return existsSync(root) ? readdirSync(root).filter(folder => /^\d{4}-\d{2}-\d{2}-/.test(folder) && folder.slice(11) === name && statSync(join(root, folder)).isDirectory()).map(folder => join(root, folder)) : [];
 }
 function command(exec: Exec, program: string, args: string[]): string {
@@ -154,12 +153,16 @@ export function verifyArchive(input: ArchiveInput): CheckResult {
   problems.push(...commitProblems(input, state), ...localSpecProblems(input));
   return problems.length > 0 ? fail(problems) : pass();
 }
+export function retainedChangeFolder(folder: string): string {
+  if (existsSync(folder)) return folder;
+  const folders = archiveFolders(basename(folder), join(dirname(folder), 'archive'));
+  return folders.length === 1 ? folders[0] : folder;
+}
 export function recordArchive(input: ArchiveInput): { change_folder: string } {
   const state = readJson<ArchiveState | null>(join(input.dir, 'archive/state.json'), null);
   let result: CheckResult;
   try { result = verifyArchive(input); restoreSpecs(input); } catch (error) { result = fail(String(error)); }
-  const folders = archiveFolders(input.name);
-  const folder = !existsSync(active(input.name)) && folders.length === 1 ? folders[0] : active(input.name);
+  const folder = retainedChangeFolder(active(input.name));
   recordStep(input.dir, 'archive', { ...result, remaining: result.ok ? '' : `Repair archive; retained paths: ${state?.owned_delta.join(', ') ?? folder}` });
   return { change_folder: folder };
 }

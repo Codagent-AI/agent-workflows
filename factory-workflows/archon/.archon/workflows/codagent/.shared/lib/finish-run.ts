@@ -11,9 +11,9 @@ import { evidenceRows } from './evidence.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { acceptedHead, emptyRanking, failedItems, humanChecks, inventory, type Ranking } from './review-inventory.ts';
-import { checkRanking, placeRanking } from './review-package.ts';
-import { publishPackage } from './publish-review.ts';
+import { acceptedHead, emptyRanking, failedItems, humanChecks, inventory, type InventoryInput, type Ranking } from './review-inventory.ts';
+import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
+import { currentPage, publishPackage } from './publish-review.ts';
 import { outcomesPath, startRound } from './review-round.ts';
 import { abortMerge, checkResponse, finishMerge, mergeBase, pushRound, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, writeText } from './run-files.ts';
@@ -76,12 +76,18 @@ function ciNode(input: FinishInputs, dir: string): unknown {
   }
   return runCiWait(input, dir, cycle);
 }
+export function rankingForPublication(input: InventoryInput): Ranking {
+  const saved = readJson<Ranking | null>(join(input.dir, 'review-attention.json'), null);
+  if (saved) return saved;
+  const inv = inventory(input);
+  return placeRanking(emptyRanking(), inv.required, inv.context);
+}
 function rankingNode(input: FinishInputs, dir: string): unknown {
   if (input.op === 'publish-review-package') {
+    if (input.mode === 'stale') return { ...currentPage(dir, input.reason), succeeded: false };
     return publishPackage(defaultTools(), { dir, folder: input.folder,
-      ranking: readJson<Ranking>(join(dir, 'review-attention.json'), emptyRanking()) },
-      { round: input.round ?? 1, wait: input.wait ?? true, run: input.run ?? '', archonUrl: input.archonUrl ?? '',
-        reason: input.reason, stale: input.mode === 'stale' });
+      ranking: rankingForPublication({ exec: runCommand, dir, changeFolder: input.folder }) },
+      { round: input.round ?? 1, wait: input.wait ?? true, run: input.run ?? '', archonUrl: input.archonUrl ?? '' });
   }
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
   if (input.op === 'prepare-ranking') {
@@ -93,7 +99,7 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
     writeJson(join(dir, 'review-attention.json'), placeRanking(ranking, inv.required, inv.context)); return pass();
   }
   const checked = checkRanking(ranking, inv.required, inv.context);
-  if (checked.ok) writeJson(join(dir, 'review-attention.json'), ranking);
+  if (checked.ok) writeJson(join(dir, 'review-attention.json'), bindDisputeQuestions(ranking, inv.required));
   return checked;
 }
 function pushOrReady(input: FinishInputs, dir: string): CheckResult {
@@ -180,7 +186,7 @@ export function finishRun(input: FinishInputs): void {
       process.stdout.write(`${JSON.stringify({ status: 'error', had_checks: false, head_moved: false, report: '', ci_report: failure.problems, cycle: 0 })}\n`); return;
     }
     if (input.op === 'record-finalize') recordStep(dir, 'finalize', { ...failure, remaining: 'Repair finalization before merging.' });
-    if (['publish-review-package', 'start-round', 'end-run'].includes(input.op)) { process.stderr.write(`${String(error)}\n`); process.exit(1); }
+    if (['prepare-ranking', 'publish-review-package', 'start-round', 'end-run'].includes(input.op)) { process.stderr.write(`${String(error)}\n`); process.exit(1); }
     const extra = failureOutput(input.op, dir);
     process.stdout.write(`${JSON.stringify({ ...failure, ...extra })}\n`);
   }

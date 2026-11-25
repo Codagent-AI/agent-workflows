@@ -5,7 +5,8 @@ import { type Exec, output } from './exec.ts';
 import { tableBlocks, rawCells, isSeparatorRow } from './checklist.ts';
 import { readText, readJson, type StepResult } from './run-files.ts';
 import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
-import { journeys, screenshots } from './review-media.ts';
+import { commitParents, reviewRevisions } from './review-revisions.ts';
+import { reviewMedia } from './review-media.ts';
 export const TIERS = ['red', 'orange', 'yellow', 'white'] as const;
 export type Tier = typeof TIERS[number];
 export interface Item { type: string; title: string; detail: string; link: string; source: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
@@ -60,17 +61,29 @@ function acceptancePushResult(dir: string, result: StepResult): StepResult {
   const detail = pushed ? "Finalize subsequently pushed the round's committed fixes to the pull request; acceptance still did not converge." : "The pull request lacks the round's fix unless finalize pushes it.";
   return { ...result, problems: result.problems.replace(/ The PR lacks.*$/, ''), remaining: `${result.remaining}\n${detail}` };
 }
-export function failedItems(dir: string): Item[] {
+export function failedItems(dir: string, mediaProblems = reviewMedia(dir).problems): Item[] {
   const results = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
   if (readText(join(dir, 'acceptance-preparation-status.txt')).trim() === 'ACCEPTANCE_FAILED' && !results.acceptance) {
     results.acceptance = { ok: false, problems: 'Acceptance did not converge.', remaining: readText(join(dir, 'acceptance-handoff.md')) };
   }
-  return ['acceptance', 'archive', 'finalize', 'retest', 'merge-base', 'address-feedback', 'check-response', 'push-round', 'description'].flatMap(step => {
+  const failures = ['acceptance', 'archive', 'finalize', 'retest', 'merge-base', 'address-feedback', 'check-response', 'push-round', 'description'].flatMap(step => {
     const recorded = results[step];
     const result = step === 'acceptance' && recorded ? acceptancePushResult(dir, recorded) : recorded;
-    return result && !result.ok ? [{ type: 'Failure', title: `${step} failed`, detail: `${result.problems}\n${['archive', 'finalize'].includes(step) ? 'Merge is unavailable. ' : ''}${result.remaining}`, link: join(dir, 'step-results.json'), source: [`failure:${step}`], questions: [standardQuestion('Failure')] }] : [];
+    return result && !result.ok ? [failureItem(step, result, join(dir, 'step-results.json'))] : [];
   });
+  const firstProblem = mediaProblems[0];
+  if (firstProblem) failures.push(failureItem('review-media', {
+    ok: false, problems: mediaProblems.map(problem => `${problem.path}: ${problem.detail}`).join('\n'),
+    remaining: 'Repair the reported evidence manifests before relying on the missing screenshots or journeys.',
+  }, firstProblem.path));
+  return failures;
 }
+function failureItem(step: string, result: StepResult, link: string): Item {
+  const blocked = ['archive', 'finalize'].includes(step) ? 'Merge is unavailable. ' : '';
+  return { type: 'Failure', title: `${step} failed`, detail: `${result.problems}\n${blocked}${result.remaining}`,
+    link, source: [`failure:${step}`], questions: [standardQuestion('Failure')] };
+}
+
 export function acceptedHead(input: InventoryInput): string {
   const saved = readText(join(input.dir, 'review/accepted-head.txt')).trim();
   if (saved) return saved;
@@ -82,13 +95,12 @@ export function acceptedHead(input: InventoryInput): string {
   return sha;
 }
 export function laterCommits(input: InventoryInput, start: string): Item[] {
-  const revisions = output(input.exec, 'git', ['rev-list', '--first-parent', '--reverse', `${start}..HEAD`]);
-  if (revisions === undefined) throw new Error('could not list commits after acceptance');
+  const revisions = reviewRevisions(input.exec, input.dir, start, 'HEAD');
   const retested = readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []);
-  return revisions.split('\n').filter(sha => sha && !retested.includes(sha)).flatMap(sha => lateCommit(input.exec, sha));
+  return revisions.filter(sha => !retested.includes(sha)).flatMap(sha => lateCommit(input.exec, sha));
 }
 function lateCommit(exec: Exec, sha: string): Item[] {
-    const parents = output(exec, 'git', ['show', '-s', '--format=%P', sha])?.split(' ') ?? [];
+    const parents = commitParents(exec, sha);
     const flags = parents.length > 1 ? ['--remerge-diff'] : [];
     const files = parents.length > 1 ? output(exec, 'git', ['show', ...flags, '--format=', '--name-only', sha]) : output(exec, 'git', ['diff-tree', '--root', '--first-parent', '-m', '--no-commit-id', '--name-only', '-r', sha]);
     if (files === undefined) throw new Error(`could not inspect ${sha}`);
@@ -110,13 +122,17 @@ export function inventory(input: InventoryInput): Inventory {
   const head = acceptedHead(input);
   const commits = laterCommits(input, head);
   const statuses = responseStatuses(input.dir);
-  const dismissed = [...statuses].filter(([, status]) => status === 'no-change' || status === 'settled').map(([id]) => id);
+  const media = reviewMedia(input.dir);
+  const checklist = checklistItems(input);
+  const failedRows = new Set(checklist.filter(row => row.item.type === 'Failure').map(row => row.item.source[0]));
+  const dismissed = [...statuses].filter(([id, status]) =>
+    !failedRows.has(id) && (status === 'no-change' || status === 'settled')).map(([id]) => id);
   const plan = join(input.changeFolder, 'test-plan.md');
   const legacy = existsSync(plan) ? readText(plan).match(/\bAT-\d+\b/g) ?? [] : [];
-  const required = [...checklistItems(input), ...disputeItems(input.changeFolder),
-    ...commits.map(item => ({ tier: 'orange' as const, item })), ...failedItems(input.dir).map(item => ({ tier: 'red' as const, item }))];
+  const required = [...checklist, ...disputeItems(input.changeFolder),
+    ...commits.map(item => ({ tier: 'orange' as const, item })), ...failedItems(input.dir, media.problems).map(item => ({ tier: 'red' as const, item }))];
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),
-    context: { dismissed, shots: screenshots(input.dir).map(shot => shot.file),
-      journeys: [...journeys(input.dir).map(journey => journey.code), ...legacy], commits: commits.map(item => item.source[0]) } };
+    context: { dismissed, shots: media.shots.map(shot => shot.file),
+      journeys: [...media.journeys.map(journey => journey.code), ...legacy], commits: commits.map(item => item.source[0]) } };
 }

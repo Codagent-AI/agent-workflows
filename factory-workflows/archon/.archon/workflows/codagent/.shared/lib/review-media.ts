@@ -1,7 +1,6 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { type Exec, output } from './exec.ts';
-import { readJson } from './run-files.ts';
 
 export interface Screenshot {
   file: string; title: string; shows: string; revision: string; alt: string; round: number;
@@ -10,20 +9,45 @@ export interface Journey {
   code: string; title: string; scenario: string; repeat: string;
 }
 
-export function screenshots(dir: string): Screenshot[] {
+export interface ManifestProblem { path: string; detail: string }
+
+function manifestEntries<T>(path: string, fields: (keyof T)[], problems: ManifestProblem[]): T[] {
+  try {
+    const entries: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (!Array.isArray(entries)) throw new Error('expected an array');
+    return entries.flatMap((entry, index) => {
+      if (entry && typeof entry === 'object' && fields.every(field => typeof entry[field] === 'string')) return [entry as T];
+      problems.push({ path, detail: `entry ${index + 1} needs string fields ${fields.join(', ')}` });
+      return [];
+    });
+  } catch (error) {
+    problems.push({ path, detail: String(error) });
+    return [];
+  }
+}
+
+export function screenshots(dir: string, problems: ManifestProblem[] = []): Screenshot[] {
   const root = join(dir, 'acceptance-screenshots');
   if (!existsSync(root)) return [];
   return readdirSync(root).filter(name => /^round-\d+$/.test(name)).sort((a, b) => Number(a.slice(6)) - Number(b.slice(6))).flatMap(name => {
-    const entries = readJson<Omit<Screenshot, 'round'>[]>(join(root, name, 'manifest.json'), []);
-    return entries.filter(entry => typeof entry.file === 'string' && basename(entry.file) === entry.file && /^[^\\]+\.(png|jpe?g|gif|webp)$/i.test(entry.file) && existsSync(join(root, name, entry.file)))
+    const entries = manifestEntries<Omit<Screenshot, 'round'>>(join(root, name, 'manifest.json'), ['file', 'title', 'shows', 'revision', 'alt'], problems);
+    return entries.filter(entry => basename(entry.file) === entry.file && /^[^\\]+\.(png|jpe?g|gif|webp)$/i.test(entry.file) && existsSync(join(root, name, entry.file)))
       .map(entry => ({ ...entry, file: `acceptance-screenshots/${name}/${entry.file}`, round: Number(name.slice(6)) }));
   });
 }
 
-export function journeys(dir: string): (Journey & { artifact: string })[] {
+export function journeys(dir: string, problems: ManifestProblem[] = []): (Journey & { artifact: string })[] {
   const root = join(dir, 'acceptance-journeys');
   if (!existsSync(root)) return [];
-  return readdirSync(root).filter(file => /^round-\d+\.json$/.test(file)).flatMap(file => readJson<Journey[]>(join(root, file), []).map(journey => ({ ...journey, artifact: `acceptance-journeys/${file}` })));
+  return readdirSync(root).filter(file => /^round-\d+\.json$/.test(file)).flatMap(file => {
+    const entries = manifestEntries<Journey>(join(root, file), ['code', 'title', 'scenario', 'repeat'], problems);
+    return entries.map(journey => ({ ...journey, artifact: `acceptance-journeys/${file}` }));
+  });
+}
+
+export function reviewMedia(dir: string) {
+  const problems: ManifestProblem[] = [];
+  return { shots: screenshots(dir, problems), journeys: journeys(dir, problems), problems };
 }
 
 interface ClocCount { nFiles?: number; code?: number }

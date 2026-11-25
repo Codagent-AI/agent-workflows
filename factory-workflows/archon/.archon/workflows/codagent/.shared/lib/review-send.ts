@@ -13,14 +13,15 @@ export async function sendReview(input: {
   };
   const stale = { kind: 'stale' as const };
   if (!(run && ['http:', 'https:'].includes(page.protocol))) return fallback();
+  const { fetch } = input;
   try {
-    const response = await input.fetch(`${page.origin}/api/runs/${run}/attention`, { credentials: 'omit' });
+    const response = await fetch(`${page.origin}/api/runs/${run}/attention`, { credentials: 'omit' });
     if (response.status === 404) return stale;
     if (!response.ok) return fallback();
     const { item } = await response.json() as { item?: { occurrence?: string; message?: string; runId?: string } | null };
     if (!item?.occurrence || item.runId !== decodeURIComponent(run) || !item.message?.startsWith(`Review round ${input.round}:`)) return stale;
     occurrence = item.occurrence;
-    const sent = await input.fetch(`${page.origin}/api/workflows/runs/${run}/answer`, {
+    const sent = await fetch(`${page.origin}/api/workflows/runs/${run}/answer`, {
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ occurrence, text }),
     });

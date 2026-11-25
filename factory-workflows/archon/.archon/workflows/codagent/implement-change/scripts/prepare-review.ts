@@ -2,6 +2,7 @@ import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { join } from 'node:path';
 import { readJson, readText } from '../../.shared/lib/run-files.ts';
 import { responsePath } from '../../.shared/lib/review-round.ts';
+import { feedbackFiles } from '../../.shared/lib/review-revisions.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
 import { checkoutStart } from '../../.shared/lib/checkout.ts';
 import { git, head, readState, saveState, script } from '../../.shared/lib/review-files.ts';
@@ -17,18 +18,6 @@ function startRevision(mode: string, dir: string, state: ReviewState): string {
   return observed.start.commit;
 }
 
-function feedbackFiles(start: string, end: string): string {
-  const pending = git(['rev-list', '--first-parent', `${start}..${end}`]).split('\n').filter(Boolean);
-  const files = pending.flatMap(commit => {
-    const parents = git(['show', '-s', '--format=%P', commit]).split(' ');
-    const flags = parents.length > 1 ? ['--remerge-diff'] : [];
-    const shown = runCommand('git', ['show', ...flags, '--format=', '--name-only', commit, '--', '.', ':(exclude)openspec/']);
-    if (shown.status !== 0) throw new Error(shown.stderr);
-    return shown.stdout.split('\n').filter(Boolean);
-  });
-  return [...new Set(files)].join('\n');
-}
-
 function requestedFixes(path: string, folder: string, dir: string): string {
   if (!path) return '';
   const answer = readJson<{ round?: number; answers?: { item: string; option: string }[] }>(path, {});
@@ -40,8 +29,8 @@ function requestedFixes(path: string, folder: string, dir: string): string {
   return [...codes, ...sections, ...requested].join('\n');
 }
 
-function reviewFiles(mode: string, range: { start: string; end: string; changeDir: string }): string {
-  if (mode === 'feedback') return feedbackFiles(range.start, range.end);
+function reviewFiles(mode: string, dir: string, range: { start: string; end: string; changeDir: string }): string {
+  if (mode === 'feedback') return feedbackFiles(runCommand, dir, range.start, range.end);
   const diff = mode === 'acceptance' ? range.start : `${range.start}..${range.end}`;
   return git(['diff', '--name-only', diff, '--', '.', `:(exclude)${range.changeDir}`]);
 }
@@ -61,7 +50,7 @@ script(() => {
   if (!start) throw new Error('prepare-review: the start revision is empty');
   verifyStart(start);
   const end = head();
-  const files = reviewFiles(mode, { start, end, changeDir });
+  const files = reviewFiles(mode, dir, { start, end, changeDir });
   if (mode !== 'tail' || start !== end) {
     startCycle(state, { place, start, end, round: Number(process.env.INPUTS_ROUND ?? '0') });
     if (mode === 'feedback') {

@@ -244,7 +244,7 @@
   }
 
   function questionField(item, question, number, tier) {
-    const itemCode = item.source[0];
+    const itemCode = question.source ?? item.source[0];
     const field = node('fieldset', '', 'q');
     const answer = stored?.answers?.find(value => value.item === itemCode && value.question === number);
     field.disabled = sent || !data.wait;
@@ -252,7 +252,7 @@
     const eyebrow = node('span', item.questions.length > 1 ? `Question ${number + 1} of ${item.questions.length}` : 'Question', 'q-eyebrow');
     if (tier !== 'yellow') eyebrow.append(node('span', 'Answer required', 'req'));
     legend.append(eyebrow);
-    inline(legend, question.prompt);
+    inline(legend, question.source ? `${question.source} · ${question.prompt}` : question.prompt);
     field.append(legend);
     const opts = node('div', '', 'opts');
     const other = node('textarea', '', 'note');
@@ -365,7 +365,7 @@
     for (const row of rows) row.field.disabled = true;
     for (const comment of openComments) comment.disabled = true;
     for (const button of actions.querySelectorAll('button')) button.disabled = true;
-    const result = await sendReview({ address: location.href, run: data.run, round: data.round, answer, fetch });
+    const result = await sendReview({ address: location.href, run: data.run, round: data.round, answer, fetch: (url, options) => window.fetch(url, options) });
     sending = false;
     if (result.kind === 'sent') {
       sent = true;
