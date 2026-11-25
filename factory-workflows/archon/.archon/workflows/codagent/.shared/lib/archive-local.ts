@@ -16,11 +16,11 @@ function git(exec: Exec, args: string[], input?: string): string {
 function differences(exec: Exec, paths: string[]): string {
   return JSON.stringify([git(exec, ['diff', '--cached', '--binary', '--', ...paths]), git(exec, ['diff', '--binary', '--', ...paths])]);
 }
-export function suspendSpecs(input: Input): void {
+export function suspendSpecs(input: Input, owned: string[] = []): void {
   const prior = readJson<LocalSpecs | null>(file(input), null);
   if (prior && !prior.restored) return;
   const changed = [[], ['--cached']].flatMap(flags => git(input.exec, ['diff', ...flags, '--name-only', '-z', '--', 'openspec/specs/']).split('\0').filter(Boolean));
-  const paths = [...new Set(changed)];
+  const paths = [...new Set(changed)].filter(path => !owned.includes(path));
   if (paths.length === 0) return;
   const local: LocalSpecs = { paths, staged: git(input.exec, ['diff', '--cached', '--binary', '--', ...paths]), unstaged: git(input.exec, ['diff', '--binary', '--', ...paths]), restored: false };
   writeJson(file(input), local);

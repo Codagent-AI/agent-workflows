@@ -36,7 +36,7 @@ save-implementor-response: "saved"
 check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
 check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
 end-after-acceptance: {"ok":true,"problems":""}
-publish-review-package: {"succeeded":true}
+end-run: {"succeeded":true,"reason":""}
 fixture:
   expect: completed
   authored: succeeded
@@ -52,7 +52,7 @@ fixture:
     - recheck-unverified
     - push-recheck
     - end-after-acceptance
-    - publish-review-package
+    - end-run
   resolved-text-contains:
     resolve-findings: "I-2: the fallback greeting has no test"
     recheck-unverified: I-2

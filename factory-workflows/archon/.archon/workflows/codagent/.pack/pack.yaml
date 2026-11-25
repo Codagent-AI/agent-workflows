@@ -24,3 +24,9 @@ inputs:
       pull request and publishes the review package. acceptance: the run ends after the
       acceptance rounds, leaving the pull request a draft and the change unarchived, as an
       eval of the implementation needs.
+  review_wait:
+    default: "true"
+    description: Wait for review feedback or a merge answer after publishing.
+  archon_url:
+    default: ""
+    description: Archon address for pull request review page links.

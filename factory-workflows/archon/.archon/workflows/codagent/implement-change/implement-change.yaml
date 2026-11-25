@@ -9,8 +9,8 @@ description: >-
 # .archon/config.yaml. Agents record rulings and the blocked record under
 # $ARTIFACTS_DIR, with the file names the README lists.
 
-# Package publication declares the outcome from acceptance, archive and finalize.
-returns: publish-review-package
+# End the run from its recorded review or acceptance outcome.
+returns: end-run
 outcome_field: succeeded
 
 # The change_name is the run's own input. The rest are the pack's settings (.pack/pack.yaml),
@@ -31,6 +31,7 @@ nodes:
       acceptance_fix_scope: $INPUTS.acceptance_fix_scope
       review_strategy: $INPUTS.review_strategy
       stop_after: $INPUTS.stop_after
+      review_wait: $INPUTS.review_wait
       # The acceptance loop's literal ceiling.
       max_rounds: &max-rounds 10
     output_format:
@@ -49,6 +50,8 @@ nodes:
     depends_on: [validate-inputs]
     script: check-forge
     runtime: bun
+    with:
+      review_wait: $INPUTS.review_wait
 
   - id: check-definition
     depends_on: [check-forge]
@@ -412,6 +415,7 @@ nodes:
     with: &before-review
       place: before-pr
       mode: initial
+      answers_file: ""
       change_dir: $validate-inputs.output.change_dir
       start: $implementor-checklist.execution.checkoutStart
       round: 0
@@ -436,6 +440,7 @@ nodes:
     command: review-change
     with: &before-review-command
       place: before-pr
+      requested: ""
       change_dir: $validate-inputs.output.change_dir
       start: $prepare-review.output.start
       end: $prepare-review.output.end
@@ -571,6 +576,7 @@ nodes:
     runtime: bun
     with:
       place: before-pr
+      change_dir: ""
     output_format: &review-handoff
       type: object
       properties:
@@ -619,6 +625,7 @@ nodes:
     with:
       <<: *before-review
       mode: tail
+      answers_file: ""
     output_format: *review-range
 
   - id: tail-review
@@ -645,6 +652,7 @@ nodes:
     with:
       <<: *before-review
       mode: tail
+      answers_file: ""
       needed: $prepare-tail-review.output.needed
       end: $prepare-tail-review.output.end
       review_name: tail-review
@@ -777,6 +785,7 @@ nodes:
             change_dir: $validate-inputs.output.change_dir
             acceptance_round: $reset-round-evidence.output.round
             acceptance_rounds: $validate-inputs.output.rounds
+            journeys: ""
           output_format: &tester-result
             type: object
             properties:
@@ -878,6 +887,7 @@ nodes:
           with: &acceptance-review
             place: acceptance
             mode: acceptance
+            answers_file: ""
             start: ""
             change_dir: $validate-inputs.output.change_dir
             round: $reset-round-evidence.output.round
@@ -892,6 +902,7 @@ nodes:
           command: review-change
           with:
             place: acceptance
+            requested: ""
             change_dir: $validate-inputs.output.change_dir
             start: $prepare-round-review.output.start
             end: $prepare-round-review.output.end
@@ -970,6 +981,7 @@ nodes:
           runtime: bun
           with:
             place: acceptance
+            change_dir: ""
           output_format: *review-handoff
 
         - id: acceptance-push
@@ -1101,344 +1113,625 @@ nodes:
 
   # Finish always records failures and continues to the review package. With stop_after:
   # acceptance it is skipped, and with it every step through the ranking.
-  - id: "commit-logs"
-    depends_on: ["list-unverified","recheck-unverified"]
-    trigger_rule: "none_failed_min_one_success"
+  - id: review-rounds
+    depends_on: [list-unverified, recheck-unverified]
+    trigger_rule: none_failed_min_one_success
     when: "$validate-inputs.output.finish == 'true'"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"commit-logs","previous_blocked":false,"op":"commit-logs"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: "archive-change"
-    depends_on: ["commit-logs"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"archive-change","previous_blocked":false,"op":"archive-change"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: "repair-archive-delta"
-    depends_on: ["archive-change"]
-    trigger_rule: "all_success"
-    model: ["@implementor","large"]
-    context: {"resume":"session-report"}
-    command: "repair-archive-delta"
-    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","problems":"$archive-change.output.problems"}
-    when: "$archive-change.output.ok == 'false'"
-
-    output_format: *implementor-result
-
-  - id: "rearchive-change"
-    depends_on: ["repair-archive-delta"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-archive-delta.output.blocked","reason":"$repair-archive-delta.output.reason","result":"","previous":"","status":"","step":"rearchive-change","previous_blocked":false,"op":"archive-change"}
-    when: "$archive-change.output.ok == 'false'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: "verify-archive-commit"
-    depends_on: ["archive-change","rearchive-change"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"verify-archive-commit","previous_blocked":false,"op":"verify-archive-commit"}
-    when: "$archive-change.output.ok == 'true' || $rearchive-change.output.ok == 'true'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"},"archive_state":{"type":"string"}},"required":["ok","problems","archive_state"],"additionalProperties":false}
-
-  - id: "repair-archive-commit"
-    depends_on: ["verify-archive-commit"]
-    trigger_rule: "all_success"
-    model: ["@implementor","large"]
-    context: {"resume":"session-report"}
-    command: "repair-archive-commit"
-    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","archive_state":"$verify-archive-commit.output.archive_state","problems":"$verify-archive-commit.output.problems"}
-    when: "$verify-archive-commit.output.ok == 'false'"
-
-    output_format: *implementor-result
-
-  - id: "recheck-archive-commit"
-    depends_on: ["repair-archive-commit"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-archive-commit.output.blocked","reason":"$repair-archive-commit.output.reason","result":"","previous":"","status":"","step":"recheck-archive-commit","previous_blocked":false,"op":"verify-archive-commit"}
-    when: "$verify-archive-commit.output.ok == 'false'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"},"archive_state":{"type":"string"}},"required":["ok","problems","archive_state"],"additionalProperties":false}
-
-  - id: "record-archive"
-    depends_on: ["archive-change","rearchive-change","verify-archive-commit","recheck-archive-commit"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-archive-commit.output.blocked","if_skipped":false},"reason":{"from":"$repair-archive-commit.output.reason","if_skipped":"Archive delta repair blocked; see archive report and decision log."},"result":"","previous":"","status":"","step":"record-archive","previous_blocked":{"from":"$repair-archive-delta.output.blocked","if_skipped":false},"op":"record-archive"}
-    output_format: {"type":"object","properties":{"change_folder":{"type":"string"}},"required":["change_folder"],"additionalProperties":false}
-
-  - id: "finalize-push"
-    depends_on: ["record-archive"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: "repair-finalize-push"
-    depends_on: ["finalize-push"]
-    trigger_rule: "all_success"
-    model: ["@implementor","large"]
-    context: {"resume":"session-report"}
-    command: "repair-push"
-    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","pushed":"the logs and the archive","problems":"$finalize-push.output.problems"}
-    when: "$finalize-push.output.ok == 'false'"
-
-    output_format: *implementor-result
-
-  - id: "recheck-finalize-push"
-    depends_on: ["repair-finalize-push"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-finalize-push.output.blocked","reason":"$repair-finalize-push.output.reason","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
-    when: "$finalize-push.output.ok == 'false'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: "mark-ready"
-    depends_on: ["finalize-push","recheck-finalize-push"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"mark-ready","previous_blocked":false,"op":"mark-ready"}
-    when: "$finalize-push.output.ok == 'true' || $recheck-finalize-push.output.ok == 'true'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
-
-  - id: ci-cycles
-    depends_on: [mark-ready]
-    when: "$mark-ready.output.ok == 'true'"
     loop_group:
-      max_iterations: 3
+      max_iterations: 1
       on_exhausted: complete
-      until_bash: 'done=$end-ci-cycle.output.done; [ "$done" = true ]'
+      until_bash: '[ -f "$ARTIFACTS_DIR/review/outcome.json" ]'
       nodes:
-        - id: "wait-finalize-ci"
-          depends_on: []
-          trigger_rule: "none_failed_min_one_success"
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":"$LOOP_PREV.fix-pr.output.blocked","op":"wait-finalize-ci"}
-          output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+      - id: start-round
+        script: finish
+        runtime: bun
+        with: {"op":"start-round","change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","answer":"$LOOP_PREV.wait-for-review.output.text"}
+        output_format: {"type":"object","properties":{"round":{"type":"integer"},"mode":{"type":"string"},"reason":{"type":"string"},"change_folder":{"type":"string"},"archive_needed":{"type":"boolean"},"retest":{"type":"boolean"},"journeys":{"type":"string"},"answers_file":{"type":"string"},"review_head":{"type":"string"},"work":{"type":"boolean"},"publish":{"type":"boolean"}},"required":["round","mode","reason","change_folder","archive_needed","retest","journeys","answers_file","review_head","work","publish"],"additionalProperties":false}
 
-        - id: "repair-ci-wait"
-          depends_on: ["wait-finalize-ci"]
-          trigger_rule: "all_success"
-          model: ["@implementor","large"]
-          context: {"resume":"session-report"}
-          command: "repair-ci-wait"
-          with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","problems":"$wait-finalize-ci.output.ci_report"}
-          when: "$wait-finalize-ci.output.status == 'error'"
+      - id: merge-base
+        depends_on: ["start-round"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"merge-base"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"},"conflict":{"type":"boolean"}},"required":["ok","problems","conflict"],"additionalProperties":false}
 
-          output_format: *implementor-result
+      - id: resolve-merge
+        depends_on: ["merge-base"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $merge-base.output.conflict == 'true'"
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: resolve-merge
+        with: {"change_dir":"$start-round.output.change_folder","problems":"$merge-base.output.problems"}
+        output_format: *implementor-result
 
-        - id: "mark-ready-after-repair"
-          depends_on: ["repair-ci-wait"]
-          trigger_rule: "all_success"
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-repair","previous_blocked":false,"op":"mark-ready"}
-          when: "$wait-finalize-ci.output.status == 'error'"
-          output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: finish-merge
+        depends_on: ["resolve-merge"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"finish-merge","blocked":"$resolve-merge.output.blocked","reason":"$resolve-merge.output.reason"}
+        output_format: *check
 
-        - id: "rewait-finalize-ci"
-          depends_on: ["mark-ready-after-repair"]
-          trigger_rule: "all_success"
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":false,"op":"wait-finalize-ci"}
-          when: "$wait-finalize-ci.output.status == 'error'"
-          output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+      - id: address-feedback
+        depends_on: ["merge-base","finish-merge"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: address-feedback
+        with: {"change_dir":"$start-round.output.change_folder","archive_needed":"$start-round.output.archive_needed","answers_file":"$start-round.output.answers_file","mode":"$start-round.output.mode","review_round":"$start-round.output.round"}
+        output_format: *implementor-result
 
-        - id: "ci-cycle-status"
-          depends_on: ["wait-finalize-ci","rewait-finalize-ci"]
-          trigger_rule: "none_failed_min_one_success"
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
-          output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"},"ci_report":{"type":"string"}},"required":["done","fix","cycle","ci_report"],"additionalProperties":false}
+      - id: check-response
+        depends_on: ["address-feedback"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"check-response","blocked":"$address-feedback.output.blocked","reason":"$address-feedback.output.reason","round":"$start-round.output.round"}
+        output_format: *check
 
-        - id: "fix-pr"
-          depends_on: ["ci-cycle-status"]
-          trigger_rule: "none_failed_min_one_success"
-          model: ["@implementor","large"]
-          context: {"resume":"session-report"}
-          command: "fix-pr"
-          with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","ci_report":"$ci-cycle-status.output.ci_report","change_folder":"$record-archive.output.change_folder"}
-          when: "$ci-cycle-status.output.fix == 'true'"
+      - id: prepare-feedback-review
+        depends_on: [check-response]
+        trigger_rule: none_failed_min_one_success
+        when: "$validate-inputs.output.review == 'true' && $start-round.output.work == 'true'"
+        script: prepare-review
+        runtime: bun
+        with: &feedback-review
+          place: feedback
+          mode: feedback
+          start: $start-round.output.review_head
+          change_dir: $start-round.output.change_folder
+          round: $start-round.output.round
+          answers_file: $start-round.output.answers_file
+        output_format: *review-range
 
-          output_format: *implementor-result
+      - id: feedback-review
+        depends_on: [prepare-feedback-review]
+        trigger_rule: none_failed_min_one_success
+        when: "$validate-inputs.output.review == 'true' && $prepare-feedback-review.output.needed == 'true'"
+        model: ['@reviewer', medium]
+        context: fresh
+        mutates_checkout: false
+        command: review-change
+        with:
+          place: feedback
+          requested: $prepare-feedback-review.output.findings
+          change_dir: $start-round.output.change_folder
+          start: $prepare-feedback-review.output.start
+          end: $prepare-feedback-review.output.end
+          files: $prepare-feedback-review.output.files
+          handed_off: $prepare-feedback-review.output.handed_off
+        output_format: *review-output
 
-        - id: "push-ci-fix"
-          when: "$ci-cycle-status.output.fix == 'true'"
-          depends_on: ["fix-pr"]
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$fix-pr.output.blocked","reason":"$fix-pr.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
-          output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: record-feedback-review
+        depends_on: [prepare-feedback-review, feedback-review]
+        trigger_rule: none_failed_min_one_success
+        when: "$validate-inputs.output.review == 'true' && $start-round.output.work == 'true'"
+        script: record-review
+        runtime: bun
+        with:
+          <<: *feedback-review
+          needed: $prepare-feedback-review.output.needed
+          end: $prepare-feedback-review.output.end
+          review_name: feedback-review
+          result: { from: $feedback-review.output, if_skipped: "" }
+        output_format: *review-settled
 
-        - id: "repair-push-ci-fix"
-          depends_on: ["push-ci-fix"]
-          trigger_rule: "all_success"
-          model: ["@implementor","large"]
-          context: {"resume":"session-report"}
-          command: "repair-push"
-          with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","pushed":"the CI fixes","problems":"$push-ci-fix.output.problems"}
-          when: "$fix-pr.output.blocked == 'false' && $push-ci-fix.output.ok == 'false'"
+      - id: fix-feedback-findings
+        depends_on: [record-feedback-review]
+        trigger_rule: none_failed_min_one_success
+        when: "$validate-inputs.output.review == 'true' && $record-feedback-review.output.settled == 'false'"
+        model: ['@implementor', large]
+        context: { resume: session-report }
+        command: fix-review-findings
+        with:
+          place: feedback
+          findings: $record-feedback-review.output.findings
+        output_format: *implementor-result
 
-          output_format: *implementor-result
+      - id: record-feedback-fixes
+        depends_on: [fix-feedback-findings]
+        trigger_rule: none_failed_min_one_success
+        script: record-review-fixes
+        runtime: bun
+        with:
+          place: feedback
+          review_name: fix-feedback-findings
+          result: $fix-feedback-findings.output
+        output_format: *review-fix-range
 
-        - id: "recheck-push-ci-fix"
-          depends_on: ["repair-push-ci-fix"]
-          trigger_rule: "all_success"
-          script: "finish"
-          runtime: "bun"
-          timeout: 1200000
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-push-ci-fix.output.blocked","reason":"$repair-push-ci-fix.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
-          when: "$push-ci-fix.output.ok == 'false'"
-          output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: feedback-re-review
+        depends_on: [record-feedback-fixes]
+        trigger_rule: none_failed_min_one_success
+        when: "$record-feedback-fixes.output.blocked == 'false'"
+        model: ['@reviewer', medium]
+        context: { resume: feedback-review }
+        mutates_checkout: false
+        command: re-review
+        with:
+          place: feedback
+          change_dir: $start-round.output.change_folder
+          start: $record-feedback-fixes.output.start
+          end: $record-feedback-fixes.output.end
+          findings: $record-feedback-fixes.output.findings
+        output_format: *review-output
 
-        - id: end-ci-cycle
-          depends_on: [ci-cycle-status, fix-pr, push-ci-fix, recheck-push-ci-fix]
-          trigger_rule: none_failed_min_one_success
-          script: finish
-          runtime: bun
-          with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"end-ci-cycle","previous_blocked":false,"op":"end-ci-cycle"}
-          output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
+      - id: end-feedback-review
+        depends_on: [record-feedback-fixes, feedback-re-review]
+        trigger_rule: none_failed_min_one_success
+        script: end-review-round
+        runtime: bun
+        with:
+          place: feedback
+          blocked: $record-feedback-fixes.output.blocked
+          end: $record-feedback-fixes.output.end
+          review_name: feedback-re-review
+          result: { from: $feedback-re-review.output, if_skipped: "" }
+        output_format: *review-stop
 
-  - id: "final-ci"
-    depends_on: ["mark-ready","ci-cycles"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"final-ci","previous_blocked":false,"op":"final-ci"}
-    when: "$mark-ready.output.ok == 'true'"
-    output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+      - id: hand-off-feedback-review
+        depends_on: [record-feedback-review, end-feedback-review]
+        trigger_rule: none_failed_min_one_success
+        when: "$validate-inputs.output.review == 'true' && $start-round.output.work == 'true'"
+        script: hand-off-review
+        runtime: bun
+        with:
+          place: feedback
+          change_dir: $start-round.output.change_folder
+        output_format: *review-handoff
 
-  - id: "repair-final-wait"
-    depends_on: ["final-ci"]
-    trigger_rule: "all_success"
-    model: ["@implementor","large"]
-    context: {"resume":"session-report"}
-    command: "repair-ci-wait"
-    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","problems":"$final-ci.output.ci_report"}
-    when: "$final-ci.output.status == 'error'"
+      - id: push-round
+        depends_on: ["check-response","hand-off-feedback-review"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"push-round"}
+        output_format: *check
 
-    output_format: *implementor-result
+      - id: repair-push-round
+        depends_on: ["push-round"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $push-round.output.ok == 'false'"
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: repair-push
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$start-round.output.change_folder","pushed":"the review feedback","problems":"$push-round.output.problems"}
+        output_format: *implementor-result
 
-  - id: "mark-ready-after-final-repair"
-    depends_on: ["repair-final-wait"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-final-repair","previous_blocked":false,"op":"mark-ready"}
-    when: "$final-ci.output.status == 'error'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: recheck-push-round
+        depends_on: ["repair-push-round"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"push-round","blocked":"$repair-push-round.output.blocked","reason":"$repair-push-round.output.reason"}
+        output_format: *check
 
-  - id: "recheck-final-ci"
-    depends_on: ["mark-ready-after-final-repair"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"final-ci","previous_blocked":false,"op":"final-ci"}
-    when: "$final-ci.output.status == 'error'"
-    output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+      - id: prepare-retest
+        depends_on: ["push-round","recheck-push-round"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        script: prepare-retest
+        runtime: bun
+        with: {"review_round":"$start-round.output.round"}
+        output_format: {"type":"object","properties":{"round":{"type":"integer"}},"required":["round"],"additionalProperties":false}
 
-  - id: "record-finalize"
-    depends_on: ["record-archive","final-ci","recheck-final-ci","mark-ready"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"record-finalize","previous_blocked":false,"op":"record-finalize"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: retest-journeys
+        depends_on: ["prepare-retest"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        model: ["@tester","medium"]
+        context: fresh
+        command: acceptance-test
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$start-round.output.change_folder","acceptance_round":"$prepare-retest.output.round","acceptance_rounds":"$prepare-retest.output.round","journeys":"$start-round.output.journeys"}
+        output_format: *tester-result
 
-  - id: "prepare-ranking"
-    depends_on: ["record-finalize"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"prepare-ranking","previous_blocked":false,"op":"prepare-ranking"}
-    output_format: {"type":"object","properties":{"accepted_head":{"type":"string"},"later_commits":{"type":"string"}},"required":["accepted_head","later_commits"],"additionalProperties":false}
+      - id: wait-retest-ci
+        depends_on: ["retest-journeys"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true' && $retest-journeys.output.ready == 'true'"
+        timeout: 1200000
+        script: wait-ci
+        runtime: bun
+        with: {"round":"$prepare-retest.output.round","max_minutes":15,"interval_seconds":30}
+        output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"}},"required":["status","had_checks","head_moved","report"],"additionalProperties":false}
 
-  - id: "rank-review"
-    depends_on: ["prepare-ranking"]
-    model: ["@reviewer","medium"]
-    context: "fresh"
-    mutates_checkout: false
-    command: "rank-review"
-    with: {"change_folder":"$record-archive.output.change_folder","accepted_head":"$prepare-ranking.output.accepted_head","later_commits":"$prepare-ranking.output.later_commits"}
+      - id: handoff-retest
+        depends_on: ["retest-journeys","wait-retest-ci"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        model: ["@tester","medium"]
+        context: {"resume":"retest-journeys"}
+        command: acceptance-handoff
+        with: {"ci_status":{"from":"$wait-retest-ci.output.status","if_skipped":"not run"},"ci_report":{"from":"$wait-retest-ci.output.report","if_skipped":"none"},"ci_reason":"$retest-journeys.output.reason"}
+        output_format: *tester-result
 
-    output_format: &ranking
-      {"type":"object","properties":{"red":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}}},"required":["type","title","detail","link","source"],"additionalProperties":false}},"orange":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}}},"required":["type","title","detail","link","source"],"additionalProperties":false}},"yellow":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}}},"required":["type","title","detail","link","source"],"additionalProperties":false}},"white":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}}},"required":["type","title","detail","link","source"],"additionalProperties":false}},"evidence":{"type":"string"}},"required":["red","orange","yellow","white","evidence"],"additionalProperties":false}
+      - id: gate-retest
+        depends_on: ["handoff-retest"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        script: acceptance-gate
+        runtime: bun
+        with: {"last":true}
+        output_format: {"type":"object","properties":{"ready":{"type":"boolean"},"fix":{"type":"boolean"},"reasons":{"type":"string"}},"required":["ready","fix","reasons"],"additionalProperties":false}
 
-  - id: "check-ranking"
-    depends_on: ["rank-review"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$rank-review.output","previous":"","status":"","step":"check-ranking","previous_blocked":false,"op":"check-ranking"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: record-retest
+        depends_on: ["gate-retest"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"record-retest","round":"$start-round.output.round","status":"$gate-retest.output.ready","reason":"$gate-retest.output.reasons"}
+        output_format: *check
 
-  - id: "repair-ranking"
-    depends_on: ["check-ranking"]
-    trigger_rule: "all_success"
-    model: ["@reviewer","medium"]
-    context: {"resume":"rank-review"}
-    command: "repair-ranking"
-    with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","problems":"$check-ranking.output.problems"}
-    when: "$check-ranking.output.ok == 'false'"
+      - id: "commit-logs"
+        when: "$start-round.output.mode == 'first'"
+        depends_on: [start-round]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"commit-logs","previous_blocked":false,"op":"commit-logs"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
-    output_format: *ranking
+      - id: "archive-change"
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true'"
+        depends_on: [start-round, commit-logs, push-round, recheck-push-round, record-retest]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"archive-change","previous_blocked":false,"op":"archive-change","round":"$start-round.output.round"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
-  - id: "recheck-ranking"
-    depends_on: ["repair-ranking"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"recheck-ranking","previous_blocked":false,"op":"check-ranking"}
-    when: "$check-ranking.output.ok == 'false'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+      - id: "repair-archive-delta"
+        depends_on: ["archive-change"]
+        trigger_rule: none_failed_min_one_success
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: "repair-archive-delta"
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$start-round.output.change_folder","problems":"$archive-change.output.problems","answers_file":"$start-round.output.answers_file"}
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $archive-change.output.ok == 'false'"
 
-  - id: "place-ranking"
-    depends_on: ["recheck-ranking"]
-    trigger_rule: "all_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"place-ranking","previous_blocked":false,"op":"place-ranking"}
-    when: "$recheck-ranking.output.ok == 'false'"
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+        output_format: *implementor-result
 
-  # With stop_after: acceptance the run ends here, its pull request a draft and its change
-  # unarchived, and publish-review-package declares the outcome from acceptance alone.
+      - id: "rearchive-change"
+        depends_on: ["repair-archive-delta"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":"$repair-archive-delta.output.blocked","reason":"$repair-archive-delta.output.reason","result":"","previous":"","status":"","step":"rearchive-change","previous_blocked":false,"op":"archive-change"}
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $archive-change.output.ok == 'false'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "verify-archive-commit"
+        depends_on: ["archive-change","rearchive-change"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"verify-archive-commit","previous_blocked":false,"op":"verify-archive-commit"}
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $archive-change.output.ok == 'true' || $start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $rearchive-change.output.ok == 'true'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"},"archive_state":{"type":"string"}},"required":["ok","problems","archive_state"],"additionalProperties":false}
+
+      - id: "repair-archive-commit"
+        depends_on: ["verify-archive-commit"]
+        trigger_rule: none_failed_min_one_success
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: "repair-archive-commit"
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$start-round.output.change_folder","archive_state":"$verify-archive-commit.output.archive_state","problems":"$verify-archive-commit.output.problems"}
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $verify-archive-commit.output.ok == 'false'"
+
+        output_format: *implementor-result
+
+      - id: "recheck-archive-commit"
+        depends_on: ["repair-archive-commit"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":"$repair-archive-commit.output.blocked","reason":"$repair-archive-commit.output.reason","result":"","previous":"","status":"","step":"recheck-archive-commit","previous_blocked":false,"op":"verify-archive-commit"}
+        when: "$start-round.output.publish == 'true' && $start-round.output.archive_needed == 'true' && $verify-archive-commit.output.ok == 'false'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"},"archive_state":{"type":"string"}},"required":["ok","problems","archive_state"],"additionalProperties":false}
+
+      - id: "record-archive"
+        when: "$start-round.output.publish == 'true'"
+        depends_on: [start-round, "archive-change","rearchive-change","verify-archive-commit","recheck-archive-commit"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":{"from":"$repair-archive-commit.output.blocked","if_skipped":false},"reason":{"from":"$repair-archive-commit.output.reason","if_skipped":"Archive delta repair blocked; see archive report and decision log."},"result":"","previous":"","status":"","step":"record-archive","previous_blocked":{"from":"$repair-archive-delta.output.blocked","if_skipped":false},"op":"record-archive","archive_needed":"$start-round.output.archive_needed"}
+        output_format: {"type":"object","properties":{"change_folder":{"type":"string"}},"required":["change_folder"],"additionalProperties":false}
+
+      - id: "finalize-push"
+        depends_on: ["record-archive"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "repair-finalize-push"
+        depends_on: ["finalize-push"]
+        trigger_rule: none_failed_min_one_success
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: "repair-push"
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","pushed":"the logs and the archive","problems":"$finalize-push.output.problems"}
+        when: "$start-round.output.publish == 'true' && $finalize-push.output.ok == 'false'"
+
+        output_format: *implementor-result
+
+      - id: "recheck-finalize-push"
+        depends_on: ["repair-finalize-push"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-finalize-push.output.blocked","reason":"$repair-finalize-push.output.reason","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
+        when: "$start-round.output.publish == 'true' && $finalize-push.output.ok == 'false'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "mark-ready"
+        depends_on: ["finalize-push","recheck-finalize-push"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"mark-ready","previous_blocked":false,"op":"mark-ready"}
+        when: "$start-round.output.publish == 'true' && $finalize-push.output.ok == 'true' || $start-round.output.publish == 'true' && $recheck-finalize-push.output.ok == 'true'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: ci-cycles
+        depends_on: [mark-ready]
+        when: "$start-round.output.publish == 'true' && $mark-ready.output.ok == 'true'"
+        loop_group:
+          max_iterations: 3
+          on_exhausted: complete
+          until_bash: 'done=$end-ci-cycle.output.done; [ "$done" = true ]'
+          nodes:
+            - id: "wait-finalize-ci"
+              depends_on: []
+              trigger_rule: "none_failed_min_one_success"
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":"$LOOP_PREV.fix-pr.output.blocked","op":"wait-finalize-ci"}
+              output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+
+            - id: "repair-ci-wait"
+              depends_on: ["wait-finalize-ci"]
+              trigger_rule: "all_success"
+              model: ["@implementor","large"]
+              context: {"resume":"session-report"}
+              command: "repair-ci-wait"
+              with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","problems":"$wait-finalize-ci.output.ci_report"}
+              when: "$wait-finalize-ci.output.status == 'error'"
+
+              output_format: *implementor-result
+
+            - id: "mark-ready-after-repair"
+              depends_on: ["repair-ci-wait"]
+              trigger_rule: "all_success"
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-repair","previous_blocked":false,"op":"mark-ready"}
+              when: "$wait-finalize-ci.output.status == 'error'"
+              output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+            - id: "rewait-finalize-ci"
+              depends_on: ["mark-ready-after-repair"]
+              trigger_rule: "all_success"
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"wait-finalize-ci","previous_blocked":false,"op":"wait-finalize-ci"}
+              when: "$wait-finalize-ci.output.status == 'error'"
+              output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+
+            - id: "ci-cycle-status"
+              depends_on: ["wait-finalize-ci","rewait-finalize-ci"]
+              trigger_rule: "none_failed_min_one_success"
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
+              output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"},"ci_report":{"type":"string"}},"required":["done","fix","cycle","ci_report"],"additionalProperties":false}
+
+            - id: "fix-pr"
+              depends_on: ["ci-cycle-status"]
+              trigger_rule: "none_failed_min_one_success"
+              model: ["@implementor","large"]
+              context: {"resume":"session-report"}
+              command: "fix-pr"
+              with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","ci_report":"$ci-cycle-status.output.ci_report","change_folder":"$record-archive.output.change_folder"}
+              when: "$ci-cycle-status.output.fix == 'true'"
+
+              output_format: *implementor-result
+
+            - id: "push-ci-fix"
+              when: "$ci-cycle-status.output.fix == 'true'"
+              depends_on: ["fix-pr"]
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$fix-pr.output.blocked","reason":"$fix-pr.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
+              output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+            - id: "repair-push-ci-fix"
+              depends_on: ["push-ci-fix"]
+              trigger_rule: "all_success"
+              model: ["@implementor","large"]
+              context: {"resume":"session-report"}
+              command: "repair-push"
+              with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","pushed":"the CI fixes","problems":"$push-ci-fix.output.problems"}
+              when: "$fix-pr.output.blocked == 'false' && $push-ci-fix.output.ok == 'false'"
+
+              output_format: *implementor-result
+
+            - id: "recheck-push-ci-fix"
+              depends_on: ["repair-push-ci-fix"]
+              trigger_rule: "all_success"
+              script: "finish"
+              runtime: "bun"
+              timeout: 1200000
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-push-ci-fix.output.blocked","reason":"$repair-push-ci-fix.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
+              when: "$push-ci-fix.output.ok == 'false'"
+              output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+            - id: end-ci-cycle
+              depends_on: [ci-cycle-status, fix-pr, push-ci-fix, recheck-push-ci-fix]
+              trigger_rule: none_failed_min_one_success
+              script: finish
+              runtime: bun
+              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"end-ci-cycle","previous_blocked":false,"op":"end-ci-cycle"}
+              output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"}},"required":["done","fix","cycle"],"additionalProperties":false}
+
+      - id: "final-ci"
+        depends_on: ["mark-ready","ci-cycles"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"final-ci","previous_blocked":false,"op":"final-ci"}
+        when: "$start-round.output.publish == 'true' && $mark-ready.output.ok == 'true'"
+        output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+
+      - id: "repair-final-wait"
+        depends_on: ["final-ci"]
+        trigger_rule: none_failed_min_one_success
+        model: ["@implementor","large"]
+        context: {"resume":"session-report"}
+        command: "repair-ci-wait"
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","problems":"$final-ci.output.ci_report"}
+        when: "$start-round.output.publish == 'true' && $final-ci.output.status == 'error'"
+
+        output_format: *implementor-result
+
+      - id: "mark-ready-after-final-repair"
+        depends_on: ["repair-final-wait"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-final-repair","previous_blocked":false,"op":"mark-ready"}
+        when: "$start-round.output.publish == 'true' && $final-ci.output.status == 'error'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "recheck-final-ci"
+        depends_on: ["mark-ready-after-final-repair"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"final-ci","previous_blocked":false,"op":"final-ci"}
+        when: "$start-round.output.publish == 'true' && $final-ci.output.status == 'error'"
+        output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"},"ci_report":{"type":"string"},"cycle":{"type":"integer"}},"required":["status","had_checks","head_moved","report","ci_report","cycle"],"additionalProperties":false}
+
+      - id: "record-finalize"
+        when: "$start-round.output.publish == 'true'"
+        depends_on: ["record-archive","final-ci","recheck-final-ci","mark-ready"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"record-finalize","previous_blocked":false,"op":"record-finalize"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "prepare-ranking"
+        when: "$start-round.output.publish == 'true'"
+        depends_on: ["record-finalize"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"prepare-ranking","previous_blocked":false,"op":"prepare-ranking"}
+        output_format: {"type":"object","properties":{"accepted_head":{"type":"string"},"later_commits":{"type":"string"}},"required":["accepted_head","later_commits"],"additionalProperties":false}
+
+      - id: "rank-review"
+        when: "$start-round.output.publish == 'true'"
+        trigger_rule: none_failed_min_one_success
+        depends_on: ["prepare-ranking"]
+        model: ["@reviewer","medium"]
+        context: "fresh"
+        mutates_checkout: false
+        command: "rank-review"
+        with: {"change_folder":"$record-archive.output.change_folder","accepted_head":"$prepare-ranking.output.accepted_head","later_commits":"$prepare-ranking.output.later_commits","answers_file":"$start-round.output.answers_file","review_round":"$start-round.output.round"}
+
+        output_format: &ranking
+          {"type":"object","properties":{"red":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"orange":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"yellow":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"white":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"evidence":{"type":"string"},"keyEvidence":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"title":{"type":"string"},"shows":{"type":"string"}},"required":["file","title","shows"],"additionalProperties":false}}},"required":["red","orange","yellow","white","evidence","keyEvidence"],"additionalProperties":false}
+
+      - id: "check-ranking"
+        when: "$start-round.output.publish == 'true'"
+        depends_on: ["rank-review"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$rank-review.output","previous":"","status":"","step":"check-ranking","previous_blocked":false,"op":"check-ranking"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "repair-ranking"
+        depends_on: ["check-ranking"]
+        trigger_rule: none_failed_min_one_success
+        model: ["@reviewer","medium"]
+        context: {"resume":"rank-review"}
+        command: "repair-ranking"
+        with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","problems":"$check-ranking.output.problems"}
+        when: "$start-round.output.publish == 'true' && $check-ranking.output.ok == 'false'"
+
+        output_format: *ranking
+
+      - id: "recheck-ranking"
+        depends_on: ["repair-ranking"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"recheck-ranking","previous_blocked":false,"op":"check-ranking"}
+        when: "$start-round.output.publish == 'true' && $check-ranking.output.ok == 'false'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: "place-ranking"
+        depends_on: ["recheck-ranking"]
+        trigger_rule: none_failed_min_one_success
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"place-ranking","previous_blocked":false,"op":"place-ranking"}
+        when: "$start-round.output.publish == 'true' && $recheck-ranking.output.ok == 'false'"
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
+      - id: publish-review-package
+        depends_on: ["start-round","check-ranking","recheck-ranking","place-ranking"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.mode != 'merged' && $start-round.output.mode != 'closed'"
+        timeout: 1200000
+        script: finish
+        runtime: bun
+        with: {"op":"publish-review-package","change_folder":{"from":"$record-archive.output.change_folder","if_skipped":""},"mode":"$start-round.output.mode","reason":"$start-round.output.reason","round":"$start-round.output.round","review_wait":"$INPUTS.review_wait","archon_url":"$INPUTS.archon_url"}
+        output_format: {"type":"object","properties":{"page":{"type":"string"},"message":{"type":"string"},"succeeded":{"type":"boolean"}},"required":["page","message","succeeded"],"additionalProperties":false}
+
+      - id: wait-for-review
+        depends_on: [publish-review-package]
+        trigger_rule: none_failed_min_one_success
+        when: "$INPUTS.review_wait == 'true' && $start-round.output.mode != 'merged' && $start-round.output.mode != 'closed'"
+        wait:
+          attention: $publish-review-package.output.message
+          form: message
+          pages: [$publish-review-package.output.page, review-page.html]
+
   - id: "end-after-acceptance"
     depends_on: ["list-unverified","recheck-unverified","push-recheck"]
     trigger_rule: "none_failed_min_one_success"
@@ -1448,11 +1741,10 @@ nodes:
     when: "$validate-inputs.output.finish == 'false'"
     output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
-  - id: "publish-review-package"
-    depends_on: ["check-ranking","recheck-ranking","place-ranking","end-after-acceptance"]
-    trigger_rule: "none_failed_min_one_success"
-    script: "finish"
-    runtime: "bun"
-    timeout: 1200000
-    with: {"change_name":"$INPUTS.change_name","change_folder":{"from":"$record-archive.output.change_folder","if_skipped":""},"blocked":false,"reason":"","result":{"from":"$rank-review.output","if_skipped":""},"previous":"","status":"","step":"publish-review-package","previous_blocked":false,"op":"publish-review-package","stop_after":"$INPUTS.stop_after"}
-    output_format: {"type":"object","properties":{"succeeded":{"type":"boolean"}},"required":["succeeded"],"additionalProperties":false}
+  - id: end-run
+    depends_on: ["review-rounds","end-after-acceptance"]
+    trigger_rule: none_failed_min_one_success
+    script: finish
+    runtime: bun
+    with: {"op":"end-run","stop_after":"$INPUTS.stop_after"}
+    output_format: {"type":"object","properties":{"succeeded":{"type":"boolean"},"reason":{"type":"string"}},"required":["succeeded","reason"],"additionalProperties":false}

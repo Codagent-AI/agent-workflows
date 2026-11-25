@@ -47,9 +47,11 @@ ci-cycle-status: {"done":false,"fix":true,"cycle":1,"ci_report":""}
 final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
 record-finalize: {"ok":false,"problems":"blocked repair"}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
-rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed"}
+rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed","keyEvidence":[]}
 check-ranking: {"ok":true,"problems":""}
-publish-review-package: {"succeeded":false}
+start-round: {"round":1,"mode":"first","reason":"","change_folder":"openspec/changes/valid-change","archive_needed":true,"retest":false,"journeys":"[]","answers_file":"","review_head":"","work":false,"publish":true}
+publish-review-package: {"succeeded":false,"page":"review-page-round-1.html","message":"Review round 1: fixture"}
+end-run: {"succeeded":false,"reason":""}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fix-pr: {"blocked":false,"reason":"blocked decision","actions":[]}
 push-ci-fix: {"ok":false,"problems":"cannot push"}
@@ -63,6 +65,8 @@ fixture:
     - push-ci-fix
     - end-ci-cycle
     - publish-review-package
+    - end-run
   inputs:
+    review_wait: "false"
     change_name: valid-change
     review_strategy: builtin

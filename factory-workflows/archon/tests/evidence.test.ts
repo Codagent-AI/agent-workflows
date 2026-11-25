@@ -39,8 +39,12 @@ describe('evidenceRows', () => {
 });
 
 describe('manualTestIds and namedByFinding', () => {
-  test('manualTestIds lists each AT or HT id once, sorted', () => {
-    expect(manualTestIds('AT-003 and HT-1, AT-003 again; XAT-9 and NAT-2-1 are not ids')).toEqual(['AT-003', 'HT-1']);
+  test('a finding names a new checklist row without also naming a longer number', () => {
+    expect(namedByFinding('CHECK-2', 'CHECK-2 needs evidence')).toBe(true);
+    expect(namedByFinding('CHECK-2', 'CHECK-20 needs evidence')).toBe(false);
+  });
+  test('manualTestIds lists new and legacy manual IDs once, sorted', () => {
+    expect(manualTestIds('AT-003, HT-1, JOURNEY-2, HUMAN-3, AT-003 again; XAT-9 and NAT-2-1 are not ids')).toEqual(['AT-003', 'HT-1', 'HUMAN-3', 'JOURNEY-2']);
   });
 
   test('a finding names a row by any of its ids', () => {

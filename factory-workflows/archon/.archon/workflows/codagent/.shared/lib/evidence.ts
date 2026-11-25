@@ -104,7 +104,7 @@ function citesEvidence(cited: readonly string[], evidenceDir: string): boolean {
 export function manualTestIds(text: string): string[] {
   const ids = new Set<string>();
   for (const line of text.split(/\r?\n/)) {
-    for (const match of line.matchAll(/(?<![A-Za-z0-9-])(?:AT|HT)-[0-9]+/g)) ids.add(match[0]);
+    for (const match of line.matchAll(/(?<![A-Za-z0-9-])(?:JOURNEY|HUMAN|AT|HT)-[0-9]+/g)) ids.add(match[0]);
   }
   return [...ids].sort();
 }

@@ -58,7 +58,9 @@ With `--no-worktree` the run works on the target checkout's current branch, whic
 | `review_strategy` | `builtin` | `builtin` reviews before the draft and after each acceptance fix; `none` disables all review. |
 | `acceptance_rounds` | `3` | Most acceptance rounds, from 1 to 10. |
 | `acceptance_fix_scope` | resolve every high-confidence finding | Which findings the implementor resolves in each acceptance fix. |
-| `stop_after` | `finish` | `finish` commits the logs, archives the change, finalizes the pull request and publishes the review package after acceptance; `acceptance` ends the run after the acceptance rounds, with the pull request a draft and the change unarchived, as an eval of the implementation needs. |
+| `review_wait` | `true` | Pause at the review page. Set to `false` to end after publishing. |
+| `archon_url` | empty | Base address for review-page links in the PR description. |
+| `stop_after` | `finish` | `finish` commits the logs, archives the change, finalizes the pull request and publishes the review page after acceptance; `acceptance` ends the run after the acceptance rounds, with the pull request a draft and the change unarchived, as an eval of the implementation needs. |
 
 A project overrides defaults in `.archon/packs/codagent.yaml` under `settings:`:
 
@@ -76,7 +78,7 @@ Review is on by default and adds agent time and cost. Set `review_strategy: none
 
 ### The forge
 
-Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create`, `pr.draft` and `pr.ready` (the draft/ready state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews` and `pr.merge-state`. The one read left on `gh` is the pull request's review threads and conversation comments, a single GraphQL query. Scripts own pull request state and description. The finalize fixer uses `gh api` to reply to comments and resolve fixed threads; replies end with `<!-- codagent-reply -->`. Human comments count even from the pull request author; marked run replies do not. Unfixed top-level human comments remain actionable. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
+Scripts reach the pull request through `archon forge <op> --data-file <file>`, run from the exec layer with the argv Archon publishes in `ARCHON_CLI_COMMAND`. They parse the JSON envelope: `ok: false` and a write's `mutation.outcome` (`refused`, `verification_failed`, `outcome_unknown`) become the failed check's problem text, and a write's answer with an unpersisted audit (exit 2) is a failure too. Authored content, the pull request title and body, goes only in the data file. The operations are `resolve` (the repository behind the branch's git remote), `pr.view` (the open pull request by head branch), `pr.create`, `pr.draft` and `pr.ready` (the draft/ready state), `pr.edit-body`, `checks.state`, `checks.logs`, `pr.reviews` `pr.merge-state` and, when review waits are enabled, `pr.merge`. The one read left on `gh` is the pull request's review threads and conversation comments, a single GraphQL query. Scripts own pull request state and description. The finalize fixer uses `gh api` to reply to comments and resolve fixed threads; replies end with `<!-- codagent-reply -->`. Human comments count even from the pull request author; marked run replies do not. Unfixed top-level human comments remain actionable. Agents still push with `git`, and the tester may read the pull request's comments with `gh pr view --comments` when its judgment needs a fresh look.
 
 The first node after `validate-inputs`, `check-forge`, runs `archon forge check` for the host of the branch's remote with exactly those operations, so a missing plugin or credential refuses the run before any agent spends. It makes no call to the forge itself.
 
@@ -112,7 +114,12 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `archive/state.json`, `archive/before.json`, `archive/specs-before.json`, `archive/local-specs.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
 | `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
 | `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
-| `review-attention.json`, `review-package.md` | package scripts | Checked ranking and published review package. |
+| `review-attention.json`, `review-package.md` | package scripts | Checked ranking and generated PR description block. |
+| `review-page-round-<n>.html`, `review-page.html` | publisher | Each numbered review page and the latest page. |
+| `review/pages.json`, `review/outcome.json` | review scripts | Page index and terminal merge or close outcome. |
+| `review-answers-round-<n>.json`, `review-response-round-<n>.json` | review scripts and implementor | Reviewer's saved answer and the implementor's response. |
+| `acceptance-screenshots/round-<k>/`, `acceptance-journeys/round-<k>.json` | tester | Manifest-listed screenshots and the journeys exercised each acceptance round. |
+| `review/accepted-head.txt`, `review/retested-commits.json`, `review/round-<n>/` | review scripts | Accepted revision, retested commits and prior round results. |
 | `evidence/` | implementor | Saved output each checklist row's evidence names. |
 | `planned-checklist.md`, `evidence-problems.txt` | scripts | The planned checklist, and the evidence check's problem list. |
 | `nodes/audit.md` | Archon | The reviewer's inspection audit findings. |
@@ -124,7 +131,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `pr-title.txt` | open-draft-pr | The pull request title, used only when the pull request does not exist yet. |
 | `pr-body.md` | open-draft-pr | The pull request description, without markers. The publish-draft-pr script adds the markers and puts it in the body. |
 | `pull-request.json` | check-draft-pr script | The branch's open pull request as last checked: url, number, base, draft state and head revision. The tester compares its head with local HEAD. |
-| `review/before-pr.md`, `review/acceptance.md` | review scripts | Latest results for before the draft (including tail) and the latest reviewed acceptance round: ranges, unresolved findings and accepted declines. |
+| `review/before-pr.md`, `review/acceptance.md`, `review/feedback.md` | review scripts | Latest results for before the draft (including tail) and the latest reviewed acceptance round: ranges, unresolved findings and accepted declines. |
 | `review/state.json` | review scripts | All cycles, unique finding IDs, action history, handoffs and last reviewed revision. |
 | `ci/round-<n>.md` | wait-ci script | Each round's CI result, failed-check logs and pull request comments. |
 
@@ -150,7 +157,9 @@ Finalize pushes without force, marks the PR ready, and runs up to three CI/fix c
 
 A fresh reviewer ranks evidence, decisions and disputes. The script enforces red failed/unverified rows and failed steps, and at least orange non-PR disputes and later code commits. One ranking repair precedes deterministic placement. Review first lists the run's state, all red items and up to five orange items; remaining items, evidence and both logs are collapsed below the summary. Human text outside generated-body markers survives.
 
-A run completes with outcome succeeded only when acceptance, archive and finalize pass and the package is published. A published package with any of those failures means needs attention and outcome failed. Pre-PR blockers, exhausted ordinary checks or inability to publish the package fail the run. Blocked acceptance fixes and exhausted acceptance-push repairs end the rounds and proceed to the package; other earlier exhausted checks remain fatal. Only a person merges. Because archive precedes human review, requested changes afterwards edit the main OpenSpec specs.
+With the review wait on, the run publishes a page and retains its worktree until the reviewer answers. Feedback starts another round. Merge succeeds only at the reviewed head after archive and finalize passed. With the wait off, the run succeeds when acceptance, archive and finalize pass and the page is written. A page with failures says the run needs attention. Pre-page blockers or an unwritable page fail the run. After archive, an approved targeted spec edit goes into the main OpenSpec specs.
+
+Review pages use relative screenshot paths and can be opened from a copy of the artifacts. Sending from the page requires the Archon fork's page-enabled attention wait, an Archon server without web login or a configured web UI origin, and a running host to continue the answer. The Archon CLI and UI can answer the same wait. Install cloc on the host to show code counts by language.
 
 ## Tests
 

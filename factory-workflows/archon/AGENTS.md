@@ -50,5 +50,5 @@ No test or fixture may read these files, quote them, or check that a node's reso
 - The inspection audit runs on `@reviewer` with a large fallback; code review and ranking use reviewer/medium and completion judgment uses tester/medium.
 - Keep completion verdict limits and progress checks independent of the judge. Preserve report-mode continuation from the end of acceptance through archive and finalize to the package; earlier checks keep their fatal defaults.
 - Commit the decision and dispute logs before archive; later agent entries belong to the committed current change folder. Preserve unrelated index and worktree changes during archive commits.
-- PR state and description mutations use the forge. The finalize fixer may reply/resolve comment threads with gh; mark every reply with `<!-- codagent-reply -->`. Never merge.
+- PR state and description mutations use the forge. The finalize fixer may reply/resolve comment threads with gh; mark every reply with `<!-- codagent-reply -->`. Merge only on the reviewer’s current-page merge answer and only at the reviewed head when archive and finalize passed.
 - Ranking requirements are inventoried independently of the ranking agent. Preserve external PR text and verify the published generated body by reading it back.

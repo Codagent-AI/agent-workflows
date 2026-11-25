@@ -28,7 +28,9 @@ Then write `<evidence-directory>/acceptance-handoff.md`:
    provenance line; give the reason for each item that could not be run.
 4. **CI**: status and durable links. Say plainly when no automated-validation evidence was supplied.
 5. **Visual and client evidence**: screenshot metadata, text equivalents, and practical review steps.
-6. **Human-only obligations**: applicable `HT-*` items as instructions, with no execution outcome.
+Keep the ACCEPT codes from the findings and the JOURNEY codes from the journey files when citing them. Keep the original codes when citing a legacy test plan.
+
+6. **Human-only obligations**: applicable `HUMAN-*` (or legacy human-only codes) items as instructions, with no execution outcome.
 7. **Assumptions**: the ledger path, then each unresolved decision named by its ledger heading with its
    options and consequence, each material limitation the ledger, findings, or log record, and each risky
    or notable assumption in the implementation session report (`$ARTIFACTS_DIR/session-report.md`), if it exists. A count or a

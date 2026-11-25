@@ -1,3 +1,4 @@
+import { mergeBase, finishMerge } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { checkForgeAccess } from '../.archon/workflows/codagent/.shared/lib/forge.ts';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { join } from 'node:path';
@@ -105,4 +106,79 @@ test('INT-010 final diagnostics name every simultaneous blocker',()=>{
   result.blockingReviews=[{login:'alice',state:'CHANGES_REQUESTED',body:'fix'}];result.mergeable='conflict';
   result.comments={hasComments:true,unresolvedThreads:[],deferredThreads:[],issueComments:[{author:'bob',body:'fix'}],informationalBotComments:[]};
   expect(finalizeProblems(result,box.head())).toEqual(['forge permission denied','CI report does not cover the final head','failed check: lint','pending check: build','blocking review: alice','merge state: conflict','review comments remain actionable','final CI status: failed']);
+});
+
+function withMovedTips(conflict: boolean) {
+  const api = box.forgeTools([rule(['forge', 'pr.view'], ok('pr.view', prView({ base: 'release', head: 'feature' })))]);
+  const number = 7;
+  const ref = { repo: { host: 'github.com', path: 'owner/repo' }, number };
+  box.write('artifacts/review/pages.json', JSON.stringify([{ ref }]));
+  box.git('push', 'origin', 'feature:feature', 'feature:release');
+  box.git('checkout', '-qb', 'outside');
+  box.write('remote-change.txt', 'concurrent push');
+  box.git('add', 'remote-change.txt');
+  const remote = box.commit('remote PR commit');
+  box.git('push', 'origin', 'outside:feature');
+  box.git('checkout', 'feature');
+  if (conflict) box.commitFix('ours');
+  box.git('checkout', '-qb', 'release', 'origin/release');
+  if (conflict) box.commitFix('theirs');
+  else {
+    box.write('release-change.txt', 'base update');
+    box.git('add', 'release-change.txt');
+    box.commit('base update');
+  }
+  const base = box.head();
+  box.git('push', 'origin', 'release');
+  box.git('checkout', 'feature');
+  return { api, base, remote, dir: box.path('artifacts') };
+}
+
+test('INT-008 merges the forge base and moved remote head with idempotent retry', () => {
+  const { api, base, remote, dir } = withMovedTips(false);
+  expect(mergeBase(api, dir)).toMatchObject({ ok: true, conflict: false });
+  expect(box.exec('git', ['merge-base', '--is-ancestor', base, 'HEAD']).status).toBe(0);
+  expect(box.exec('git', ['merge-base', '--is-ancestor', remote, 'HEAD']).status).toBe(0);
+  expect(box.git('show', '-s', '--format=%P', 'HEAD').split(' ')).toHaveLength(2);
+  const head = box.head();
+  expect(mergeBase(api, dir)).toMatchObject({ ok: true });
+  expect(box.head()).toBe(head);
+});
+
+test('INT-008 hands off a conflict, aborts it into a clean worktree, and records the reason', () => {
+  const { api, dir } = withMovedTips(true);
+  expect(mergeBase(api, dir)).toMatchObject({ ok: false, conflict: true });
+  expect(box.exec('git', ['rev-parse', '--verify', 'MERGE_HEAD']).status).toBe(0);
+  expect(finishMerge(box.exec, dir, true, 'A person must choose behavior.').ok).toBe(false);
+  expect(box.exec('git', ['rev-parse', '--verify', 'MERGE_HEAD']).status).not.toBe(0);
+  expect(box.git('status', '--porcelain', '--untracked-files=no')).toBe('');
+  expect(box.read('artifacts/review/merge-conflicts.md')).toBe('A person must choose behavior.');
+  expect(JSON.parse(box.read('artifacts/step-results.json'))['merge-base'].ok).toBe(false);
+});
+
+test('INT-007 finish entry point resumes a saved feedback response and reports terminal outcomes', () => {
+  const sha = box.head();
+  const ref = { repo: { host: 'github.com', path: 'owner/repo' }, number: 7 };
+  box.forgeTools([rule(['forge', 'pr.view'], ok('pr.view', prView()))]);
+  box.write('artifacts/review/accepted-head.txt', sha);
+  box.write('artifacts/review/pages.json', JSON.stringify([{ round: 1, head: sha, file: 'review-page-round-1.html', status: 'current', ref }]));
+  const html = '<script type="application/json" id="sent-answers">null</script>';
+  box.write('artifacts/review-page-round-1.html', html);
+  box.write('artifacts/review-page.html', html);
+  const script = join(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const run = (op: string, answer = '') => {
+    const response = Bun.spawnSync([process.execPath, script], { cwd: box.dir, env: {
+      ...process.env, ARTIFACTS_DIR: box.path('artifacts'), ARCHON_CLI_COMMAND: JSON.stringify([join(box.binDir, 'archon')]),
+      INPUTS_OP: op, INPUTS_CHANGE_FOLDER: 'openspec/changes/fixture', INPUTS_ANSWER: answer,
+    } });
+    expect(response.exitCode).toBe(0);
+    return JSON.parse(response.stdout.toString());
+  };
+  expect(run('start-round', 'One note')).toMatchObject({ mode: 'feedback', round: 2, archive_needed: true });
+  expect(JSON.parse(box.read('artifacts/review-answers-round-1.json')).note).toBe('One note');
+  expect(run('start-round')).toMatchObject({ mode: 'feedback', round: 2 });
+  for (const mode of ['merged', 'closed']) {
+    box.write('artifacts/review/outcome.json', JSON.stringify({ mode }));
+    expect(run('end-run').succeeded).toBe(mode === 'merged');
+  }
 });

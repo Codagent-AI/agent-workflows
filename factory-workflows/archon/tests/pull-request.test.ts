@@ -393,7 +393,7 @@ describe('forge.ts', () => {
       for (const match of readFileSync(join(lib, file), 'utf8').matchAll(/OPS\.(\w+)/g)) named.add(match[1]);
     }
     expect([...named].sort()).toEqual(Object.keys(OPS).sort());
-    expect(new Set(FORGE_OPERATIONS).size).toBe(Object.keys(OPS).length);
+    expect(new Set(FORGE_OPERATIONS)).toEqual(new Set(Object.values(OPS).filter(op => op !== OPS.merge)));
   });
 
   test.each([
@@ -463,4 +463,23 @@ describe('forge.ts', () => {
       expect(checkForgeAccess(box.exec, cliEnv()).problems).toContain("cannot read a host from the git remote 'origin'");
     });
   });
+});
+
+test.each([true, false])('INT-007 checks merge capability only when the review wait is %s', wait => {
+  const repo = createSandbox();
+  try {
+    const response = wait ? failed('unsupported_op', 'missing pr.merge') :
+      ok('check', { plugin: { name: 'test-plugin', version: '1.0.0' }, credentialSource: 'test' });
+    repo.forgeTools([rule(['forge', 'check'], response)]);
+    repo.git('remote', 'set-url', 'origin', 'git@github.com:owner/repo.git');
+    const env = { ARCHON_CLI_COMMAND: JSON.stringify([join(repo.binDir, 'archon')]) };
+    const result = checkForgeAccess(repo.exec, env, wait);
+    expect(result.ok).toBe(!wait);
+    const operations = JSON.parse(repo.calls('archon')[0].files.data).operations as string[];
+    expect(operations.includes('pr.merge')).toBe(wait);
+    if (wait) expect(result.problems).toContain('pr.merge');
+    else expect(result.message).toContain('test-plugin 1.0.0 serves github.com, credential from test');
+  } finally {
+    repo.dispose();
+  }
 });

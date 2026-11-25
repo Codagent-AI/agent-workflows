@@ -1,5 +1,5 @@
 // Finding IDs, transitions and bounded debate are owned by the workflow, never by agents.
-export type Place = 'before-pr' | 'acceptance';
+export type Place = 'before-pr' | 'acceptance' | 'feedback';
 export type FindingState = 'open' | 'fixed' | 'declined' | 'contested' | 'replied' | 'closed' | 'disputed';
 export interface Defect {
   title: string;
@@ -62,7 +62,7 @@ export const findingText = (state: ReviewState): string => activeFindings(state)
 export function addFindings(state: ReviewState, defects: Defect[]): void {
   currentCycle(state);
   for (const defect of defects) {
-    state.findings.push({ ...defect, id: `R${String(state.next_id++)}`, cycle: state.current,
+    state.findings.push({ ...defect, id: `REVIEW-${String(state.next_id++)}`, cycle: state.current,
       state: 'open', contested: false, handed_off: false, accepted_decline: false, history: [] });
   }
 }
@@ -137,14 +137,13 @@ export function renderResult(state: ReviewState): string {
 export function handoffSection(state: ReviewState, finding: Finding): string {
   const cycle = state.cycles[finding.cycle];
   if (!cycle) throw new Error(`missing cycle for ${finding.id}`);
-  const place = cycle.place === 'acceptance' ? `acceptance round ${String(cycle.round)}` : 'before the pull request';
+  const place = cycle.place === 'before-pr' ? 'before the pull request' : `${cycle.place} round ${String(cycle.round)}`;
   const declined = finding.history.filter(h => h.action === 'declined' || h.action === 'replied')
     .map(h => h.note).join('; ');
   const ruling = declined ? `Declined to fix: ${declined}` : 'None: the finding was still open when the fix rounds stopped.';
   const accepted = finding.accepted_decline ? ' The reviewer accepted it.' : '';
   const history = finding.history.map(h => `${h.actor} ${h.action}: ${h.note}`).join('; ');
-  const pending = finding.accepted_decline ? 'None, unless you disagree with the decline.' : 'Whether to fix it before accepting the change.';
-  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Is this a defect that must be fixed before the change is accepted? ${finding.problem} (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Step: ${place} review handoff.\n- Decision: ${ruling}${accepted}\n- Alternatives: fix or leave the finding open.\n- What breaks if wrong: ${finding.problem}\n- Rationale: ${finding.problem}; suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n- Pending decision: ${pending}\n`;
+  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Is this a defect that must be fixed before the change is accepted? ${finding.problem} (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Step: ${place} review handoff.\n- Decision: ${ruling}${accepted}\n- Alternatives: fix or leave the finding open.\n- What breaks if wrong: ${finding.problem}\n- Rationale: ${finding.problem}; suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n`;
 }
 export function handoff(state: ReviewState, ledger: string, decisions?: boolean): string {
   const selected = state.findings.filter(f => !f.handed_off && f.severity !== 'low' && (decisions === undefined || f.accepted_decline === decisions) &&
@@ -153,4 +152,15 @@ export function handoff(state: ReviewState, ledger: string, decisions?: boolean)
   const sections = selected.map(f => handoffSection(state, f)).join('\n');
   for (const finding of selected) finding.handed_off = true;
   return `${ledger.replace(/^No unresolved assumptions or context gaps\.\s*$/gm, '').trim()}\n\n${sections}`.trimStart();
+}
+
+export function reopenRequested(state: ReviewState, text: string): void {
+  const requested = new Set(text.match(/\b(?:REVIEW-\d+|R\d+)\b/g) ?? []);
+  for (const finding of state.findings) {
+    if (!(requested.has(finding.id) && finding.handed_off)) continue;
+    finding.cycle = state.current;
+    finding.state = 'fixed';
+    finding.handed_off = false;
+    finding.accepted_decline = false;
+  }
 }

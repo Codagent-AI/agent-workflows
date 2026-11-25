@@ -7,8 +7,8 @@ spec describes, including its error, failure, and cleanup cases, say how you wil
 automated test (unit, integration, or end-to-end), a scripted command whose exit code or output
 decides the result (such as a build, lint, or verify script), or inspection of the code or files.
 Never plan a check in which an agent operates the product as a user would; that testing happens
-once, in acceptance testing after implementation. Do not cite the test plan's acceptance (`AT-`) or
-human-only (`HT-`) tests as a check, and add no rows for them. Several behaviors may share one
+once, in acceptance testing after implementation. Do not cite the test plan's acceptance (`JOURNEY-` or legacy `AT-`) or
+human-only (`HUMAN-` or legacy `HT-`) tests as a check, and add no rows for them. Several behaviors may share one
 check. Choose the fastest check that would fail if the behavior broke: inspection or a unit or
 component test where one can show it, and an integration or end-to-end test only where the
 behavior exists only across processes, a real browser, or the built product. Plan no integration or
@@ -18,7 +18,7 @@ you were asked to, or else as `checklist.md` beside the change's spec, in one ta
 
 | ID | Behavior | Spec reference | How to verify |
 |---|---|---|---|
-| 1 | An unknown route shows the not-found page | specs/routing.md, "Unknown route" | Router unit test |
+| CHECK-1 | An unknown route shows the not-found page | specs/routing.md, "Unknown route" | Router unit test |
 
 ## Recording evidence
 
@@ -31,7 +31,7 @@ After building, add the columns Code, Evidence, and Status.
   `verified`, `failed`, or `not verified`, and nothing else. For `failed`, Evidence says what
   fails; for `not verified`, it says why you could not run the check.
 - Never mark a behavior verified unless you ran its check.
-- Mention no acceptance (`AT-`) or human-only (`HT-`) test ID anywhere in the checklist, not even to
+- Mention no acceptance (`JOURNEY-` or legacy `AT-`) or human-only (`HUMAN-` or legacy `HT-`) test ID anywhere in the checklist, not even to
   say a behavior is left to acceptance testing.
 - Evidence can come from the one broader test run and from targeted runs of single tests; never
   rerun a whole suite only to refresh evidence.

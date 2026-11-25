@@ -67,24 +67,15 @@ In Claude Code, run it as a background Bash command; you are notified when it ex
 
 It keeps waiting while the run is pending, running, or parked on a provider usage limit, and costs no model time. It stops when the run ends, pauses for an answer, loses its owner, has a tool call silent for 30 minutes (`--stall-minutes`), or the wait fails three times. Default ceiling is 24 hours (`--max-hours`, exit 2). Its last lines give the status, authored outcome, reason and artifacts directory. It needs `archon` and `jq` on PATH.
 
-## 4. When it stops
+## 4. Review page and run outcome
 
-Read the script's output, then the run and its artifacts as the `archon-cli` skill describes (`operate/managing-runs.md`, "Judging a finished run"), passing `--cwd <main>`. The pack's artifacts: `review-package.md` (the PR's "Review first" section and what follows it), `step-results.json`, `pull-request.json`, `acceptance-handoff.md`, `acceptance-preparation-status.txt`, `decision-log.md`, `dispute-log.md`, `implementation-blocked.md`.
+When the run pauses with an attention message beginning `Review round <n>:`, give the user the latest page URL, `<archon address>/api/artifacts/<run id>/review-page.html`. Use the address of the Archon server serving this run. If it is unavailable, give the run ID and file name so the user can open the artifact from Archon's UI or copy the run artifacts. Advise the user that the page sends feedback or merges, and the same wait can take a plain-text note or `merge` from Archon's CLI or UI. Leave the answer to the user. Follow the same run after the answer and give the user the same latest URL if it pauses again.
 
-By default (`stop_after: finish`) a run that gets through acceptance goes on, even when acceptance failed: it commits the decision and dispute logs, archives the change on the branch, marks the PR ready, waits for CI and fixes failures and comments (up to three cycles), then writes the review package into the PR description. A run launched with `--input stop_after=acceptance` ends after the acceptance rounds and the recheck instead, with a draft PR, the change unarchived and no package; its outcome is succeeded exactly when acceptance converged.
+Check that the host which continues an answered run has bun, the forge and provider logins, and cloc for the optional size count. A continuation needs `archon serve` or `archon workflow wake`. If the page reports it cannot send, the CLI or UI can answer the wait.
 
-Tell the user how the run ended in one line, as a push notification too if your CLI can send one (Claude Code's `PushNotification` tool). Then report:
+For an existing change or PR, use the Archon CLI skill to list runs in the target repository and inspect the most recent runs of `codagent-implement-change`. Match the run's change input or the PR number and repository in its `pull-request.json` artifact. Verify it has `review-page.html` and give its fixed URL. Use the numbered page links in the PR if helpful to locate the run.
 
-| Run | Meaning | Report |
-| --- | --- | --- |
-| `completed`, outcome `succeeded` | Acceptance converged, the change is archived, finalize passed, and the package is published. | The PR (title and URL), now ready for review, and its "Review first" red and orange items. |
-| `completed`, outcome `failed` | Needs attention: the package is published, but acceptance, the archive or finalize failed. This is a result, not a failure to fix. | The PR, the package's state line, and its red items: what failed and blocks the merge. |
-| `completed` with `stop_after=acceptance` | Acceptance converged (`succeeded`) or not (`failed`). | The draft PR, the handoff's summary and what it says is open, and the decision log's entries. |
-| `failed` | A node failed. | Investigate (section 5) before reporting. |
-| `paused` for an answer | A gate or attention wait needs a decision. | Put the question to the user, one question at a time, with your CLI's question tool if it has one. Answer only with their decision, using the `occurrence` from the wait result. |
-| `cancelled`, `owner_lost`, stalled | Something outside the pack stopped it. | Investigate (section 5). |
-
-Lead with what needs the user. Keep it short.
+With `stop_after: acceptance`, report whether acceptance converged and the draft PR, and summarize any open findings from the handoff. With `review_wait: false`, report the outcome, PR and review page. On merge or external close, report the final state and the PR URL. Investigate any failed, lost or stalled run as described below.
 
 ## 5. A failed or stuck run
 
@@ -97,7 +88,7 @@ Find the cause before changing anything. For the run itself (its reason, the fai
 Then act by cause:
 
 - **Environment or transient** (network, provider outage, a provider's login expired, `gh` auth, a missing tool such as `openspec`, a crashed process, a stall that `end-turn` can recover): fix what you can without secrets. For a login, ask the user to run it themselves (in Claude Code, `! codex login`, for example); never read or copy credential files. Then `archon workflow resume <runId> --cwd <main> --detach --json` and go back to step 3. Resume at most twice for the same cause; after that, report.
-- **A human question** (`REPAIR_BLOCKED`, `implementation-blocked.md`, a paused attention wait): put it to the user. Never answer it yourself. Ask the user how to proceed once they have answered; the pack has no input for a late answer, so it usually means updating the change and starting a new run.
+- **A human question** (`REPAIR_BLOCKED`, `implementation-blocked.md`, an attention wait other than the review page): put it to the user. Never answer it yourself. Ask the user how to proceed once they have answered; the pack has no input for a late answer, so it usually means updating the change and starting a new run.
 - **The change's own work did not converge** (a strict recheck still failing after its repairs, the evidence repairs exhausted): report the problems. Do not edit or push the implementation branch yourself unless the user asks.
 - **A pack defect** (a script or workflow bug in agent-workflows) or an **Archon defect**: describe the cause with the evidence and ask the user before fixing. Offer to file an issue on the repository that owns it.
   - An Archon fix reaches a resume when `archon` runs from a source checkout.

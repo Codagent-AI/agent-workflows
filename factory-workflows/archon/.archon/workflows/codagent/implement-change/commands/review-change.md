@@ -114,6 +114,9 @@ Review only the changed code in $INPUTS.files for $INPUTS.place. The range start
 
 Already handed-off findings (title, file, line):
 $INPUTS.handed_off
-Do not report them again unless the new changes make them worse.
+Do not check or report them again. In a feedback cycle, verify the separately listed finding fixes the reviewer asked for. Use first-parent commits for feedback. For merges, inspect the conflict resolutions with git show --remerge-diff and exclude imported base commits. Return a verdict for each requested fix using its existing ID.
 
-Return JSON only: {"verdicts":[],"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Leave `verdicts` empty; it is for re-reviews. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.
+Requested finding fixes, empty outside feedback:
+$INPUTS.requested
+
+Return JSON only: {"verdicts":[],"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Leave `verdicts` empty unless this feedback review has requested finding fixes. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.

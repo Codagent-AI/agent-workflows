@@ -1,0 +1,89 @@
+validate-inputs: {"change_dir":"tests/data/changes/valid-change","artifact_validation_instruction":"Validate any changed spec artifact.","rounds":3,"review":true,"finish":true}
+check-forge: "forge ready"
+check-definition__validate-definition: {"ok":true,"problems":""}
+check-definition__verify-definition: {"ok":true,"problems":""}
+commit-definition__commit-definition: {"ok":true,"problems":"","message":"definition committed"}
+commit-definition__check-clean-before-implementation: "no tracked changes"
+implementor-checklist: {"blocked":false,"reason":"","actions":[]}
+check-implementor-checklist-not-blocked: "not blocked"
+check-implementor-checklist: "checklist committed"
+verify-checklist: {"ok":true,"problems":""}
+implement: {"blocked":false,"reason":"","actions":[]}
+audit: "No findings."
+resolve-findings: {"blocked":false,"reason":"","actions":[]}
+check-findings-not-blocked: "not blocked"
+recheck-evidence: {"ok":true,"problems":""}
+check-clean: {"ok":true,"problems":""}
+verify-implementation-commits: {"ok":true,"problems":""}
+session-report: {"blocked":false,"reason":"","actions":[]}
+reset-round-evidence: {"round":0,"last":false}
+acceptance-test: {"ready":true,"reason":""}
+wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
+acceptance-handoff: {"ready":true,"reason":""}
+acceptance-gate: {"ready":true,"fix":false,"reasons":""}
+check-acceptance-progress: {"progressed":true,"push":false}
+verify-clean-for-pr: {"ok":true,"problems":""}
+open-draft-pr: {"blocked":false,"reason":""}
+publish-draft-pr: {"ok":true,"problems":""}
+verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
+write-acceptance-status: {"ready":true,"status":"ACCEPTANCE_COMPLETE","message":"acceptance preparation complete"}
+list-unverified: {"rows":""}
+prepare-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
+review-change: {"verdicts":[],"findings":[]}
+record-review: {"settled":true,"findings":""}
+hand-off-review: {"ok":true}
+prepare-tail-review: {"needed":false,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
+save-implementor-response: "saved"
+check-completion: {"complete":true,"judge":false,"iteration":1,"start":"1111111111111111111111111111111111111111"}
+check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
+record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-change"}
+finalize-push: {"ok":true,"problems":""}
+mark-ready: {"ok":true,"problems":""}
+wait-finalize-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":""}
+final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
+record-finalize: {"ok":true,"problems":""}
+prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
+rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed","keyEvidence":[]}
+check-ranking: {"ok":true,"problems":""}
+start-round: {"round":2,"mode":"feedback","reason":"","change_folder":"openspec/changes/archive/2026-11-16-valid-change","archive_needed":false,"retest":false,"journeys":"[]","answers_file":"fixture-saved-answers.json","review_head":"2222222222222222222222222222222222222222","work":true,"publish":true}
+publish-review-package: {"succeeded":true,"page":"review-page-round-2.html","message":"Review round 2: fixture"}
+end-ci-cycle: {"done":true,"fix":false,"cycle":1}
+merge-base: {"ok":false,"problems":"fixture failure","conflict":true}
+address-feedback: {"blocked":false,"reason":"","actions":[]}
+check-response: {"ok":true,"problems":""}
+push-round: {"ok":true,"problems":""}
+resolve-merge: {"blocked":false,"reason":"","actions":[]}
+finish-merge: {"ok":true,"problems":""}
+prepare-feedback-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
+feedback-review: {"verdicts":[],"findings":[]}
+record-feedback-review: {"settled":false,"findings":"REVIEW-1"}
+fix-feedback-findings: {"blocked":false,"reason":"","actions":[]}
+record-feedback-fixes: {"blocked":false,"start":"2222222222222222222222222222222222222222","end":"2222222222222222222222222222222222222222","findings":"REVIEW-1"}
+feedback-re-review: {"verdicts":[],"findings":[]}
+end-feedback-review: {"stop":true,"findings":""}
+hand-off-feedback-review: {"ok":true}
+fixture:
+  expect: paused
+  reached:
+    - start-round
+    - merge-base
+    - address-feedback
+    - check-response
+    - push-round
+    - record-archive
+    - finalize-push
+    - final-ci
+    - record-finalize
+    - rank-review
+    - publish-review-package
+    - resolve-merge
+    - finish-merge
+    - prepare-feedback-review
+    - feedback-review
+    - fix-feedback-findings
+    - feedback-re-review
+    - hand-off-feedback-review
+  inputs:
+    change_name: valid-change
+    review_strategy: builtin
