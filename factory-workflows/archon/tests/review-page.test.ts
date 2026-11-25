@@ -4,7 +4,7 @@ import { disputeQuestion } from '../.archon/workflows/codagent/.shared/lib/revie
 import { expect, test } from 'bun:test';
 import { renameSync, mkdirSync } from 'node:fs';
 import { rankingForPublication } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
-import { feedbackFiles } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { feedbackScope } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
 import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
@@ -227,7 +227,7 @@ test('clean PR-head imports reach the late inventory and feedback files without 
     box.git('merge', '--no-ff', '--no-edit', 'base-tip');
     box.write('artifacts/review/merge-targets.json', '["pr-head","base-tip"]');
     expect(inventory(input).later_commits.map(item => item.source[0])).toEqual([pushed]);
-    expect(feedbackFiles(box.exec, input.dir, input.start, 'HEAD')).toBe('pr-fix.txt');
+    expect(feedbackScope(box.exec, input.dir, input.start, 'HEAD')).toEqual({ files: 'pr-fix.txt', revisions: pushed });
   } finally {
     box.dispose();
   }
@@ -319,6 +319,27 @@ test('accepted head uses the saved, ready, tested, and recorded PR revisions in 
     expect(acceptedHead(input)).toBe(head);
     box.write('artifacts/pull-request.json', JSON.stringify({ head_revision: 'missing' }));
     expect(() => acceptedHead(input)).toThrow('accepted revision is missing or invalid');
+  } finally {
+    box.dispose();
+  }
+});
+
+test('missing screenshot manifests are reported only when a round contains a supported image', () => {
+  const box = createSandbox();
+  try {
+    const { dir } = rankingFixture(box);
+    const root = 'artifacts/acceptance-screenshots';
+    mkdirSync(box.path(`${root}/round-1`), { recursive: true });
+    box.write(`${root}/round-2/notes.txt`, 'No screenshots taken');
+    expect(failedItems(dir)).toEqual([]);
+
+    box.write(`${root}/round-3/capture.JPEG`, 'image');
+    const failures = failedItems(dir);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].source).toEqual(['failure:review-media']);
+    expect(failures[0].detail).toContain('round-3/manifest.json');
+    expect(failures[0].detail).not.toContain('round-1/manifest.json');
+    expect(failures[0].detail).not.toContain('round-2/manifest.json');
   } finally {
     box.dispose();
   }

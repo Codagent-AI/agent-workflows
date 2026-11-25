@@ -2,7 +2,7 @@ import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { join } from 'node:path';
 import { readJson, readText } from '../../.shared/lib/run-files.ts';
 import { responsePath } from '../../.shared/lib/review-round.ts';
-import { feedbackFiles } from '../../.shared/lib/review-revisions.ts';
+import { feedbackScope } from '../../.shared/lib/review-revisions.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
 import { checkoutStart } from '../../.shared/lib/checkout.ts';
 import { git, head, readState, saveState, script } from '../../.shared/lib/review-files.ts';
@@ -29,10 +29,10 @@ function requestedFixes(path: string, folder: string, dir: string): string {
   return [...codes, ...sections, ...requested].join('\n');
 }
 
-function reviewFiles(mode: string, dir: string, range: { start: string; end: string; changeDir: string }): string {
-  if (mode === 'feedback') return feedbackFiles(runCommand, dir, range.start, range.end);
+function reviewScope(mode: string, dir: string, range: { start: string; end: string; changeDir: string }) {
+  if (mode === 'feedback') return feedbackScope(runCommand, dir, range.start, range.end);
   const diff = mode === 'acceptance' ? range.start : `${range.start}..${range.end}`;
-  return git(['diff', '--name-only', diff, '--', '.', `:(exclude)${range.changeDir}`]);
+  return { files: git(['diff', '--name-only', diff, '--', '.', `:(exclude)${range.changeDir}`]) };
 }
 
 function verifyStart(start: string): void {
@@ -50,7 +50,7 @@ script(() => {
   if (!start) throw new Error('prepare-review: the start revision is empty');
   verifyStart(start);
   const end = head();
-  const files = reviewFiles(mode, dir, { start, end, changeDir });
+  const scope = reviewScope(mode, dir, { start, end, changeDir });
   if (mode !== 'tail' || start !== end) {
     startCycle(state, { place, start, end, round: Number(process.env.INPUTS_ROUND ?? '0') });
     if (mode === 'feedback') {
@@ -58,7 +58,7 @@ script(() => {
     }
     saveState(dir, state);
   }
-  const needed = mode === 'tail' ? start !== end : files !== '' || activeFindings(state).length > 0;
-  return { needed, start, end, files,
+  const needed = mode === 'tail' ? start !== end : scope.files !== '' || activeFindings(state).length > 0;
+  return { needed, start, end, ...scope,
     findings: findingText(state), handed_off: handedOff(state) };
 });

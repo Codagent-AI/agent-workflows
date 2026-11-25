@@ -53,7 +53,7 @@ merge-base: {"ok":true,"problems":"","conflict":false}
 address-feedback: {"blocked":false,"reason":"","actions":[]}
 check-response: {"ok":true,"problems":""}
 push-round: {"ok":true,"problems":""}
-prepare-feedback-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","findings":"","handed_off":""}
+prepare-feedback-review: {"needed":true,"start":"1111111111111111111111111111111111111111","end":"2222222222222222222222222222222222222222","files":"src/config.ts","revisions":"2222222222222222222222222222222222222222","findings":"","handed_off":""}
 feedback-review: {"verdicts":[],"findings":[]}
 record-feedback-review: {"settled":false,"findings":"REVIEW-1"}
 fix-feedback-findings: {"blocked":false,"reason":"","actions":[]}

@@ -110,11 +110,14 @@ This format structures your thinking — it is not a gate. If you cannot complet
 
 # Review task
 
-Review only the changed code in $INPUTS.files for $INPUTS.place. The range starts at $INPUTS.start and ends at $INPUTS.end. For acceptance's first review, diff the start revision against the working tree, including tracked uncommitted changes; otherwise diff start..end. Exclude `$INPUTS.change_dir/` throughout. Do not repeat the inspection audit against the definition or checklist, and do not review style. Inspect only: change no file, commit, branch or worktree state. Do not run tests or Agent Validator.
+Review only the changed code in $INPUTS.files for $INPUTS.place. The range starts at $INPUTS.start and ends at $INPUTS.end. For acceptance's first review, diff the start revision against the working tree, including tracked uncommitted changes; for before-PR diff start..end. For feedback, inspect the supplied revisions individually. Use `git show <sha>` for ordinary commits and `git show --remerge-diff <sha>` for merge resolutions. The list includes commits imported from the PR head and excludes imported base commits. An empty list means there are no product revisions to inspect. Exclude `$INPUTS.change_dir/` throughout. Do not repeat the inspection audit against the definition or checklist, and do not review style. Inspect only: change no file, commit, branch or worktree state. Do not run tests or Agent Validator.
+
+Feedback revisions, empty outside feedback:
+$INPUTS.feedback_revisions
 
 Already handed-off findings (title, file, line):
 $INPUTS.handed_off
-Do not check or report them again. In a feedback cycle, verify the separately listed finding fixes the reviewer asked for. Use first-parent commits for feedback. For merges, inspect the conflict resolutions with git show --remerge-diff and exclude imported base commits. Return a verdict for each requested fix using its existing ID.
+Do not check or report them again. In a feedback cycle, verify the separately listed finding fixes the reviewer asked for. Return a verdict for each requested fix using its existing ID.
 
 Requested finding fixes, empty outside feedback:
 $INPUTS.requested

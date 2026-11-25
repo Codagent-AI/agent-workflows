@@ -28,10 +28,15 @@ export function reviewRevisions(exec: Exec, dir: string, start: string, end: str
   return [...commits];
 }
 
-export function feedbackFiles(exec: Exec, dir: string, start: string, end: string): string {
-  const files = reviewRevisions(exec, dir, start, end).flatMap(sha => {
+export function feedbackScope(exec: Exec, dir: string, start: string, end: string) {
+  const files = new Set<string>();
+  const revisions: string[] = [];
+  for (const sha of reviewRevisions(exec, dir, start, end)) {
     const flags = commitParents(exec, sha).length > 1 ? ['--remerge-diff'] : [];
-    return gitOutput(exec, ['show', ...flags, '--format=', '--name-only', sha, '--', '.', ':(exclude)openspec/']).split('\n').filter(Boolean);
-  });
-  return [...new Set(files)].join('\n');
+    const changed = gitOutput(exec, ['show', ...flags, '--format=', '--name-only', sha, '--', '.', ':(exclude)openspec/']);
+    if (!changed) continue;
+    revisions.push(sha);
+    for (const file of changed.split('\n')) files.add(file);
+  }
+  return { files: [...files].join('\n'), revisions: revisions.join('\n') };
 }

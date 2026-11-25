@@ -426,6 +426,7 @@ nodes:
         start: { type: string }
         end: { type: string }
         files: { type: string }
+        revisions: { type: string }
         findings: { type: string }
         handed_off: { type: string }
       required: [needed, start, end, files, findings, handed_off]
@@ -441,6 +442,7 @@ nodes:
     with: &before-review-command
       place: before-pr
       requested: ""
+      feedback_revisions: ""
       change_dir: $validate-inputs.output.change_dir
       start: $prepare-review.output.start
       end: $prepare-review.output.end
@@ -903,6 +905,7 @@ nodes:
           with:
             place: acceptance
             requested: ""
+            feedback_revisions: ""
             change_dir: $validate-inputs.output.change_dir
             start: $prepare-round-review.output.start
             end: $prepare-round-review.output.end
@@ -1201,6 +1204,7 @@ nodes:
         with:
           place: feedback
           requested: $prepare-feedback-review.output.findings
+          feedback_revisions: $prepare-feedback-review.output.revisions
           change_dir: $start-round.output.change_folder
           start: $prepare-feedback-review.output.start
           end: $prepare-feedback-review.output.end

@@ -26,12 +26,22 @@ function manifestEntries<T>(path: string, fields: (keyof T)[], problems: Manifes
   }
 }
 
+const screenshotExtension = /^[^\\]+\.(png|jpe?g|gif|webp)$/i;
+
+function containsScreenshots(folder: string): boolean {
+  return readdirSync(folder, { withFileTypes: true }).some(entry => !entry.isDirectory() && screenshotExtension.test(entry.name));
+}
+
 export function screenshots(dir: string, problems: ManifestProblem[] = []): Screenshot[] {
   const root = join(dir, 'acceptance-screenshots');
   if (!existsSync(root)) return [];
-  return readdirSync(root).filter(name => /^round-\d+$/.test(name)).sort((a, b) => Number(a.slice(6)) - Number(b.slice(6))).flatMap(name => {
-    const entries = manifestEntries<Omit<Screenshot, 'round'>>(join(root, name, 'manifest.json'), ['file', 'title', 'shows', 'revision', 'alt'], problems);
-    return entries.filter(entry => basename(entry.file) === entry.file && /^[^\\]+\.(png|jpe?g|gif|webp)$/i.test(entry.file) && existsSync(join(root, name, entry.file)))
+  const rounds = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory() && /^round-\d+$/.test(entry.name));
+  return rounds.map(entry => entry.name).sort((a, b) => Number(a.slice(6)) - Number(b.slice(6))).flatMap(name => {
+    const folder = join(root, name);
+    const manifest = join(folder, 'manifest.json');
+    if (!(existsSync(manifest) || containsScreenshots(folder))) return [];
+    const entries = manifestEntries<Omit<Screenshot, 'round'>>(manifest, ['file', 'title', 'shows', 'revision', 'alt'], problems);
+    return entries.filter(entry => basename(entry.file) === entry.file && screenshotExtension.test(entry.file) && existsSync(join(folder, entry.file)))
       .map(entry => ({ ...entry, file: `acceptance-screenshots/${name}/${entry.file}`, round: Number(name.slice(6)) }));
   });
 }
