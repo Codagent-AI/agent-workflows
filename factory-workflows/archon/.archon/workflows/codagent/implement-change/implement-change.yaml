@@ -1162,7 +1162,7 @@ nodes:
       - id: address-feedback
         depends_on: ["merge-base","finish-merge"]
         trigger_rule: none_failed_min_one_success
-        when: "$start-round.output.work == 'true'"
+        when: "$start-round.output.work == 'true' && $merge-base.output.ok == 'true' || $start-round.output.work == 'true' && $merge-base.output.conflict == 'true' && $finish-merge.output.ok == 'true'"
         model: ["@implementor","large"]
         context: {"resume":"session-report"}
         command: address-feedback

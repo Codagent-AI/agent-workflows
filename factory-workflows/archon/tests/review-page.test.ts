@@ -210,7 +210,7 @@ test('publication rebuilds missing ranking from required items and refuses an un
   }
 });
 
-test('clean PR-head imports reach the late inventory and feedback files without imported base work', () => {
+test.each(['merge targets', 'recorded pull request'])('clean PR-head imports stay visible using %s without imported base work', source => {
   const box = createSandbox();
   try {
     const input = rankingFixture(box);
@@ -225,7 +225,12 @@ test('clean PR-head imports reach the late inventory and feedback files without 
     box.git('checkout', '-b', 'round', input.start);
     box.git('merge', '--no-ff', '--no-edit', 'pr-head');
     box.git('merge', '--no-ff', '--no-edit', 'base-tip');
-    box.write('artifacts/review/merge-targets.json', '["pr-head","base-tip"]');
+    if (source === 'merge targets') box.write('artifacts/review/merge-targets.json', '["pr-head","base-tip"]');
+    else {
+      box.git('remote', 'add', 'origin', 'https://example.test/owner/repo');
+      box.git('update-ref', 'refs/remotes/origin/base-tip', 'base-tip');
+      box.write('artifacts/pull-request.json', '{"base":"base-tip"}');
+    }
     expect(inventory(input).later_commits.map(item => item.source[0])).toEqual([pushed]);
     expect(feedbackScope(box.exec, input.dir, input.start, 'HEAD')).toEqual({ files: 'pr-fix.txt', revisions: pushed });
   } finally {
@@ -343,4 +348,31 @@ test('missing screenshot manifests are reported only when a round contains a sup
   } finally {
     box.dispose();
   }
+});
+
+test('malformed ranking collections are reported and repaired', () => {
+  const item = { type: 'Risk', title: 'Coverage', detail: 'Missing check', link: '', source: ['CHECK-1'] };
+  const malformed = [
+    { journeys: {} }, { journeys: [null] }, { questions: {} }, { questions: [null] },
+    { questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix', detail: {} }, { id: 'leave', label: 'Leave' }] }] },
+  ];
+  for (const bad of malformed) {
+    const raw = { ...emptyRanking(), red: [{ ...item, ...bad }] } as unknown as ReturnType<typeof emptyRanking>;
+    expect(checkRanking(raw, []).problems).toContain('invalid questions or journeys');
+    const repaired = placeRanking(raw, []);
+    expect(checkRanking(repaired, []).ok).toBe(true);
+    expect(repaired.red[0].source).toEqual(item.source);
+    expect(repaired.red[0].questions?.[0].options.some(option => option.id === 'fix')).toBe(true);
+  }
+});
+
+test('promoted white late commits preserve journeys and gain a Retest choice', () => {
+  const commit = 'a'.repeat(40);
+  const journey = { code: 'JOURNEY-1', title: 'Launch', commit };
+  const item = { type: 'Late commit', title: commit, detail: '1 file changed\nTests: none named.', link: '', source: [commit] };
+  const raw = { ...emptyRanking(), white: [{ ...item, journeys: [journey] }] };
+  const context = { shots: [], dismissed: [], journeys: [journey.code], commits: [commit] };
+  const placed = placeRanking(raw, [{ tier: 'orange', item }], context);
+  expect(placed.orange[0].journeys).toEqual([journey]);
+  expect(placed.orange[0].questions?.flatMap(question => question.options.map(option => option.id))).toContain('retest');
 });

@@ -5,10 +5,11 @@ export interface LateJourney { code: string; title: string; commit: string }
 
 export function validQuestion(question: Question): boolean {
   if (typeof question?.prompt !== 'string' || !question.prompt.trim() || !Array.isArray(question.options)) return false;
-  const { options } = question;
+  const { options, source } = question;
+  if (source !== undefined && typeof source !== 'string') return false;
   return options.length >= 2 && options.length <= 4 && options.every(option =>
     typeof option?.id === 'string' && Boolean(option.id.trim()) && option.id !== 'other' &&
-    typeof option.label === 'string' && Boolean(option.label.trim())) &&
+    typeof option.label === 'string' && Boolean(option.label.trim()) && (option.detail === undefined || typeof option.detail === 'string')) &&
     new Set(options.map(option => option.id)).size === options.length;
 }
 

@@ -483,3 +483,17 @@ test.each([true, false])('INT-007 checks merge capability only when the review w
     repo.dispose();
   }
 });
+
+test.each([false, true])('wait-enabled forge preflight checks declared merge conditions %s', enforcesHead => {
+  const conditions = enforcesHead ? ['head'] : [];
+  box.forgeTools([
+    rule(['forge', 'check'], ok('check', { plugin: { name: 'github', version: '1' } })),
+    rule(['forge', 'metadata'], ok('metadata', { mutationConditions: { 'pr.merge': conditions } })),
+  ]);
+  box.git('remote', 'set-url', 'origin', 'git@github.com:owner/repo.git');
+  const env = { ARCHON_CLI_COMMAND: JSON.stringify([join(box.binDir, 'archon')]) };
+  const result = checkForgeAccess(box.exec, env, true);
+  expect(result.ok).toBe(conditions.includes('head'));
+  if (!result.ok) expect(result.problems).toContain('head condition for pr.merge');
+  expect(box.calls('archon').map(call => call.args[1])).toEqual(['check', 'metadata']);
+});

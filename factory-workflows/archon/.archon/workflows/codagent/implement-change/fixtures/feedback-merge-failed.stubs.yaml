@@ -50,9 +50,6 @@ start-round: {"round":2,"mode":"feedback","reason":"","change_folder":"openspec/
 publish-review-package: {"succeeded":false,"page":"review-page-round-2.html","message":"Review round 2: fixture"}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 merge-base: {"ok":false,"problems":"fixture failure","conflict":true}
-address-feedback: {"blocked":false,"reason":"","actions":[]}
-check-response: {"ok":true,"problems":""}
-push-round: {"ok":true,"problems":""}
 resolve-merge: {"blocked":true,"reason":"unresolved","actions":[]}
 finish-merge: {"ok":false,"problems":"fixture failure"}
 fixture:
@@ -60,9 +57,6 @@ fixture:
   reached:
     - start-round
     - merge-base
-    - address-feedback
-    - check-response
-    - push-round
     - record-archive
     - finalize-push
     - final-ci

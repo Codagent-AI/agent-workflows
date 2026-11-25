@@ -262,3 +262,74 @@
 - Regression coverage: INT-009 already exercises the real review scripts across initial, tail and acceptance modes. It should remain the CI regression for this flow. A separate end-to-end test would duplicate the existing failure boundary. The local verification ran affected unit tests only.
 - Evidence: `acceptance-round-1-ci-schema-diagnosis.log`, `acceptance-round-1-schema-unit.log`, `acceptance-round-1-openspec.log`, and `acceptance-round-1-checklist.log`.
 - Pending decision from the user: None.
+
+## D-24: Refuse archive retries with mixed spec changes
+
+- Step: PR finalization.
+- Question: How can a retry distinguish prior archive edits from work added later to the same file?
+- Requirement: Retain the failed attempt's owned changes and preserve unrelated index and worktree edits.
+- Decision: Fingerprint each dirty owned spec in both layers and refuse to retry when its current layers cannot be matched to the previous attempt. Preserve both layers and name the file in the failure.
+- Alternatives: Attempt an automatic split of overlapping changes or commit the whole path.
+- Rationale: The fingerprints establish what can be reused. They cannot determine who owns overlapping edits.
+- What breaks if it is wrong: Divergent edits may block a retry that a person could separate. Accepting a changed layer could commit unrelated work.
+- Evidence: `fix-pr-targeted.log`, “archive retry refuses later staged edits to a previously owned spec without changing either layer” and the unstaged counterpart.
+- Pending decision from the user: None.
+
+## D-25: Keep incomplete spec restoration active
+
+- Step: PR finalization.
+- Question: What should retry do when restoration previously failed?
+- Requirement: Preserve the original staged and unstaged changes, and report a failed archive when restoration remains unresolved.
+- Decision: Retain the active patch record through retry, and fail early if a previous restoration error is still recorded.
+- Alternatives: Drop the active record after backing it up, or reapply patches after a partial restoration.
+- Rationale: Backup alone is insufficient, and blindly reapplying partially restored patches could duplicate edits.
+- What breaks if it is wrong: An unresolved record may require manual recovery before another attempt. Dropping it may allow premature archive success.
+- Evidence: `fix-pr-targeted.log`, “INT-008 conflicting spec restoration fails verification and retains original patches.”
+- Pending decision from the user: None.
+
+## D-26: Preflight the head condition advertised by the forge
+
+- Step: PR finalization.
+- Question: Where should a wait-enabled run reject a plugin that cannot enforce the merge head?
+- Requirement: Merge must be conditioned on the reviewed head, and preflight must report missing forge support before agent work.
+- Decision: After the existing credential and operation preflight succeeds, check the selected host's discovery metadata for the head condition. Wait-off keeps its original preflight.
+- Alternatives: Wait for merge dispatch to reject the operation, or expand Archon's check protocol.
+- Rationale: The pinned CLI already provides the metadata without contacting the forge.
+- What breaks if it is wrong: A plugin without usable metadata cannot be used for a wait-enabled run, even if it claims merge support.
+- Evidence: `fix-pr-targeted.log`, “wait-enabled forge preflight checks declared merge conditions.”
+- Pending decision from the user: None.
+
+## D-27: Use the recorded PR base for the initial late-commit walk
+
+- Step: PR finalization.
+- Question: How should a walk identify base imports when a round has never written merge targets?
+- Requirement: Show imported PR work and exclude commits already on the base.
+- Decision: Prefer the fetched target when present. Otherwise resolve the PR's recorded base on the push remote. Keep first-parent traversal when no base is known.
+- Alternatives: Walk every parent with no base exclusion, or require a feedback round before listing imported commits.
+- Rationale: The recorded PR supplies the same distinction before the first wait without a new forge call.
+- What breaks if it is wrong: An absent local base ref still limits the walk to first-parent history. A stale base record can misclassify imported commits until synchronization.
+- Evidence: `fix-pr-targeted.log`, “clean PR-head imports stay visible using recorded pull request without imported base work.”
+- Pending decision from the user: None.
+
+## D-28: Publish synchronization failures without applying feedback
+
+- Step: PR finalization.
+- Question: Which work can continue if neither synchronization path succeeds?
+- Requirement: Merge current branch tips before applying feedback. Show failures as red items and still publish and wait.
+- Decision: Only run the feedback implementor after a clean synchronization or successful conflict repair. The guarded tail can still publish the recorded failure.
+- Alternatives: Apply feedback against the old branch, or stop before writing a review page.
+- Rationale: Applying feedback to a stale base would violate the round ordering. A published failure lets the reviewer see the cause.
+- What breaks if it is wrong: A successful clean or repaired synchronization could omit feedback if its success output is lost.
+- Evidence: `fix-pr-fixtures.log`, feedback-fetch-failed, feedback-merge-failed, feedback-conflict, and feedback-round.
+- Pending decision from the user: None.
+
+## D-29: Choose the edit target after a partial archive transition
+
+- Step: PR finalization.
+- Question: Which spec should receive a selected edit after OpenSpec moved the change, but archive commit or verification failed?
+- Requirement: The design uses the delta before a passing archive; the spec directs edits to the canonical spec after archival and preserves the archived delta.
+- Decision: Leave the existing rule in place and flag the conflict for acceptance or planning.
+- Alternatives: Treat the successful move as the boundary and edit the canonical spec, or reapply OpenSpec to an edited delta during retry.
+- Rationale: Both alternatives change the approved retry or edit behavior. They also interact with preserving unrelated changes in an outstanding archive attempt.
+- What breaks if it is wrong: The current instructions can leave an approved edit only in the archived delta, so the canonical spec may miss it.
+- Pending decision from the user: Select the boundary and approved retry behavior for this partial state.

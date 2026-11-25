@@ -29,6 +29,10 @@ export function suspendSpecs(input: Input, owned: string[] = []): void {
 function applyPatch(exec: Exec, patch: string): void {
   if (patch) git(exec, ['apply', '--3way', '--index', '--whitespace=nowarn'], patch);
 }
+export function pendingSpecRestore(input: Input): LocalSpecs | undefined {
+  const local = readJson<LocalSpecs | null>(file(input), null);
+  return local && !local.restored ? local : undefined;
+}
 export function restoreSpecs(input: Input): void {
   const local = readJson<LocalSpecs | null>(file(input), null);
   if (!local || local.restored) return;

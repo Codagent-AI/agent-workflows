@@ -130,13 +130,24 @@ test('INT-008 conflicting spec restoration fails verification and retains origin
   expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
   const local=JSON.parse(box.read('artifacts/archive/local-specs.json'));
   expect(local.staged).toContain('local change');expect(local.error).toContain('original patches retained');expect(box.git('show',`HEAD:${path}`)).toBe('new');
+  const pending = box.read('artifacts/archive/local-specs.json');
+  const retry = archiveChange({ ...input(), round: 2 });
+  expect(retry.ok).toBe(false);
+  expect(retry.problems).toContain('original patches retained');
+  expect(box.read('artifacts/archive/local-specs.json')).toBe(pending);
+  expect(recordArchive(input()).change_folder).toBe(archived);
+  expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
 });
 
-test('INT-012 retries a failed archive from the round head and preserves its earlier attempt', () => {
+function rejectArchiveCommit() {
   const hooks = box.path('hooks');
   box.write('hooks/commit-msg', '#!/bin/sh\nexit 1\n');
   chmodSync(join(hooks, 'commit-msg'), 0o755);
   box.git('config', 'core.hooksPath', hooks);
+}
+
+test('INT-012 retries a failed archive from the round head and preserves its earlier attempt', () => {
+  rejectArchiveCommit();
   expect(archive().ok).toBe(true);
   expect(recordArchive(input()).change_folder).toBe(archived);
   expect(verifyArchive(input()).ok).toBe(false);
@@ -167,4 +178,24 @@ test('INT-012 the retried archive reads the edited delta at the new head', () =>
   expect(box.git('show', 'HEAD:openspec/specs/widget/spec.md')).toBe('targeted spec edit');
   expect(JSON.parse(box.read('artifacts/archive/state.json')).start).toBe(head);
   expect(verifyArchive(input()).ok).toBe(true);
+});
+
+
+test.each(['staged', 'unstaged'])('archive retry refuses later %s edits to a previously owned spec without changing either layer', layer => {
+  const path = 'openspec/specs/widget/spec.md';
+  rejectArchiveCommit();
+  expect(archive().ok).toBe(true);
+  expect(verifyArchive(input()).ok).toBe(false);
+  box.git('config', 'core.hooksPath', '/dev/null');
+  const head = box.head();
+  box.write(path, 'new\nLater edit\n');
+  if (layer === 'staged') box.git('add', path);
+  const index = box.git('diff', '--cached');
+  const worktree = box.git('diff');
+  const result = archiveChange({ ...input(), round: 2 });
+  expect(result.ok).toBe(false);
+  expect(result.problems).toContain('Cannot separate later staged or unstaged changes');
+  expect(box.head()).toBe(head);
+  expect(box.git('diff', '--cached')).toBe(index);
+  expect(box.git('diff')).toBe(worktree);
 });

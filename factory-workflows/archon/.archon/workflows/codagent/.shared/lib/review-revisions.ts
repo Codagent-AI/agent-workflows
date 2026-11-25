@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
+import { remoteOf } from './forge.ts';
 import { readJson } from './run-files.ts';
 
 export function commitParents(exec: Exec, sha: string): string[] {
@@ -12,9 +13,17 @@ function gitOutput(exec: Exec, args: string[]): string {
   return result;
 }
 
+function recordedBase(exec: Exec, dir: string): string | undefined {
+  const [, target] = readJson<string[]>(join(dir, 'review/merge-targets.json'), []);
+  const { base } = readJson<{ base?: string }>(join(dir, 'pull-request.json'), {});
+  const remote = base ? remoteOf(exec) : undefined;
+  const ref = target || (remote?.ok ? `refs/remotes/${remote.value.name}/${base}` : undefined);
+  return ref && output(exec, 'git', ['rev-parse', '--verify', `${ref}^{commit}`]);
+}
+
 export function reviewRevisions(exec: Exec, dir: string, start: string, end: string): string[] {
   const revisions = gitOutput(exec, ['rev-list', '--first-parent', '--reverse', `${start}..${end}`]).split('\n').filter(Boolean);
-  const [, base] = readJson<string[]>(join(dir, 'review/merge-targets.json'), []);
+  const base = recordedBase(exec, dir);
   if (!base) return revisions;
   const commits = new Set<string>();
   for (const sha of revisions) {

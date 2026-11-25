@@ -1,4 +1,4 @@
-import { suspendSpecs, restoreSpecs, restoredSpecPaths, localSpecProblems } from './archive-local.ts';
+import { suspendSpecs, restoreSpecs, restoredSpecPaths, localSpecProblems, pendingSpecRestore } from './archive-local.ts';
 // Archive transition, isolated commit and independent verification of the owned delta.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -8,7 +8,7 @@ import { type CheckResult, fail, pass } from './check.ts';
 import { readJson, recordStep, writeJson } from './run-files.ts';
 interface ArchiveState {
   start: string; archive_dir: string; owned_delta: string[];
-  before: string; transition: CheckResult; commit_error?: string;
+  before: string; transition: CheckResult; commit_error?: string; retry_specs?: Record<string, string>;
 }
 export interface ArchiveInput { exec: Exec; dir: string; name: string; round?: number; }
 const active = (name: string): string => `openspec/changes/${name}`;
@@ -77,7 +77,7 @@ function retryArchive(input: ArchiveInput): void {
   for (const file of ['state.json', 'before.json', 'specs-before.json', 'local-specs.json']) {
     const source = join(root, file);
     if (existsSync(source) && !existsSync(join(prior, file))) copyFileSync(source, join(prior, file));
-    rmSync(source, { force: true });
+    if (file !== 'local-specs.json' || !pendingSpecRestore(input)) rmSync(source, { force: true });
   }
   writeJson(marker, { round: input.round });
 }
@@ -87,12 +87,39 @@ function readAttempt(input: ArchiveInput, file: string): ArchiveState {
   if (!input.round || input.round < 2) return state;
   const prior = join(input.dir, 'archive', `attempt-${input.round - 1}`, 'state.json');
   const previous = readJson<ArchiveState | null>(prior, null);
-  state.owned_delta = [...new Set([...state.owned_delta, ...(previous?.owned_delta ?? [])])];
+  const inherited = (previous?.owned_delta ?? []).filter(path =>
+    !path.startsWith('openspec/specs/') || Object.hasOwn(previous?.retry_specs ?? {}, path));
+  state.owned_delta = [...new Set([...state.owned_delta, ...inherited])];
   return state;
 }
+function retryProblem(input: ArchiveInput, statePath: string): string | undefined {
+  const restoreError = pendingSpecRestore(input)?.error;
+  if (restoreError) return restoreError;
+  const activeState = readJson<ArchiveState | null>(statePath, null);
+  const saved = join(input.dir, 'archive', `attempt-${(input.round ?? 1) - 1}`, 'state.json');
+  const previous = activeState ?? readJson<ArchiveState | null>(saved, null);
+  const changed = Object.entries(dirtySpecs(input.exec, previous)).find(([path, value]) => previous?.retry_specs?.[path] !== value)?.[0];
+  return changed ? `Cannot separate later staged or unstaged changes from the failed archive's changes in ${changed}. Preserve or separate them before retrying.` : undefined;
+}
+
+function ownedSpecs(state: ArchiveState | null): string[] {
+  return (state?.owned_delta ?? []).filter(path => path.startsWith('openspec/specs/'));
+}
+
+function dirtySpecs(exec: Exec, state: ArchiveState | null): Record<string, string> {
+  return Object.fromEntries(ownedSpecs(state).flatMap(path => {
+    const literal = `:(literal)${path}`;
+    if (!command(exec, 'git', ['status', '--porcelain', '--untracked-files=all', '--', literal])) return [];
+    const bytes = existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '';
+    return [[path, `${fingerprint(exec, [literal])}:${bytes}`]];
+  }));
+}
+
 export function archiveChange(input: ArchiveInput): CheckResult {
-  retryArchive(input);
   const file = join(input.dir, 'archive/state.json');
+  const problem = retryProblem(input, file);
+  if (problem) return fail(problem);
+  retryArchive(input);
   const state = readAttempt(input, file);
   // Capture the full pre-transition diffs and exclude only the final owned paths afterwards.
   const beforeFile = join(input.dir, 'archive/before.json');
@@ -109,7 +136,9 @@ export function archiveChange(input: ArchiveInput): CheckResult {
     if (folders.length !== 1) throw new Error(`expected exactly one archive folder; found: ${folders.join(', ') || 'none'}`);
     state.archive_dir = folders[0];
     state.before = baselineFingerprint(baseline, state.owned_delta);
-    state.transition = pass(); writeJson(file, state);
+    state.transition = pass();
+    state.retry_specs = dirtySpecs(input.exec, state);
+    writeJson(file, state);
     commitArchive(input, state);
     restoreSpecs(input);
     return pass();
@@ -117,10 +146,15 @@ export function archiveChange(input: ArchiveInput): CheckResult {
     state.owned_delta = archivePaths(input, state);
     state.archive_dir = archiveFolders(input.name)[0] ?? '';
     state.before = baselineFingerprint(baseline, state.owned_delta);
-    if (state.transition.ok) state.commit_error = String(error);
-    else state.transition = fail(String(error));
-    writeJson(file, state); return state.transition.ok ? pass() : fail(String(error));
+    return saveArchiveFailure(input, state, file, String(error));
   }
+}
+function saveArchiveFailure(input: ArchiveInput, state: ArchiveState, file: string, problem: string): CheckResult {
+  if (state.transition.ok) state.commit_error = problem;
+  else state.transition = fail(problem);
+  if (!pendingSpecRestore(input)?.error) state.retry_specs = dirtySpecs(input.exec, state);
+  writeJson(file, state);
+  return state.transition.ok ? pass() : state.transition;
 }
 function capturePaths(exec: Exec): Record<string, string> {
   const paths = [...new Set([...names(command(exec, 'git', ['diff', '--name-only', '-z'])), ...names(command(exec, 'git', ['diff', '--cached', '--name-only', '-z']))])];

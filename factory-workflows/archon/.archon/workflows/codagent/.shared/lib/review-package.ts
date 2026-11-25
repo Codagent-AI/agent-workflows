@@ -60,6 +60,14 @@ function validPick(pick: KeyEvidence, context: RankingContext): boolean {
   return context.shots.includes(pick?.file) && typeof pick.title === 'string' && Boolean(pick.title.trim()) &&
     typeof pick.shows === 'string' && Boolean(pick.shows.trim());
 }
+function validJourney(entry: NonNullable<Item['journeys']>[number]): boolean {
+  return typeof entry?.code === 'string' && typeof entry.title === 'string' && typeof entry.commit === 'string';
+}
+function validCollections(item: Item): boolean {
+  const { journeys, questions } = item;
+  return (journeys === undefined || (Array.isArray(journeys) && journeys.every(validJourney))) &&
+    (questions === undefined || (Array.isArray(questions) && questions.every(validQuestion)));
+}
 function validQuestions(item: Item, tier: Tier): boolean {
   const questions = item.questions ?? [];
   if (tier === 'white') return questions.length === 0;
@@ -129,10 +137,15 @@ function evidenceProblems(ranking: Ranking, context: RankingContext, fallback: b
   }
   return picks.filter(pick => !validPick(pick, context)).map(pick => `invalid key evidence ${pick?.file}`);
 }
+function itemShapeProblem(item: Item): string | undefined {
+  if (!validItem(item)) return 'empty item or unknown type';
+  return validCollections(item) ? undefined : `invalid questions or journeys for ${item.title}`;
+}
 function itemProblems(ranking: Ranking, context: RankingContext): string[] {
   const problems: string[] = []; const titles = new Set<string>();
   for (const { tier, item } of entries(ranking)) {
-    if (!validItem(item)) { problems.push('empty item or unknown type'); continue; }
+    const shapeProblem = itemShapeProblem(item);
+    if (shapeProblem) { problems.push(shapeProblem); continue; }
     if (titles.has(item.title)) problems.push(`item appears in two tiers: ${item.title}`);
     if (!validQuestions(item, tier)) problems.push(`invalid questions for ${item.title}`);
     problems.push(...sourceProblems(item, context));
@@ -149,7 +162,7 @@ export function checkRanking(ranking: Ranking, required: RequiredItem[], context
   problems.push(...requiredProblems(ranking, required), ...choiceProblems(ranking, required));
   return problems.length > 0 ? fail(problems) : pass();
 }
-function insertRequired(placed: Ranking, expected: RequiredItem): void {
+function insertRequired(placed: Ranking, expected: RequiredItem, context: RankingContext): void {
     const found = entries(placed).find(({ item }) => expected.item.source.every(source => item.source.includes(source)));
     if (!found) { placed[expected.tier].push({ ...expected.item, source: [...expected.item.source] }); return; }
     const tier = TIERS[Math.min(TIERS.indexOf(found.tier), TIERS.indexOf(expected.tier))];
@@ -157,12 +170,12 @@ function insertRequired(placed: Ranking, expected: RequiredItem): void {
     const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
     const lacksSize = expected.item.type === 'Late commit' && requiredItemProblems(expected, found.item).length > 0;
     const detail = lacksSize ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
-    const questions = found.item.questions;
-    placed[tier].push({ ...found.item, type, detail, questions: questions?.length ? questions : [standardQuestion(type)] });
+    placed[tier].push(repairedItem({ ...found.item, type, detail }, tier, context));
 }
 function repairedItem(item: Item, tier: Tier, context: RankingContext): Item {
-  const journeys = (item.journeys ?? []).filter(entry => context.journeys.includes(entry.code) && context.commits.includes(entry.commit));
-  const questions = tier === 'white' ? [] : (item.questions ?? []).filter(candidate =>
+  const journeys = (Array.isArray(item.journeys) ? item.journeys : []).filter(entry =>
+    validJourney(entry) && context.journeys.includes(entry.code) && context.commits.includes(entry.commit));
+  const questions = tier === 'white' ? [] : (Array.isArray(item.questions) ? item.questions : []).filter(candidate =>
     validQuestion(candidate) && (journeys.length > 0 || candidate.options.every(option => option.id !== 'retest')));
   const cleaned = { ...item, journeys, questions };
   if (validQuestions(cleaned, tier)) return cleaned;
@@ -186,7 +199,7 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[], context
     }
   }
   for (const expected of required.filter(row => !row.item.source[0]?.startsWith('failure:'))) {
-    insertRequired(placed, { ...expected, item: repairedItem(expected.item, expected.tier, context) });
+    insertRequired(placed, { ...expected, item: repairedItem(expected.item, expected.tier, context) }, context);
   }
   bindDisputeQuestions(placed, required, true);
   const checked = checkRanking(placed, required, context, true);
