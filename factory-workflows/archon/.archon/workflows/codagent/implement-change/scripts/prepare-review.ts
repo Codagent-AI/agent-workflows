@@ -1,6 +1,7 @@
 import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { join } from 'node:path';
 import { readJson, readText } from '../../.shared/lib/run-files.ts';
+import { responsePath } from '../../.shared/lib/review-round.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
 import { checkoutStart } from '../../.shared/lib/checkout.ts';
 import { git, head, readState, saveState, script } from '../../.shared/lib/review-files.ts';
@@ -28,13 +29,15 @@ function feedbackFiles(start: string, end: string): string {
   return [...new Set(files)].join('\n');
 }
 
-function requestedFixes(path: string, folder: string): string {
+function requestedFixes(path: string, folder: string, dir: string): string {
   if (!path) return '';
-  const answer = readJson<{ answers?: { item: string; option: string }[] }>(path, {});
+  const answer = readJson<{ round?: number; answers?: { item: string; option: string }[] }>(path, {});
   const codes = new Set(answer.answers?.filter(choice => choice.option === 'fix').map(choice => choice.item));
-  const log = readText(join(folder, 'dispute-log.md'));
+  const log = ['decision-log.md', 'dispute-log.md'].map(name => readText(join(folder, name))).join('\n');
   const sections = log.split(/(?=^## )/m).filter(section => codes.has(/^## ([^:]+):/.exec(section)?.[1] ?? ''));
-  return [...codes, ...sections].join('\n');
+  const replies = readJson<{ requestedFindings?: string[] }[]>(responsePath(dir, answer.round ?? 0), []);
+  const requested = replies.flatMap(entry => Array.isArray(entry.requestedFindings) ? entry.requestedFindings : []).filter(id => /^(?:REVIEW-\d+|R\d+)$/.test(id));
+  return [...codes, ...sections, ...requested].join('\n');
 }
 
 function reviewFiles(mode: string, range: { start: string; end: string; changeDir: string }): string {
@@ -62,7 +65,7 @@ script(() => {
   if (mode !== 'tail' || start !== end) {
     startCycle(state, { place, start, end, round: Number(process.env.INPUTS_ROUND ?? '0') });
     if (mode === 'feedback') {
-      reopenRequested(state, requestedFixes(process.env.INPUTS_ANSWERS_FILE ?? '', changeDir));
+      reopenRequested(state, requestedFixes(process.env.INPUTS_ANSWERS_FILE ?? '', changeDir, dir));
     }
     saveState(dir, state);
   }

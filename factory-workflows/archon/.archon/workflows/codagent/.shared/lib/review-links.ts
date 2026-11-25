@@ -48,7 +48,7 @@ function checklistLinks(input: Links): [string, SourceLink][] {
 
 function headingLinks(file: string, input: Links): [string, SourceLink][] {
   return readText(file).split('\n').flatMap((line, index) => {
-    const match = /^#{2,4}\s+([A-Z]+-\d+|R\d+)\s*:\s*(.+)/.exec(line);
+    const match = /^#{2,4}\s+([A-Z][A-Z0-9]*-\d+|R\d+)\s*:\s*(.+)/.exec(line);
     return match ? [[match[1], { title: match[2], href: sourceLink(`${file}:${index + 1}`, input) }]] : [];
   });
 }
@@ -60,7 +60,7 @@ export function codeLinks(input: Links, items: Item[]): Record<string, SourceLin
   const entries = [...checklistLinks(input), ...paths.flatMap(path => headingLinks(path, input))];
   const known = Object.fromEntries(entries);
   for (const journey of journeys(input.dir)) {
-    known[journey.code] ??= { title: journey.title, href: sourceLink(join(input.folder, 'test-plan.md'), input) };
+    known[journey.code] ??= { title: journey.title, href: sourceLink(join(input.dir, journey.artifact), input) };
   }
   for (const item of items) {
     for (const code of item.source) known[code] ??= { title: item.title, href: sourceLink(item.link, input) };

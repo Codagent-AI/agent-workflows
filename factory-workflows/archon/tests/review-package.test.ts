@@ -9,7 +9,6 @@ import { publishPackage } from '../.archon/workflows/codagent/.shared/lib/publis
 import { readPages } from '../.archon/workflows/codagent/.shared/lib/review-pages.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { checkResponse, recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
-import { sendReview, missingAnswers } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { changeSize } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { sourceLink } from '../.archon/workflows/codagent/.shared/lib/review-links.ts';
 import { standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
@@ -174,27 +173,34 @@ test('INT-010 publishes numbered pages, relative screenshots, cloc data and merg
   box.write('artifacts/pr-body.md', 'Summary <img onerror=x> </script> &');
   box.write('artifacts/acceptance-screenshots/round-0/screen.png', 'bytes');
   box.write('artifacts/acceptance-screenshots/round-0/manifest.json', JSON.stringify([{ file: 'screen.png', title: 'Screen', shows: 'Save', revision: accepted, alt: 'App' }]));
+  box.write('artifacts/acceptance-screenshots/round-2/second.webp', 'bytes');
+  box.write('artifacts/acceptance-screenshots/round-2/manifest.json', JSON.stringify([{ file: 'second.webp', title: 'Later', shows: 'Finish', revision: accepted, alt: 'App' }]));
   rank.keyEvidence = [{ file: 'acceptance-screenshots/round-0/screen.png', title: 'Save button', shows: 'Shows save' }];
   box.git('branch', 'main');
   box.git('update-ref', 'refs/remotes/origin/main', accepted);
-  box.fake('cloc', [rule([], { stdout: JSON.stringify({ added: { TypeScript: { code: 5, nFiles: 1 } }, modified: {}, removed: {} }) })]);
+  box.fake('cloc', [rule([], { stdout: JSON.stringify({ added: { TypeScript: { code: 5, nFiles: 1 } }, modified: { TypeScript: { code: 3, nFiles: 1 } }, removed: { TypeScript: { code: 2, nFiles: 1 } } }) })]);
   expect(publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, options)).toMatchObject({ succeeded: true, page: 'review-page-round-1.html' });
   const first = box.read(pageFile(1));
   const javascript = first.split('<script>').at(-1)?.split('</script>')[0] ?? '';
   expect(() => new Script(javascript)).not.toThrow();
   expect(first).toContain('\\u003c/script\\u003e');
   expect(dataBlock(first)).toMatchObject({ round: 1, summary: 'Summary <img onerror=x> </script> &', merge: true, wait: true,
-    state: 'Run succeeded. 1 red item needs your call.', size: [{ language: 'TypeScript', files: 1, added: 5, modified: 0, removed: 0 }],
-    screenshots: [{ href: 'acceptance-screenshots/round-0/screen.png', round: 0 }], keyEvidence: [{ title: 'Save button' }] });
+    state: 'Run succeeded. 1 red item needs your call.', size: [{ language: 'TypeScript', files: 3, added: 5, modified: 3, removed: 2 }],
+    screenshots: [{ href: 'acceptance-screenshots/round-0/screen.png', round: 0 }, { href: 'acceptance-screenshots/round-2/second.webp', round: 2 }], keyEvidence: [{ title: 'Save button' }] });
   expect(box.calls('cloc')[0]?.args).toContain(accepted);
   expect(box.calls('cloc')[0]?.args.some(arg => arg.startsWith('--not-match-f='))).toBe(true);
   startRound(forge.tools, { dir: dir(), folder, text: 'Preserve the summary' });
   const answered = box.read(pageFile(1));
-  box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'note', status: 'no-change', note: 'Kept the summary' }]));
+  box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'CHECK-2', status: 'fixed', note: 'Kept the summary', commit: accepted }]));
+  steps({ 'merge-base': { ...passedStep, remaining: 'Merged the current base.' } });
+  recordRetest(dir(), 2, false, 'Retest needs work');
   publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, { ...options, round: 2, archonUrl: '' });
   expect(box.read(pageFile(1))).toBe(answered);
   expect(box.read('artifacts/review-page.html')).toBe(box.read(pageFile(2)));
-  expect(dataBlock(box.read(pageFile(2))).recap[0].note).toBe('Kept the summary');
+  expect(dataBlock(box.read(pageFile(2))).recap).toMatchObject([
+    { note: 'Kept the summary', label: expect.stringContaining('initial'), href: expect.stringContaining(accepted) },
+    { note: 'Merged the current base.' }, { note: 'Retest needs work' },
+  ]);
   expect(forge.body).toStartWith('Before\n');
   expect(forge.body).toEndWith('\nAfter');
   expect(forge.body.indexOf('round-1.html')).toBeLessThan(forge.body.indexOf('Review round 2'));
@@ -255,7 +261,14 @@ test('INT-007 feedback is escaped on the correct page and resumed from a single 
   expect(readPages(dir())[0].status).toBe('feedback sent');
   expect(box.read('artifacts/review/round-1/finalize-results.json')).toBe('{"terminal":true}');
   expect(box.read('artifacts/step-results.json')).not.toContain('push-round');
+  steps({ 'push-round': failedStep, 'check-response': failedStep, 'address-feedback': failedStep, finalize: failedStep });
+  box.write('artifacts/finalize-results.json', '{"stale":{"terminal":true}}');
+  box.write('artifacts/ci/latest.json', '{}');
   expect(started(forge, '')).toMatchObject({ mode: 'feedback', round: 2 });
+  expect(box.exists('artifacts/finalize-results.json')).toBe(false);
+  expect(box.exists('artifacts/ci/latest.json')).toBe(false);
+  expect(JSON.parse(box.read('artifacts/step-results.json'))).toEqual({ archive: passedStep });
+  expect(box.read('artifacts/review/round-1/finalize-results.json')).toBe('{"terminal":true}');
   expect(box.read(pageFile(1))).toBe(page);
   expect(box.read('artifacts/review-answers-round-1.json')).toBe(saved);
 });
@@ -297,6 +310,7 @@ test.each([
   if (mode === 'refused') {
     publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2, reason: why });
     expect(forge.body).toContain(why);
+    expect(dataBlock(box.read(pageFile(2))).recap[0].note).toBe(why);
   }
 });
 
@@ -348,6 +362,10 @@ test('INT-009 failure persists after a failed retest and a pass removes only lis
   recordRetest(dir(), 2, false, 'retest did not pass');
   expect(failedItems(dir()).map(entry => entry.source[0])).toEqual(['failure:acceptance', 'failure:retest']);
   expect(inv().later_commits.map(entry => entry.title)).toEqual([first, second]);
+  publishPackage(publisher().tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 3 });
+  const later = dataBlock(box.read(pageFile(3)));
+  expect(later.red.some((entry: Item) => entry.source.includes('failure:retest'))).toBe(true);
+  expect(later.recap).toEqual([]);
   recordRetest(dir(), 2, true, '');
   expect(failedItems(dir())).toEqual([]);
   expect(inv().later_commits.map(entry => entry.title)).toEqual([second]);
@@ -384,52 +402,12 @@ test.each([true, false])('INT-009 spec-change fallback offers a targeted edit on
   const ranking = { ...emptyRanking(), red: [item('Dispute', 'DISPUTE-1')] };
   expect(checkRanking(ranking, requiredRows).ok).toBe(false);
   const dispute = placeRanking(ranking, requiredRows).red.find(row => row.source.includes('DISPUTE-1'));
+  const unauthorized = { id: 'apply-anyway', label: 'Implement the request' };
+  expect(dispute).toBeDefined();
+  const questions = dispute?.questions ?? [];
+  const extra = { ...item('Dispute', 'DISPUTE-1'), questions: [{ ...questions[0], options: [...questions[0].options, unauthorized] }] };
+  expect(checkRanking({ ...emptyRanking(), red: [extra] }, requiredRows).problems).toContain('exactly the allowed options');
   expect(dispute?.questions?.[0].options.map(option => option.id)).toEqual(editable ? ['spec-edit', 'follow-up', 'drop'] : ['follow-up', 'drop']);
-});
-
-test.each(['feedback', 'merge'])('INT-011 sends one %s answer for the current occurrence', async action => {
-  const sent: { url: string; init?: RequestInit }[] = [];
-  const fake = (async (url: string, init?: RequestInit) => {
-    sent.push({ url, init });
-    return sent.length === 1 ? Response.json({ item: { runId: 'r', occurrence: 'this-wait', message: 'Review round 1: waiting' } }) : Response.json({ message: 'accepted' });
-  });
-  const answer = { action, round: 1, head: accepted, ...(action === 'feedback' ? { answers: [{ note: 'a note' }], screenshotComments: [{ file: 'one.png', round: 0 }] } : {}) };
-  const result = await sendReview({ address: 'http://archon.example/api/artifacts/r/review-page.html', run: 'r', round: 1, answer, fetch: fake });
-  expect(result).toMatchObject({ kind: 'sent', message: 'accepted' });
-  expect(sent.map(entry => entry.url)).toEqual(['http://archon.example/api/runs/r/attention', 'http://archon.example/api/workflows/runs/r/answer']);
-  expect(JSON.parse(String(sent[1].init?.body))).toEqual({ occurrence: 'this-wait', text: JSON.stringify(answer) });
-});
-
-const unavailable = ['file', 'offline', 'offline after GET'];
-const expectedCalls: Record<string, number> = { file: 0, '409': 2, 'offline after GET': 2 };
-function fakeWait(scenario: string) {
-  let calls = 0;
-  const fetch = async () => {
-    calls += 1;
-    if (scenario === 'offline' || (scenario === 'offline after GET' && calls > 1)) throw new Error('network');
-    if (calls > 1) return new Response(null, { status: 409 });
-    const n = scenario === 'round-12' ? 12 : 1;
-    return Response.json({ item: scenario === 'no wait' ? null : { runId: 'r', occurrence: 'known', message: `Review round ${n}: waiting` } });
-  };
-  return { fetch, calls: () => calls };
-}
-test.each(['round-12', 'no wait', '409', 'file', 'offline', 'offline after GET'])('INT-011 sending handles %s and preserves payload for the CLI when unavailable', async scenario => {
-  const mock = fakeWait(scenario);
-  const answer = { action: 'feedback', note: "I'm waiting" };
-  const address = scenario === 'file' ? 'file:///tmp/review-page.html' : 'http://archon.example/api/artifacts/r/review-page.html';
-  const result = await sendReview({ address, run: 'r', round: 1, answer, fetch: mock.fetch });
-  if (unavailable.includes(scenario)) {
-    expect(result).toMatchObject({ kind: 'copy', text: JSON.stringify(answer) });
-    if (result.kind !== 'copy') throw new Error('missing command');
-    expect(result.command).toContain(scenario === 'offline after GET' ? "--occurrence 'known'" : 'workflow get');
-    expect(result.command).toContain('workflow answer');
-  } else expect(result.kind).toBe('stale');
-  expect(mock.calls()).toBe(expectedCalls[scenario] ?? 1);
-});
-
-test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
-  expect(missingAnswers([{ required: true, option: '', other: '' }, { required: true, option: 'other', other: '  ' },
-    { required: true, option: 'other', other: 'choice' }, { required: false, option: '', other: '' }])).toBe(2);
 });
 
 test('INT-007 reads the PR back after an ambiguous merge that landed', () => {
@@ -467,17 +445,19 @@ test('source links preserve remote URLs and resolve committed line ranges and ru
 
 test('INT-009 a cited file in passing finalize CI changes an unverified row floor only', () => {
   box.write('tests/example.test.ts', 'export {};');
-  box.git('add', 'tests/example.test.ts');
+  box.write('src/test_smoke.py', 'pass');
+  box.write('cmd/launch_test.go', 'package cmd');
+  box.git('add', 'tests/example.test.ts', 'src/test_smoke.py', 'cmd/launch_test.go');
   box.commit('named test');
-  box.write(`${folder}/checklist.md`, '| ID | Behavior | Evidence | Status |\n|---|---|---|---|\n| CHECK-1 | feature | tests/example.test.ts | not verified |\n| CHECK-2 | unknown | tools/standalone.test.ts | not verified |\n');
+  box.write(`${folder}/checklist.md`, '| ID | Behavior | Evidence | Status |\n|---|---|---|---|\n| CHECK-1 | feature | tests/example.test.ts | not verified |\n| CHECK-2 | unknown | tools/standalone.test.ts | not verified |\n| CHECK-3 | Python | [smoke](src/test_smoke.py) | not verified |\n| CHECK-4 | Go | cmd/launch_test.go | not verified |\n');
   steps();
   box.write('artifacts/ci/latest.json', '{"hadChecks":true}');
-  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['yellow', 'red']);
+  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['yellow', 'red', 'yellow', 'yellow']);
   steps({ finalize: failedStep });
-  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['red', 'red']);
+  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['red', 'red', 'red', 'red']);
 });
 
-test('INT-007 Retest selects only the journeys shown for the answered Late commit item', () => {
+test('INT-007 Retest selects journeys from a red Late commit and ignores an unselected orange one', () => {
   steps();
   const forge = publisher();
   const first = box.commitFix('journey one');
@@ -485,9 +465,36 @@ test('INT-007 Retest selects only the journeys shown for the answered Late commi
   const retest = [{ prompt: 'Rerun?', options: [{ id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Leave' }] }];
   const orange = [first, second].map((commit, index) => ({ ...item('Late commit', commit), questions: retest,
     journeys: [{ code: `JOURNEY-${index + 1}`, title: `Journey ${index + 1}`, commit }] }));
-  publishPackage(forge.tools, { dir: dir(), folder, ranking: { ...emptyRanking(), orange } }, options);
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: { ...emptyRanking(), red: [orange[0]], orange: [orange[1]] } }, options);
   const answer = JSON.stringify({ action: 'feedback', round: 1, head: second, answers: [{ item: first, question: 0, option: 'retest' }], screenshotComments: [] });
   const round = started(forge, answer);
   expect(round).toMatchObject({ retest: true, round: 2 });
   expect(JSON.parse(round.journeys).map((entry: { code: string }) => entry.code)).toEqual(['JOURNEY-1']);
+});
+
+test('INT-009 failure sources belong to the publisher and fallback retains other valid symptoms', () => {
+  steps({ finalize: failedStep });
+  const forge = publisher();
+  const ranked = item('Human-only check', 'HUMAN-2');
+  const impostor = { ...item('Failure', 'failure:finalize'), title: 'Placeholder' };
+  const rankedMixed = { ...ranked, source: ['HUMAN-2', 'failure:finalize'] };
+  const ranking = { ...emptyRanking(), red: [impostor], orange: [rankedMixed] };
+  expect(checkRanking({ ...emptyRanking(), orange: [impostor] }, inv().required).problems).toContain('supplied by the publisher');
+  expect(placeRanking(ranking, inv().required).orange.find(candidate => candidate.source.includes('HUMAN-2'))).toMatchObject({ type: 'Human check', source: ['HUMAN-2'] });
+  publishPackage(forge.tools, { dir: dir(), folder, ranking }, options);
+  const data = dataBlock(box.read(pageFile(1)));
+  expect(data.red).toMatchObject([{ source: ['failure:finalize'], questions: [standardQuestion('Failure')] }]);
+  expect(data.state).toContain('1 red item');
+  expect(forge.body).toContain(data.state);
+});
+
+test('rules refusal stays in the description after same-round CLI feedback and a new publish', () => {
+  steps();
+  const forge = publisher();
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
+  forge.refused('forge pr.merge refused: required approval');
+  expect(started(forge, 'merge').mode).toBe('stale');
+  expect(started(forge, 'Please address this instead').mode).toBe('feedback');
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
+  expect(forge.body).toContain('Merge was chosen and refused: forge pr.merge refused: required approval · feedback sent');
 });

@@ -14,6 +14,19 @@ export interface RequiredItem { tier: Tier; item: Item; }
 export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { shots: string[]; journeys: string[]; commits: string[]; dismissed: string[] }; }
 export interface InventoryInput { exec: Exec; dir: string; changeFolder: string; }
 export const emptyRanking = (): Ranking => ({ red: [], orange: [], yellow: [], white: [], evidence: '' });
+function citesTestFile(exec: Exec, text: string): boolean {
+  const paths = text.match(/[\w./-]+\.[\w]+/g) ?? [];
+  return paths.some(path => isTestPath(path) && output(exec, 'git', ['cat-file', '-t', `HEAD:${path.replace(/^\.\//, '')}`]) === 'blob');
+}
+function isTestPath(path: string): boolean {
+  return /(?:^|\/)(?:tests?|__tests__)\//i.test(path) || /(?:^|\/)(?:test[_-]|spec[_-])|[._-](?:test|spec)\.[\w]+$/i.test(path);
+}
+
+export function humanChecks(folder: string) {
+  const plan = readText(join(folder, 'test-plan.md'));
+  const section = /^## Human-Only Testing[^\S\n]*\n([\s\S]*?)(?=^## (?!#)|(?![\s\S]))/mi.exec(plan)?.[1] ?? '';
+  return [...section.matchAll(/^### ((?:HUMAN|HT)-\d+):\s*(.+)$/gm)].map(([, code, title]) => ({ code, title }));
+}
 function checklistItems(input: InventoryInput): RequiredItem[] {
   const folder = input.changeFolder;
   const table = tableBlocks(readText(join(folder, 'checklist.md'))).find(block => rawCells(block.header).includes('Status'));
@@ -25,9 +38,8 @@ function checklistItems(input: InventoryInput): RequiredItem[] {
     const id = cells[header.indexOf('ID')];
     const finalize = readJson<{ hadChecks?: boolean; had_checks?: boolean }>(join(input.dir, 'ci/latest.json'), {});
     const steps = readJson<Record<string, StepResult>>(join(input.dir, 'step-results.json'), {});
-    const named = cells.join(' ').match(/(?:^|[\s`])([\w./-]+\.(?:test|spec)\.[a-z]+)/g) ?? [];
     const ciEvidence = status === 'not verified' && steps.finalize?.ok && (finalize.hadChecks || finalize.had_checks) &&
-      named.some(file => output(input.exec, 'git', ['cat-file', '-t', `HEAD:${file.trim().replace(/^`/, '')}`]) === 'blob');
+      citesTestFile(input.exec, cells.join(' '));
     return [{ tier: ciEvidence ? 'yellow' as const : 'red' as const, item: { type: status === 'failed' ? 'Failure' : 'Risk', title: `${id}: ${status}`, detail: `${cells[header.indexOf('Behavior')]} — ${cells[header.indexOf('Evidence')]}`, link: `${folder}/checklist.md:${readText(join(folder, 'checklist.md')).split('\n').indexOf(row) + 1}`, source: [id] } }];
   });
 }

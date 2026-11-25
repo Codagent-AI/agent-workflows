@@ -270,16 +270,10 @@ footer.inner { color: var(--faint); font: 400 12.5px/1.5 var(--mono); padding-bl
 body { margin: 0; }
 [hidden] { display: none !important; }
 .story { white-space: pre-wrap; overflow-wrap: anywhere; }
-.item { padding: 20px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; background: var(--surface); }
-.item.red { border-left-color: var(--red); }
-.item.orange { border-left-color: var(--orange); }
-.item.yellow { border-left-color: var(--yellow); }
-.item + .item { margin-top: 12px; }
-.rail a { display: block; padding-block: 3px; overflow-wrap: anywhere; }
 .section-head + .prose { min-width: 0; }
-.shot-dialog { max-width: 95vw; max-height: 95vh; }
-.shot-dialog img { display: block; width: auto; max-width: 100%; margin-bottom: 12px; }
-.shot-dialog textarea { margin-block: 10px; }
 .thumb img { width: 100%; height: 90px; object-fit: cover; }
 fieldset { min-width: 0; }
 .q .note { margin-top: 8px; }
+
+.dot.orange { background: var(--orange); }
+.thumb-mark { color: var(--accent); }

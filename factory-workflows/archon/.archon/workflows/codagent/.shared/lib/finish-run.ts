@@ -11,11 +11,11 @@ import { evidenceRows } from './evidence.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { acceptedHead, emptyRanking, failedItems, inventory, type Ranking } from './review-inventory.ts';
+import { acceptedHead, emptyRanking, failedItems, humanChecks, inventory, type Ranking } from './review-inventory.ts';
 import { checkRanking, placeRanking } from './review-package.ts';
 import { publishPackage } from './publish-review.ts';
 import { outcomesPath, startRound } from './review-round.ts';
-import { checkResponse, finishMerge, mergeBase, pushRound, recordRetest } from './review-work.ts';
+import { abortMerge, checkResponse, finishMerge, mergeBase, pushRound, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, writeText } from './run-files.ts';
 interface FinishInputs {
   op: string; name: string; folder: string; blocked: boolean; reason: string;
@@ -84,7 +84,10 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
         reason: input.reason, stale: input.mode === 'stale' });
   }
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
-  if (input.op === 'prepare-ranking') return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
+  if (input.op === 'prepare-ranking') {
+    writeJson(join(dir, 'review/human-checks.json'), humanChecks(input.folder));
+    return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
+  }
   const ranking = JSON.parse(input.result) as Ranking;
   if (input.op === 'place-ranking') {
     writeJson(join(dir, 'review-attention.json'), placeRanking(ranking, inv.required, inv.context)); return pass();
@@ -152,11 +155,25 @@ function dispatch(input: FinishInputs, dir: string): unknown {
   if (['mark-ready', 'finalize-push'].includes(input.op)) return pushOrReady(input, dir);
   return rankingNode(input, dir);
 }
+function recordRoundException(input: FinishInputs, dir: string, failure: CheckResult): void {
+  const steps: Record<string, string> = { 'merge-base': 'merge-base', 'check-response': 'check-response', 'push-round': 'push-round', 'record-retest': 'retest' };
+  const step = steps[input.op];
+  if (input.op === 'finish-merge') abortMerge(runCommand, dir, failure.problems);
+  if (step) recordStep(dir, step, { ...failure, remaining: 'Resolve this step failure before retrying it.', round: input.round });
+}
+
+function failureOutput(op: string, dir: string) {
+  if (op === 'merge-base') return { conflict: false };
+  if (op === 'verify-archive-commit') return { archive_state: readText(join(dir, 'archive/state.json')) };
+  return {};
+}
+
 export function finishRun(input: FinishInputs): void {
   const dir = artifactsDir();
   try { process.stdout.write(`${JSON.stringify(dispatch(input, dir))}\n`); }
   catch (error) {
     const failure = fail(String(error));
+    recordRoundException(input, dir, failure);
     if (['wait-finalize-ci', 'final-ci'].includes(input.op)) {
       const result = blank(failure.problems); writeJson(join(dir, 'ci/latest.json'), result);
       recordFinalizeCheck(dir, input.step, failure);
@@ -164,7 +181,7 @@ export function finishRun(input: FinishInputs): void {
     }
     if (input.op === 'record-finalize') recordStep(dir, 'finalize', { ...failure, remaining: 'Repair finalization before merging.' });
     if (['publish-review-package', 'start-round', 'end-run'].includes(input.op)) { process.stderr.write(`${String(error)}\n`); process.exit(1); }
-    const extra = input.op === 'verify-archive-commit' ? { archive_state: readText(join(dir, 'archive/state.json')) } : {};
+    const extra = failureOutput(input.op, dir);
     process.stdout.write(`${JSON.stringify({ ...failure, ...extra })}\n`);
   }
 }

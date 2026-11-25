@@ -395,3 +395,16 @@ test.each(['confirmed', 'rejected'] as const)('a feedback review reopens only a 
   expect(state.findings[1].handed_off).toBe(true);
   expect(renderResult(state)).toContain('previous..next');
 });
+
+test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reopens a logged finding requested through %s', source => {
+  const state = stateWithFinding();
+  handoff(state, '');
+  mkdirSync(join(artifacts, 'review'), { recursive: true });
+  writeFileSync(join(artifacts, 'review/state.json'), JSON.stringify(state));
+  const answer = join(artifacts, 'review-answers-round-1.json');
+  writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DISPUTE-1', option: 'custom' }], note: source }));
+  writeFileSync(join(artifacts, 'review-response-round-1.json'), JSON.stringify([{ item: 'note', status: 'fixed', requestedFindings: ['REVIEW-1'] }]));
+  const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start: box.head(),
+    change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
+  expect(review.findings).toContain('REVIEW-1 [fixed');
+});

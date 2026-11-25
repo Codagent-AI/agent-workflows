@@ -36,3 +36,29 @@ export async function sendReview(input: {
 export function missingAnswers(rows: { required: boolean; option: string; other: string }[]): number {
   return rows.filter(row => row.required && (!row.option || (row.option === 'other' && !row.other.trim()))).length;
 }
+
+export function initialChoice(tier: string, recommended: string, answered: boolean, prior?: string): string {
+  if (answered) return prior ?? '';
+  return tier === 'yellow' ? recommended : '';
+}
+
+export function collectReview(input: {
+  action: 'feedback' | 'merge'; round: number; head: string;
+  rows: { item: string; question: number; required: boolean; option: string; other: string; note: string }[];
+  screenshots: { file: string; round: number }[]; comments: ReadonlyMap<string, string>;
+}) {
+  const answer = { action: input.action, round: input.round, head: input.head };
+  if (input.action === 'merge') return answer;
+  return { ...answer, answers: input.rows.map(({ required, ...choice }) => choice),
+    screenshotComments: input.screenshots.flatMap(({ file, round }) => {
+      const comment = input.comments.get(file);
+      return comment?.trim() ? [{ file, round, comment }] : [];
+    }) };
+}
+
+export function sizeTotals(rows: { files: number; added: number; modified: number; removed: number }[]) {
+  return rows.reduce((sum, row) => ({
+    files: sum.files + row.files, added: sum.added + row.added,
+    modified: sum.modified + row.modified, removed: sum.removed + row.removed,
+  }), { files: 0, added: 0, modified: 0, removed: 0 });
+}

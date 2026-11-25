@@ -1,4 +1,6 @@
-import { mergeBase, finishMerge } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
+import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
+import { failedItems } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { checkResponse, mergeBase, finishMerge, pushRound } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { checkForgeAccess } from '../.archon/workflows/codagent/.shared/lib/forge.ts';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { join } from 'node:path';
@@ -177,8 +179,61 @@ test('INT-007 finish entry point resumes a saved feedback response and reports t
   expect(run('start-round', 'One note')).toMatchObject({ mode: 'feedback', round: 2, archive_needed: true });
   expect(JSON.parse(box.read('artifacts/review-answers-round-1.json')).note).toBe('One note');
   expect(run('start-round')).toMatchObject({ mode: 'feedback', round: 2 });
+  for (const failedStep of ['', 'acceptance', 'archive', 'finalize']) {
+    box.write('artifacts/step-results.json', JSON.stringify(failedStep ? { [failedStep]: { ok: false, problems: 'failed', remaining: '' } } : {}));
+    expect(run('end-run').succeeded).toBe(failedStep === '');
+  }
   for (const mode of ['merged', 'closed']) {
     box.write('artifacts/review/outcome.json', JSON.stringify({ mode }));
     expect(run('end-run').succeeded).toBe(mode === 'merged');
   }
+});
+
+test('INT-008 finishMerge aborts a remaining target that introduces a second conflict', () => {
+  const { api, dir } = withMovedTips(true);
+  expect(mergeBase(api, dir).conflict).toBe(true);
+  box.git('merge', '--abort');
+  expect(finishMerge(box.exec, dir, false, '').ok).toBe(false);
+  expect(box.exec('git', ['rev-parse', '--verify', 'MERGE_HEAD']).status).not.toBe(0);
+  expect(box.read('artifacts/review/merge-conflicts.md')).toContain('CONFLICT');
+  expect(box.git('status', '--porcelain', '--untracked-files=no')).toBe('');
+});
+
+test('INT-009 blocked feedback, missing responses and a failed push are written as review failures', () => {
+  const dir = box.path('artifacts');
+  expect(checkResponse(dir, 2, false, '').problems).toContain('missing');
+  expect(checkResponse(dir, 2, true, 'implementor stopped').ok).toBe(true);
+  expect(pushRound(box.exec, dir, false, '').ok).toBe(false);
+  expect(failedItems(dir).map(entry => entry.source[0])).toEqual(['failure:address-feedback', 'failure:check-response', 'failure:push-round']);
+});
+
+test.each(['check-response', 'finish-merge', 'record-retest'])('round entry point records unexpected %s failures', op => {
+  const dir = box.path('artifacts');
+  const files: Record<string, string> = {
+    'check-response': 'review-answers-round-1.json', 'finish-merge': 'review/merge-targets.json', 'record-retest': 'review/retested-commits.json',
+  };
+  box.write(`artifacts/${files[op]}`, 'not json');
+  const script = join(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const result = Bun.spawnSync([process.execPath, script], { cwd: box.dir, env: {
+    ...process.env, ARTIFACTS_DIR: dir, INPUTS_ROUND: '2', INPUTS_STATUS: 'true', INPUTS_OP: op,
+  } });
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout.toString()).ok).toBe(false);
+  const step = { 'check-response': 'check-response', 'finish-merge': 'merge-base', 'record-retest': 'retest' }[op];
+  expect(failedItems(dir).map(entry => entry.source[0])).toContain(`failure:${step}`);
+});
+
+test.each(['merged', 'open'] as const)('INT-007 resumes an interrupted merge when read-back is %s without resubmitting', state => {
+  const dir = box.path('artifacts');
+  const head = box.head();
+  const api = box.forgeTools([rule(['forge', 'pr.view'], ok('pr.view', prView({ state, head_revision: head }))), rule(['forge', 'pr.edit-body'], ok('pr.edit-body', {}))]);
+  const ref = { repo: { host: 'github.com', path: 'owner/repo' }, number: 7 };
+  box.write('artifacts/review/pages.json', JSON.stringify([{ round: 1, head, status: 'current', ref }]));
+  box.write('artifacts/review-answers-round-1.json', JSON.stringify({ action: 'merge', round: 1, head, time: 'previous' }));
+  const passed = { ok: true, problems: '', remaining: '' };
+  box.write('artifacts/step-results.json', JSON.stringify({ archive: passed, finalize: passed }));
+  const round = startRound(api, { dir, folder: '', text: '' });
+  expect(round.mode).toBe(state === 'merged' ? 'merged' : 'stale');
+  expect(box.exists('artifacts/review/outcome.json')).toBe(state === 'merged');
+  expect(box.calls('archon').some(call => call.args[1] === 'pr.merge')).toBe(false);
 });

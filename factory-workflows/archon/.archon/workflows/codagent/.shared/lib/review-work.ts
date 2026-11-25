@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, output } from './exec.ts';
@@ -6,7 +6,7 @@ import { OPS, remoteOf } from './forge.ts';
 import { type Tools, acceptancePush } from './pull-request.ts';
 import { readPages } from './review-pages.ts';
 import { readJson, readText, recordStep, writeJson, writeText } from './run-files.ts';
-import { responsePath, selectedJourneys } from './review-round.ts';
+import { answersPath, responsePath, selectedJourneys } from './review-round.ts';
 
 function result(dir: string, step: string, check: CheckResult, remaining: string): CheckResult {
   recordStep(dir, step, { ...check, remaining });
@@ -45,16 +45,22 @@ function mergeTargets(exec: Exec, dir: string, refs: string[]) {
   return { ...result(dir, 'merge-base', pass(), 'Merged current pull request and base branch tips.'), conflict: false };
 }
 
-export function finishMerge(exec: Exec, dir: string, blocked: boolean, reason: string) {
+export function abortMerge(exec: Exec, dir: string, reason: string) {
   const pending = output(exec, 'git', ['rev-parse', '--verify', 'MERGE_HEAD']) !== undefined;
-  if (!(blocked || pending)) return mergeTargets(exec, dir, readJson<string[]>(join(dir, 'review/merge-targets.json'), []));
   const aborted = pending ? exec('git', ['merge', '--abort']) : undefined;
   const message = [reason || 'The merge conflict remains unresolved.', aborted?.stderr].filter(Boolean).join('\n');
   writeText(join(dir, 'review/merge-conflicts.md'), message);
   return result(dir, 'merge-base', fail(message), 'Resolve the merge conflict before merging the pull request.');
 }
 
-interface Response { item: string; status: string; note?: string; commit?: string }
+export function finishMerge(exec: Exec, dir: string, blocked: boolean, reason: string) {
+  const pending = output(exec, 'git', ['rev-parse', '--verify', 'MERGE_HEAD']) !== undefined;
+  if (blocked || pending) return abortMerge(exec, dir, reason);
+  const merged = mergeTargets(exec, dir, readJson<string[]>(join(dir, 'review/merge-targets.json'), []));
+  return merged.conflict ? abortMerge(exec, dir, merged.problems) : { ok: merged.ok, problems: merged.problems };
+}
+
+interface Response { item: string; status: string; note?: string; commit?: string; requestedFindings?: string[] }
 const responseStates = ['fixed', 'declined', 'no-change', 'settled', 'spec-change'];
 
 function responseEntries(file: string): Response[] | undefined {
@@ -68,6 +74,10 @@ function responseEntries(file: string): Response[] | undefined {
 export function checkResponse(dir: string, round: number, blocked: boolean, reason: string) {
   if (blocked) result(dir, 'address-feedback', fail(reason), 'Address the saved review feedback.');
   const file = responsePath(dir, round - 1);
+  const saved = readJson<{ action?: string; screenshotComments?: { file: string }[] }>(answersPath(dir, round - 1), {});
+  if (!(existsSync(file) || blocked) && saved.action !== 'merge') {
+    return result(dir, 'check-response', fail('Review response file is missing.'), 'Write the review response before publishing.');
+  }
   const entries = responseEntries(file);
   if (!entries) {
     writeText(`${file}.rejected`, readText(file));
@@ -79,7 +89,6 @@ export function checkResponse(dir: string, round: number, blocked: boolean, reas
   const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(html)?.[1];
   const data = JSON.parse(block ?? '{}') as Record<string, { source: string[] }[]>;
   const known = new Set(['note', ...['red', 'orange', 'yellow'].flatMap(tier => (data[tier] ?? []).flatMap(item => item.source))]);
-  const saved = readJson<{ screenshotComments?: { file: string }[] }>(join(dir, `review-answers-round-${round - 1}.json`), {});
   for (const shot of saved.screenshotComments ?? []) known.add(shot.file);
   const valid = entries.filter(entry => known.has(entry?.item) && responseStates.includes(entry.status));
   if (entries.length === valid.length) return pass();
@@ -93,10 +102,14 @@ export function pushRound(exec: Exec, dir: string, blocked: boolean, reason: str
 }
 
 export function recordRetest(dir: string, round: number, ready: boolean, reason: string) {
-  if (!ready) return result(dir, 'retest', fail(reason || 'Acceptance retest did not pass.'), 'Address the acceptance failure in a later round.');
-  const file = join(dir, 'review/retested-commits.json');
-  const covered = selectedJourneys(dir, round - 1).flatMap(entry => [entry.commit, ...entry.coveredCommits]);
-  writeJson(file, [...new Set([...readJson<string[]>(file, []), ...covered])]);
-  result(dir, 'acceptance', pass(), '');
-  return result(dir, 'retest', pass(), 'The selected acceptance journeys passed.');
+  const outcome = ready ? pass() : fail(reason || 'Acceptance retest did not pass.');
+  const remaining = ready ? 'The selected acceptance journeys passed.' : 'Address the acceptance failure in a later round.';
+  if (ready) {
+    const file = join(dir, 'review/retested-commits.json');
+    const covered = selectedJourneys(dir, round - 1).flatMap(entry => [entry.commit, ...entry.coveredCommits]);
+    writeJson(file, [...new Set([...readJson<string[]>(file, []), ...covered])]);
+    result(dir, 'acceptance', pass(), '');
+  }
+  recordStep(dir, 'retest', { ...outcome, remaining, round });
+  return outcome;
 }

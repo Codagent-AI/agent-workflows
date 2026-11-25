@@ -7,6 +7,7 @@ import { failedItems, type Item, type Ranking } from './review-inventory.ts';
 import { codeLinks, sourceLink, urlPath } from './review-links.ts';
 import { changeSize, journeys, screenshots } from './review-media.ts';
 import { description, embeddedJson, type PageEntry, pagesPath, prefix, readPages, sentBlock, updateDescription } from './review-pages.ts';
+import { withoutStepFailures } from './review-package.ts';
 import { standardQuestion } from './review-questions.ts';
 import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
@@ -25,8 +26,8 @@ export function pageHtml(data: unknown): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review page</title>
 <style>${asset('review-page.css')}</style>
-<header class="masthead"><div class="inner"><p id="round" class="eyebrow"></p><h1></h1><p id="state" class="state"></p></div></header>
-<div class="inner shell"><nav class="rail" aria-label="Contents"><h2>Contents</h2></nav><main></main></div>
+<header class="masthead"><div class="inner"><div id="round" class="eyebrow"></div><h1></h1><dl class="meta"></dl><p id="state" class="state"></p></div></header>
+<div class="inner shell"><nav class="rail" aria-label="Contents"><h2>Contents</h2><ol></ol></nav><main></main></div>
 <footer class="sendbar"><div class="inner sendbar-inner"><div id="send-status" class="send-status" role="status"></div><div id="send-actions" class="send-actions"></div></div></footer>
 <script type="application/json" id="page-data">${embeddedJson(data)}</script>
 ${sentBlock(null)}
@@ -43,10 +44,9 @@ function stateLine(failures: Item[], red: number, blocked: string[]): string {
 function recap(dir: string, round: number, reason: string) {
   if (round === 1) return [];
   const responses = readJson<ResponseEntry[]>(join(dir, `review-response-round-${round - 1}.json`), []);
-  const notes = ['merge-base', 'retest'].flatMap(step => {
-    const result = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {})[step];
-    return result ? [result.ok ? result.remaining : result.problems] : [];
-  });
+  const steps = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
+  const results = [steps['merge-base'], steps.retest?.round === round ? steps.retest : undefined];
+  const notes = results.flatMap(result => result ? [result.ok ? result.remaining : result.problems] : []);
   return [...responses, ...[reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))] as ResponseEntry[];
 }
 
@@ -70,10 +70,11 @@ export function publishPackage(tools: Tools, source: PackageSource, options: Pub
   const links = { base, head, dir, folder, exec: tools.exec };
   const blocked = blockedSteps(dir);
   const failures = failedItems(dir);
+  const redCount = failures.length + ranking.red.flatMap(withoutStepFailures).length;
   const entries = readPages(dir).filter(entry => entry.round < options.round);
   const newPage: PageEntry = { round: options.round, file: `review-page-round-${options.round}.html`, head,
     message: `${prefix(options.round)} Review the page and answer with feedback or merge.`,
-    state: stateLine(failures, failures.length + ranking.red.length, blocked),
+    state: stateLine(failures, redCount, blocked),
     status: 'current', time: new Date().toISOString(), run: options.run, archonUrl: options.archonUrl,
     ref: { repo, number: view.pr.number } };
   entries.push(newPage);
@@ -107,29 +108,51 @@ function renderPage(source: PackageSource, links: Parameters<typeof sourceLink>[
     return shot ? [{ ...shot, ...pick }] : [];
   });
   const stepItems = failedItems(dir);
-  const alreadyRanked = new Set(ranking.red.flatMap(item => item.source));
-  const red = [...stepItems.filter(item => !alreadyRanked.has(item.source[0])), ...ranking.red];
+  const red = [...stepItems, ...ranking.red.flatMap(withoutStepFailures)];
   const visible = (items: Item[]) => items.map(item => ({ ...item, href: sourceLink(item.link, links),
     questions: item.questions?.length ? item.questions : [standardQuestion(item.type)] }));
-  const orange = [...ranking.orange].sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
+  const orange = ranking.orange.flatMap(withoutStepFailures).sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
+  const yellow = ranking.yellow.flatMap(withoutStepFailures);
   newPage.state = stateLine(stepItems, red.length, blockedSteps(dir));
   const remote = remoteOf(exec);
   const size = changeSize(exec, `${remote.ok ? remote.value.name : 'origin'}/${options.base}`);
-  const codes = codeLinks(links, [...red, ...orange, ...ranking.yellow]);
-  const changes = recap(dir, options.round, options.reason ?? '').map(entry => ({
-    note: entry.note, label: entry.commit || entry.item,
-    href: entry.commit ? sourceLink(entry.commit, links) : codes[entry.item]?.href,
-  }));
-  const html = pageHtml({ title: options.title, round: options.round, head, run: options.run, state: newPage.state,
+  const codes = codeLinks(links, [...red, ...orange, ...yellow]);
+  const changes = recapLinks(links, options, codes);
+  const html = pageHtml({ title: options.title, repository: newPage.ref.repo.path, pullRequest: newPage.ref.number, round: options.round, head, run: options.run, state: newPage.state,
     acceptedHead: readText(join(dir, 'review/accepted-head.txt')).trim(), wait: options.wait, merge: options.mergeAllowed,
     summary: readText(join(dir, 'pr-body.md')), recap: changes, size, screenshots: shots, keyEvidence: picks, codes,
-    red: visible(red), orange: visible(orange), yellow: visible(ranking.yellow),
+    red: visible(red), orange: visible(orange), yellow: visible(yellow),
     decisions: readText(join(folder, 'decision-log.md')), disputes: readText(join(folder, 'dispute-log.md')) });
-  const chosen = orange.flatMap(item => (item.journeys ?? []).map(journey => ({
+  saveJourneys(dir, options.round, [...red, ...orange, ...yellow]);
+  return { html, succeeded: stepItems.length === 0 };
+}
+
+function saveJourneys(dir: string, round: number, items: Item[]): void {
+  const chosen = items.flatMap(item => (item.journeys ?? []).map(journey => ({
     ...journey, sources: item.source, coveredCommits: item.source.filter(code => /^[a-f0-9]{40,64}$/.test(code)),
   })));
   const known = journeys(dir);
-  writeJson(join(dir, 'review', `journeys-round-${options.round}.json`),
+  writeJson(join(dir, 'review', `journeys-round-${round}.json`),
     chosen.map(item => ({ ...known.find(journey => journey.code === item.code), ...item })));
-  return { html, succeeded: stepItems.length === 0 };
+}
+
+function recapLinks(links: Parameters<typeof sourceLink>[1], options: PublishOptions, codes: ReturnType<typeof codeLinks>) {
+  const previous = readPages(links.dir).at(-1);
+  const priorHtml = previous ? readText(join(links.dir, previous.file)) : '';
+  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(priorHtml)?.[1];
+  const data = JSON.parse(block ?? '{}') as Record<string, Item[]>;
+  const refs = new Map<string, { title: string; href: string }>();
+  for (const tier of ['red', 'orange', 'yellow']) {
+    for (const [index, item] of (data[tier] ?? []).entries()) {
+      for (const source of item.source) refs.set(source, { title: item.title, href: `${previous?.file}#${tier}-${index + 1}` });
+    }
+  }
+  return recap(links.dir, options.round, options.reason ?? '').map(entry => {
+    const ref = codes[entry.item] ?? refs.get(entry.item);
+    if (entry.commit) {
+      const subject = output(links.exec, 'git', ['show', '-s', '--format=%s', entry.commit]) || 'Review fix';
+      return { note: entry.note, label: `${entry.commit.slice(0, 12)} · ${subject}`, href: sourceLink(entry.commit, links) };
+    }
+    return { note: entry.note, label: ref ? `${entry.item} · ${ref.title}` : '', href: ref?.href };
+  });
 }

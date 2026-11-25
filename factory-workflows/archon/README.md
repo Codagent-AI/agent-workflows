@@ -115,6 +115,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
 | `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
 | `review-attention.json`, `review-package.md` | package scripts | Checked ranking and generated PR description block. |
+| `review/human-checks.json` | ranking preparation | Human-only test IDs and titles extracted from the test plan. |
 | `review-page-round-<n>.html`, `review-page.html` | publisher | Each numbered review page and the latest page. |
 | `review/pages.json`, `review/outcome.json` | review scripts | Page index and terminal merge or close outcome. |
 | `review-answers-round-<n>.json`, `review-response-round-<n>.json` | review scripts and implementor | Reviewer's saved answer and the implementor's response. |

@@ -13,6 +13,7 @@ export interface PageEntry {
   time: string;
   reason?: string;
   refresh?: boolean;
+  refusals?: string[];
   ref: { repo: Repo; number: number };
   run: string;
   archonUrl: string;
@@ -27,8 +28,10 @@ function pageEntry(page: PageEntry): string {
   const where = page.archonUrl
     ? `[${label}](${page.archonUrl.replace(/\/+$/, '')}/api/artifacts/${encodeURIComponent(page.run)}/${page.file})`
     : `${label} (run ${page.run})`;
-  const status = page.status === 'Merge refused' ? `Merge was chosen and refused: ${page.reason ?? ''}` : page.status;
-  return `- ${where} — ${status}`;
+  const refusals = page.refusals ?? (page.status === 'Merge refused' && page.reason ? [page.reason] : []);
+  const history = refusals.map(reason => `Merge was chosen and refused: ${reason}`);
+  const status = page.status === 'Merge refused' ? history : [...history, page.status];
+  return `- ${where} — ${status.join(' · ')}`;
 }
 
 export function description(dir: string, pages: PageEntry[]): string {

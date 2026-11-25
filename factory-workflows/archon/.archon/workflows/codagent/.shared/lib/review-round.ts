@@ -115,11 +115,11 @@ function recordAnswer(dir: string, page: PageEntry, answer: SavedAnswer): void {
 function clearRound(dir: string, round: number): void {
   const history = join(dir, 'review', `round-${round}`);
   const marker = join(history, 'snapshot.json');
-  if (existsSync(marker)) return;
+  const snapshotted = existsSync(marker);
   for (const name of ['step-results.json', 'finalize-results.json', 'ci/latest.json', 'ci/latest-report.txt']) {
     const source = join(dir, name);
     const target = join(history, name);
-    if (existsSync(source) && !existsSync(target)) {
+    if (!snapshotted && existsSync(source) && !existsSync(target)) {
       mkdirSync(join(target, '..'), { recursive: true });
       copyFileSync(source, target);
     }
@@ -129,7 +129,7 @@ function clearRound(dir: string, round: number): void {
   for (const step of [...roundFailures, 'finalize']) delete remaining[step];
   writeJson(join(dir, 'step-results.json'), remaining);
   rmSync(join(dir, 'review-attention.json'), { force: true });
-  writeJson(marker, { round });
+  if (!snapshotted) writeJson(marker, { round });
 }
 
 function begin(input: RoundInput, page: PageEntry): ReturnType<typeof roundOutput> {
@@ -170,6 +170,7 @@ function handleRefusal(tools: Tools, input: RoundInput, pages: PageEntry[], repl
   if (observed?.state === 'merged') return merged(tools, input, pages, page);
   if (observed?.state === 'closed') return finish(input, page, 'closed', `Pull request #${page.ref.number} was closed.`);
   page.status = 'Merge refused';
+  page.refusals = [...(page.refusals ?? []), reason];
   page.reason = reason;
   page.time = time;
   page.refresh = needsRefresh(tools, page, observed?.head_revision);
@@ -225,6 +226,7 @@ function applyAnswer(tools: Tools, input: RoundInput, pages: PageEntry[], chosen
   if (response.action === 'merge') return mergeAnswer(tools, input, pages, { answer: response, retry: !answer });
   recordAnswer(input.dir, page, response);
   page.status = 'feedback sent';
+  if (page.reason && !page.refusals) page.refusals = [page.reason];
   delete page.reason;
   delete page.refresh;
   page.time = response.time;

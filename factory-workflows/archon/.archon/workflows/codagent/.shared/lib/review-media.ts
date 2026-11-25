@@ -20,10 +20,10 @@ export function screenshots(dir: string): Screenshot[] {
   });
 }
 
-export function journeys(dir: string): Journey[] {
+export function journeys(dir: string): (Journey & { artifact: string })[] {
   const root = join(dir, 'acceptance-journeys');
   if (!existsSync(root)) return [];
-  return readdirSync(root).filter(file => /^round-\d+\.json$/.test(file)).flatMap(file => readJson<Journey[]>(join(root, file), []));
+  return readdirSync(root).filter(file => /^round-\d+\.json$/.test(file)).flatMap(file => readJson<Journey[]>(join(root, file), []).map(journey => ({ ...journey, artifact: `acceptance-journeys/${file}` })));
 }
 
 interface ClocCount { nFiles?: number; code?: number }

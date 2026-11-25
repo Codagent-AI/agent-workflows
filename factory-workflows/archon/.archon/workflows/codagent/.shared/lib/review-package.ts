@@ -1,6 +1,6 @@
 import { type CheckResult, fail, pass } from './check.ts';
 import { TIERS, type Ranking, type RequiredItem, type Item, type Tier } from './review-inventory.ts';
-import { type KeyEvidence, standardQuestion, validQuestion } from './review-questions.ts';
+import { type KeyEvidence, type Question, standardQuestion, validQuestion } from './review-questions.ts';
 
 
 const TYPES = new Set(['Verification', 'Agent decision', 'Decision', 'Risk', 'Failure', 'Dispute', 'Late commit', 'Human check']);
@@ -9,6 +9,24 @@ export function validItem(item: Item): boolean {
     typeof item.title === 'string' && item.title.trim() !== '' && typeof item.detail === 'string' && item.detail.trim() !== '' &&
     typeof item.link === 'string' && Array.isArray(item.source) && item.source.length > 0 && item.source.every(source => typeof source === 'string');
 }
+const typeAliases: Record<string, string> = { 'Human-only check': 'Human check', 'Human-only testing': 'Human check' };
+function normalizeTypes(item: Item): Item {
+  if (typeof item?.type !== 'string') return item;
+  const types = item.type.split(',').map(value => {
+    const type = value.trim();
+    return Object.hasOwn(typeAliases, type) ? typeAliases[type] : type;
+  });
+  return { ...item, type: [...new Set(types)].join(', ') };
+}
+
+export function isStepFailure(source: string): boolean {
+  return source.startsWith('failure:');
+}
+export function withoutStepFailures(item: Item): Item[] {
+  const source = item.source.filter(code => !isStepFailure(code));
+  return source.length > 0 ? [{ ...item, source }] : [];
+}
+
 function entries(ranking: Ranking): { tier: Tier; item: Item }[] {
   return TIERS.flatMap(tier => (Array.isArray(ranking[tier]) ? ranking[tier] : []).map(item => ({ tier, item })));
 }
@@ -49,14 +67,34 @@ function validQuestions(item: Item, tier: Tier): boolean {
   const retest = questions.some(question => question.options.some(option => option.id === 'retest'));
   return retest === Boolean(item.journeys?.length);
 }
+function isRetestQuestion(question: Question): boolean {
+  const ids = new Set(question.options.map(option => option.id));
+  return ids.size === 2 && ids.has('retest') && ids.has('leave');
+}
+
+function matchesDisputeChoices(item: Item | undefined, expected: Item): boolean {
+  const allowed = expected.questions?.[0]?.options ?? [];
+  const questions = item?.questions ?? [];
+  const [dispute, ...remaining] = questions;
+  if (dispute?.options.length !== allowed.length) return false;
+  if (remaining.length > 0 && !(item?.journeys?.length && remaining.length === 1 && isRetestQuestion(remaining[0]))) return false;
+  return allowed.every(wanted => dispute.options.some(option =>
+    option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)));
+}
+
 function choiceProblems(ranking: Ranking, required: RequiredItem[]): string[] {
   return required.filter(row => row.item.specChange).flatMap(row => {
     const item = entries(ranking).find(entry => entry.item.source.includes(row.item.source[0]))?.item;
-    const options = row.item.questions?.[0]?.options ?? [];
-    return item?.questions?.some(question => options.every(wanted => question.options.some(option =>
-      option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)))) ? []
-      : [`spec-change dispute ${row.item.source[0]} lacks required options`];
+    return matchesDisputeChoices(item, row.item) ? [] : [`spec-change dispute ${row.item.source[0]} needs exactly the allowed options`];
   });
+}
+
+function disputeQuestions(expected: Item, found: Item): Question[] {
+  const questions = expected.questions ?? [];
+  if (!found.journeys?.length) return questions;
+  return [...questions, { prompt: 'Retest the affected journeys?', options: [
+    { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
+  ] }];
 }
 function sourceProblems(item: Item, context: RankingContext): string[] {
   const rejected = item.source.filter(source => context.dismissed.includes(source));
@@ -77,6 +115,7 @@ function itemProblems(ranking: Ranking, context: RankingContext): string[] {
     if (titles.has(item.title)) problems.push(`item appears in two tiers: ${item.title}`);
     if (!validQuestions(item, tier)) problems.push(`invalid questions for ${item.title}`);
     problems.push(...sourceProblems(item, context));
+    if (item.source.some(isStepFailure)) problems.push(`Step failure items are supplied by the publisher: ${item.title}`);
     titles.add(item.title);
   }
   return problems;
@@ -97,7 +136,7 @@ function insertRequired(placed: Ranking, expected: RequiredItem): void {
     const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
     const lacksSize = expected.item.type === 'Late commit' && requiredItemProblems(expected, found.item).length > 0;
     const detail = lacksSize ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
-    const questions = expected.item.specChange ? expected.item.questions : found.item.questions;
+    const questions = expected.item.specChange ? disputeQuestions(expected.item, found.item) : found.item.questions;
     placed[tier].push({ ...found.item, type, detail, questions: questions?.length ? questions : [standardQuestion(type)] });
 }
 function repairedItem(item: Item, tier: Tier, context: RankingContext): Item {
@@ -118,10 +157,12 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[], context
     keyEvidence: picks.filter(pick => validPick(pick, context)).slice(0, 5) };
   const titles = new Set<string>();
   for (const { tier, item } of entries(ranking)) {
-    if (!validItem(item) || titles.has(item.title) || item.source.some(source => context.dismissed.includes(source))) continue;
-    if (item.source.some(source => source.startsWith('failure:'))) continue;
-    placed[tier].push(repairedItem(item, tier, context));
-    titles.add(item.title);
+    const normalized = normalizeTypes(item);
+    if (!validItem(normalized) || titles.has(normalized.title) || normalized.source.some(source => context.dismissed.includes(source))) continue;
+    for (const remaining of withoutStepFailures(normalized)) {
+      placed[tier].push(repairedItem(remaining, tier, context));
+      titles.add(remaining.title);
+    }
   }
   for (const expected of required.filter(row => !row.item.source[0]?.startsWith('failure:'))) {
     insertRequired(placed, { ...expected, item: repairedItem(expected.item, expected.tier, context) });
