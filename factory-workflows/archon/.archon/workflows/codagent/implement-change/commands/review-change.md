@@ -110,10 +110,16 @@ This format structures your thinking — it is not a gate. If you cannot complet
 
 # Review task
 
-Review only the changed code in $INPUTS.files for $INPUTS.place. The range starts at $INPUTS.start and ends at $INPUTS.end. For acceptance's first review, diff the start revision against the working tree, including tracked uncommitted changes; otherwise diff start..end. Exclude `$INPUTS.change_dir/` throughout. Do not repeat the inspection audit against the definition or checklist, and do not review style. Inspect only: change no file, commit, branch or worktree state. Do not run tests or Agent Validator.
+Review only the changed code in $INPUTS.files for $INPUTS.place. The range starts at $INPUTS.start and ends at $INPUTS.end. For acceptance's first review, diff the start revision against the working tree, including tracked uncommitted changes; for before-PR diff start..end. For feedback, inspect the supplied revisions individually. Use `git show <sha>` for ordinary commits and `git show --remerge-diff <sha>` for merge resolutions. The list includes commits imported from the PR head and excludes imported base commits. An empty list means there are no product revisions to inspect. Exclude `$INPUTS.change_dir/` throughout. Do not repeat the inspection audit against the definition or checklist, and do not review style. Inspect only: change no file, commit, branch or worktree state. Do not run tests or Agent Validator.
+
+Feedback revisions, empty outside feedback:
+$INPUTS.feedback_revisions
 
 Already handed-off findings (title, file, line):
 $INPUTS.handed_off
-Do not report them again unless the new changes make them worse.
+Do not check or report them again. In a feedback cycle, verify the separately listed finding fixes the reviewer asked for. Return a verdict for each requested fix using its existing ID.
 
-Return JSON only: {"verdicts":[],"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Leave `verdicts` empty; it is for re-reviews. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.
+Requested finding fixes, empty outside feedback:
+$INPUTS.requested
+
+Return JSON only: {"verdicts":[],"findings":[{"title":"...","file":"...","line":0,"severity":"high|medium|low","category":"quality|security|error-handling","problem":"...","fix":"..."}]}. Leave `verdicts` empty unless this feedback review has requested finding fixes. Use integer 0 when there is no line, an empty list when there is no defect, and only the enum values named by the output schema. This JSON output replaces any format the review prompts above give. Do not assign IDs or states; the workflow owns them.

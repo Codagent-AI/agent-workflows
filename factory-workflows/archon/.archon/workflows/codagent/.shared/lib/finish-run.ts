@@ -11,17 +11,33 @@ import { evidenceRows } from './evidence.ts';
 import { acceptancePush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { failedItems, inventory, type Ranking } from './review-inventory.ts';
-import { checkRanking, placeRanking, publishPackage } from './review-package.ts';
+import { acceptedHead, emptyRanking, failedItems, humanChecks, inventory, type InventoryInput, type Ranking } from './review-inventory.ts';
+import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
+import { currentPage, publishPackage } from './publish-review.ts';
+import { outcomesPath, startRound } from './review-round.ts';
+import { abortMerge, checkResponse, finishMerge, mergeBase, pushRound, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, writeText } from './run-files.ts';
 interface FinishInputs {
   op: string; name: string; folder: string; blocked: boolean; reason: string;
   result: string; previous: string; status: string; step: string;
   /** False when stop_after is acceptance: the run ends after the acceptance rounds. */
   finish?: boolean;
+  answer?: string; mode?: string; round?: number; wait?: boolean; run?: string; archonUrl?: string; archiveNeeded?: boolean;
+}
+export function finishInputs(env: NodeJS.ProcessEnv): FinishInputs {
+  return { op: env.INPUTS_OP ?? '', name: env.INPUTS_CHANGE_NAME ?? '',
+  folder: env.INPUTS_CHANGE_FOLDER ?? '', blocked: env.INPUTS_BLOCKED === 'true' || env.INPUTS_PREVIOUS_BLOCKED === 'true',
+  reason: env.INPUTS_REASON ?? '', result: env.INPUTS_RESULT ?? '',
+  previous: env.INPUTS_PREVIOUS ?? '', status: env.INPUTS_STATUS ?? '', step: env.INPUTS_STEP ?? '',
+  answer: env.INPUTS_ANSWER, mode: env.INPUTS_MODE,
+  round: Number(env.INPUTS_ROUND || 1), wait: env.INPUTS_REVIEW_WAIT !== 'false',
+  run: env.WORKFLOW_ID, archonUrl: env.INPUTS_ARCHON_URL,
+  archiveNeeded: env.INPUTS_ARCHIVE_NEEDED !== 'false',
+  finish: env.INPUTS_STOP_AFTER !== 'acceptance' };
 }
 function archiveNode(input: FinishInputs, dir: string): unknown {
-  const args = { exec: runCommand, dir, name: input.name };
+  const args = { exec: runCommand, dir, name: input.name, round: input.round };
+  if (input.op === 'record-archive' && input.archiveNeeded === false) return { change_folder: input.folder };
   if (input.op === 'record-archive') {
     const recorded = recordArchive(args);
     if (input.blocked) recordStep(dir, 'archive', { ok: false, problems: input.reason, remaining: `Repair the archive; retained folder: ${recorded.change_folder}` });
@@ -60,16 +76,30 @@ function ciNode(input: FinishInputs, dir: string): unknown {
   }
   return runCiWait(input, dir, cycle);
 }
+export function rankingForPublication(input: InventoryInput): Ranking {
+  const saved = readJson<Ranking | null>(join(input.dir, 'review-attention.json'), null);
+  if (saved) return saved;
+  const inv = inventory(input);
+  return placeRanking(emptyRanking(), inv.required, inv.context);
+}
 function rankingNode(input: FinishInputs, dir: string): unknown {
+  if (input.op === 'publish-review-package') {
+    if (input.mode === 'stale') return { ...currentPage(dir, input.reason), succeeded: false };
+    return publishPackage(defaultTools(), { dir, folder: input.folder,
+      ranking: rankingForPublication({ exec: runCommand, dir, changeFolder: input.folder }) },
+      { round: input.round ?? 1, wait: input.wait ?? true, run: input.run ?? '', archonUrl: input.archonUrl ?? '' });
+  }
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
-  if (input.op === 'prepare-ranking') return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
-  if (input.op === 'publish-review-package') return publishPackage(defaultTools(), dir, input.folder, readJson<Ranking>(join(dir, 'review-attention.json'), JSON.parse(input.result || '{}') as Ranking));
+  if (input.op === 'prepare-ranking') {
+    writeJson(join(dir, 'review/human-checks.json'), humanChecks(input.folder));
+    return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
+  }
   const ranking = JSON.parse(input.result) as Ranking;
   if (input.op === 'place-ranking') {
-    writeJson(join(dir, 'review-attention.json'), placeRanking(ranking, inv.required)); return pass();
+    writeJson(join(dir, 'review-attention.json'), placeRanking(ranking, inv.required, inv.context)); return pass();
   }
-  const checked = checkRanking(ranking, inv.required);
-  if (checked.ok) writeJson(join(dir, 'review-attention.json'), ranking);
+  const checked = checkRanking(ranking, inv.required, inv.context);
+  if (checked.ok) writeJson(join(dir, 'review-attention.json'), bindDisputeQuestions(ranking, inv.required));
   return checked;
 }
 function pushOrReady(input: FinishInputs, dir: string): CheckResult {
@@ -96,7 +126,31 @@ export function pushRecheck(dir: string): CheckResult {
 export function endedAfterAcceptance(dir: string): { succeeded: boolean } {
   return { succeeded: failedItems(dir).length === 0 };
 }
+function roundNode(input: FinishInputs, dir: string): unknown {
+  const round = input.round ?? 1;
+  switch (input.op) {
+    case 'start-round':
+      if (!readText(join(dir, 'review/accepted-head.txt'))) writeText(join(dir, 'review/accepted-head.txt'), acceptedHead({ exec: runCommand, dir, changeFolder: input.folder }));
+      return startRound(defaultTools(), { dir, folder: input.folder, text: input.answer ?? '' });
+    case 'end-run': {
+      const outcome = readJson<{ mode?: string; reason?: string }>(outcomesPath(dir), {});
+      return { succeeded: outcome.mode ? outcome.mode === 'merged' : endedAfterAcceptance(dir).succeeded, reason: outcome.reason ?? '' };
+    }
+    case 'merge-base': {
+      const merged = mergeBase(defaultTools(), dir);
+      if (!merged.ok) recordStep(dir, 'merge-base', { ...merged, remaining: 'Merge the current remote branch tips.' });
+      return merged;
+    }
+    case 'finish-merge': return finishMerge(runCommand, dir, input.blocked, input.reason);
+    case 'check-response': return checkResponse(dir, round, input.blocked, input.reason);
+    case 'push-round': return pushRound(runCommand, dir, input.blocked, input.reason);
+    case 'record-retest': return recordRetest(dir, round, input.status === 'true', input.reason);
+    default: return undefined;
+  }
+}
 function dispatch(input: FinishInputs, dir: string): unknown {
+  const reviewRound = roundNode(input, dir);
+  if (reviewRound !== undefined) return reviewRound;
   if (input.op === 'end-after-acceptance') return pass();
   if (input.op === 'list-unverified') return unverifiedRows(input.folder);
   if (input.op === 'push-recheck') return pushRecheck(dir);
@@ -107,19 +161,33 @@ function dispatch(input: FinishInputs, dir: string): unknown {
   if (['mark-ready', 'finalize-push'].includes(input.op)) return pushOrReady(input, dir);
   return rankingNode(input, dir);
 }
+function recordRoundException(input: FinishInputs, dir: string, failure: CheckResult): void {
+  const steps: Record<string, string> = { 'merge-base': 'merge-base', 'check-response': 'check-response', 'push-round': 'push-round', 'record-retest': 'retest' };
+  const step = steps[input.op];
+  if (input.op === 'finish-merge') abortMerge(runCommand, dir, failure.problems);
+  if (step) recordStep(dir, step, { ...failure, remaining: 'Resolve this step failure before retrying it.', round: input.round });
+}
+
+function failureOutput(op: string, dir: string) {
+  if (op === 'merge-base') return { conflict: false };
+  if (op === 'verify-archive-commit') return { archive_state: readText(join(dir, 'archive/state.json')) };
+  return {};
+}
+
 export function finishRun(input: FinishInputs): void {
   const dir = artifactsDir();
   try { process.stdout.write(`${JSON.stringify(dispatch(input, dir))}\n`); }
   catch (error) {
     const failure = fail(String(error));
+    recordRoundException(input, dir, failure);
     if (['wait-finalize-ci', 'final-ci'].includes(input.op)) {
       const result = blank(failure.problems); writeJson(join(dir, 'ci/latest.json'), result);
       recordFinalizeCheck(dir, input.step, failure);
       process.stdout.write(`${JSON.stringify({ status: 'error', had_checks: false, head_moved: false, report: '', ci_report: failure.problems, cycle: 0 })}\n`); return;
     }
     if (input.op === 'record-finalize') recordStep(dir, 'finalize', { ...failure, remaining: 'Repair finalization before merging.' });
-    if (input.op === 'publish-review-package') { process.stderr.write(`${String(error)}\n`); process.exit(1); }
-    const extra = input.op === 'verify-archive-commit' ? { archive_state: readText(join(dir, 'archive/state.json')) } : {};
+    if (['prepare-ranking', 'publish-review-package', 'start-round', 'end-run'].includes(input.op)) { process.stderr.write(`${String(error)}\n`); process.exit(1); }
+    const extra = failureOutput(input.op, dir);
     process.stdout.write(`${JSON.stringify({ ...failure, ...extra })}\n`);
   }
 }

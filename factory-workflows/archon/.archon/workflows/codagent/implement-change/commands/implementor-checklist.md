@@ -1,6 +1,6 @@
 You are running autonomously with no human in the loop. Do not stop to ask for confirmation or clarification. Do not say things like "let me know", "ready when you are", or "shall I proceed". Make decisions and complete the entire task.
 
-Before implementing OpenSpec change "$INPUTS.change_name", read only its approved definition under `$INPUTS.change_dir/` (proposal, specs, design, and test plan). Follow `$PACK_DIR/.shared/verify-behavior.md` to write its checklist, with IDs `I-1`, `I-2`, and so on, in the file `$INPUTS.change_dir/checklist.md`.
+Before implementing OpenSpec change "$INPUTS.change_name", read only its approved definition under `$INPUTS.change_dir/` (proposal, specs, design, and test plan). Follow `$PACK_DIR/.shared/verify-behavior.md` to write its checklist, with IDs `CHECK-1`, `CHECK-2`, and so on, in the file `$INPUTS.change_dir/checklist.md`.
 
 This step only writes the checklist: change no other file and do not commit. You implement the change later, against this checklist.
 

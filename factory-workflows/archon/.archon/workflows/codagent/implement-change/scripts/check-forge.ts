@@ -3,5 +3,5 @@ import { requireOk } from '../../.shared/lib/check.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
 import { checkForgeAccess } from '../../.shared/lib/forge.ts';
 
-const { message, ...result } = checkForgeAccess(runCommand, process.env);
+const { message, ...result } = checkForgeAccess(runCommand, process.env, process.env.INPUTS_REVIEW_WAIT !== 'false');
 requireOk(result, message);

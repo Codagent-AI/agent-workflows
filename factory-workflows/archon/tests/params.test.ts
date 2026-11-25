@@ -106,6 +106,12 @@ describe('inputProblems', () => {
     expect(inputProblems({ ...valid, stopAfter: 'acceptance' })).toEqual([]);
   });
 
+  test('review wait rejects non-boolean input while accepting either boolean string', () => {
+    expect(inputProblems({ ...valid, reviewWait: 'maybe' })).toContain('review_wait must be true or false');
+    expect(inputProblems({ ...valid, reviewWait: 'false' })).toEqual([]);
+    expect(inputProblems({ ...valid, reviewWait: 'true' })).toEqual([]);
+  });
+
   test('reports every problem at once', () => {
     const problems = inputProblems({ ...valid, changeName: 'Demo', acceptanceRounds: '0', acceptanceFixScope: ' ', reviewStrategy: 'bad', stopAfter: 'archive' });
     expect(problems).toHaveLength(5);
@@ -197,7 +203,9 @@ describe('pack settings reach the included blocks', () => {
       [
         'acceptance_fix_scope',
         'acceptance_rounds',
+        'archon_url',
         'review_strategy',
+        'review_wait',
         'stop_after',
       ].sort()
     );
@@ -272,7 +280,7 @@ describe('merged workflow contracts', () => {
 
   test('validation is first and authored outcome comes from acceptance status', () => {
     expect(workflow.nodes[0]?.id).toBe('validate-inputs');
-    expect(workflow.returns).toBe('publish-review-package');
+    expect(workflow.returns).toBe('end-run');
     expect(workflow.outcome_field).toBe('succeeded');
     expect(readdirSync(pack)).not.toContain('verify-change');
   });
@@ -302,13 +310,13 @@ describe('merged workflow contracts', () => {
   test('every step on a session returns the schema its session started with', () => {
     const root = (entry: WorkflowNode): WorkflowNode =>
       typeof entry.context === 'object' ? root(node(entry.context.resume)) : entry;
-    const sessions = ['implementor-checklist', 'review-change', 'round-review'];
+    const sessions = ['implementor-checklist', 'review-change', 'round-review', 'feedback-review', 'retest-journeys'];
     for (const start of sessions) {
       const members = nodes.filter(entry => entry.model && root(entry).id === start);
       expect(members.length).toBeGreaterThan(1);
       for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
     }
-    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(23);
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(27);
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {

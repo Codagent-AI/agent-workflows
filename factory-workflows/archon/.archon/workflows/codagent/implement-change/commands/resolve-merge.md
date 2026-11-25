@@ -1,0 +1,3 @@
+Resolve the in-progress merge using the approved definition and the branch's changes. The affected change folder is $INPUTS.change_dir.
+
+The merge reported $INPUTS.problems. Inspect Git state before resolving. The current review branch targets are recorded in $ARTIFACTS_DIR/review/merge-targets.json. After committing the current resolution, bring in any remaining target and resolve it before reporting success. Commit each resolution and record consequential choices in the change folder's decision log, continuing its DECIDE numbering. If a conflict needs a person's decision, return blocked with the paths, competing behavior and decision needed. Leave Git's merge state for the workflow to abort and record.

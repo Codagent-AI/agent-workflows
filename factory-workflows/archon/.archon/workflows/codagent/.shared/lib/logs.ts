@@ -5,8 +5,10 @@ import { type CheckResult, fail, pass } from './check.ts';
 import { readText, writeText, recordStep, readJson } from './run-files.ts';
 export function numberLog(text: string, prefix: string): string {
   let count = 0;
-  const numbered = text.replace(/^## (?:D[P]?-\d+: )?(.*)$/gm, (_match, heading: string) => {
-    count += 1; return `## ${prefix}-${String(count).padStart(2, '0')}: ${heading}`;
+  const existing = [...text.matchAll(/^## (?:DECIDE|DISPUTE|D|DP)-(\d+):/gm)].map(match => Number(match[1]));
+  let next = Math.max(0, ...existing);
+  const numbered = text.replace(/^## (?:(?:DECIDE|DISPUTE|D|DP)-(\d+): )?(.*)$/gm, (_match, id: string | undefined, heading: string) => {
+    count += 1; return `## ${prefix}-${id ? Number(id) : ++next}: ${heading}`;
   });
   return count > 0 ? `${numbered.trim()}\n` : 'No entries.\n';
 }
@@ -18,7 +20,7 @@ export function commitLogs(exec: Exec, dir: string, name: string): CheckResult {
   const folder = `openspec/changes/${name}`;
   const paths = ['decision-log.md', 'dispute-log.md'].map(file => join(folder, file));
   for (const [index, file] of ['decision-log.md', 'dispute-log.md'].entries()) {
-    writeText(paths[index], numberLog(readText(join(dir, file)), index === 0 ? 'D' : 'DP'));
+    writeText(paths[index], numberLog(readText(join(dir, file)), index === 0 ? 'DECIDE' : 'DISPUTE'));
   }
   const results = readJson<Record<string, { ok: boolean; problems: string; remaining: string }>>(join(dir, 'step-results.json'), {});
   if (results.acceptance && !results.acceptance.ok) {

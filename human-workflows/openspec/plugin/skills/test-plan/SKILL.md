@@ -22,7 +22,7 @@ reliably detect each important failure:
 
 - **Unit tests:** the broad base for isolated logic, validation, transformations, decisions, and edge
   cases. Do not inventory these in the test plan.
-- **Integration tests (`INT-*`):** important boundaries where real components must work together, such
+- **Integration tests (`INTEG-*`):** important boundaries where real components must work together, such
   as adapters, databases, filesystems, subprocesses, APIs, queues, or configuration-to-runtime wiring.
   Prefer controlled real dependencies or contract tests when they are more faithful than mocks.
 - **Automated end-to-end tests (`E2E-*`):** a small set of critical journeys through a public entry
@@ -57,20 +57,20 @@ Record the envelope:
 Note known risk areas, prior defect clusters, and anything the design treats as an accepted limitation.
 These inform exploration without prescribing it.
 
-Default human-only testing to `None.` Add an `HT-*` only for judgment or authority unavailable to an
+Default human-only testing to `None.` Add an `HUMAN-*` only for judgment or authority unavailable to an
 agent with the product and tools—for example subjective preference, legal approval, physical
 perception, unavailable personal credentials, or an irreversible act only the user may perform.
 If a test needs only the user's permission, such as spending on live agents or creating a throwaway
 repository, ask for it while writing the plan. When the user agrees, write in the envelope that the
-acceptance pass may do it, and the pass does it. It is not an `HT-*`. Visual and interactive UI
-testing belongs to the exploratory pass. For each `HT-*`, state why an agent cannot perform it, what prior testing must establish,
+acceptance pass may do it, and the pass does it. It is not an `HUMAN-*`. Visual and interactive UI
+testing belongs to the exploratory pass. For each `HUMAN-*`, state why an agent cannot perform it, what prior testing must establish,
 concise user instructions, and the decision or observation required.
 
 ## Approve and write
 
 Present the proposed obligations, the envelope, meaningful omissions, and consequential testing
 choices. After user approval, write the plan and a coverage map containing only requirements or
-journeys with an additional `INT-*`, `E2E-*`, or `HT-*` obligation. Do not create tasks, write tests,
+journeys with an additional `INTEG-*`, `E2E-*`, or `HUMAN-*` obligation. Do not create tasks, write tests,
 execute tests, or invoke another lifecycle phase.
 
 ## Artifact template
@@ -84,7 +84,7 @@ obligations.
 
 ## Integration Tests
 
-### INT-001: <boundary behavior>
+### INTEG-1: <boundary behavior>
 - Covers: <requirements or journey>
 - Boundary: <real components and interaction>
 - Setup: <controlled dependencies and data>
@@ -94,7 +94,7 @@ obligations.
 
 ## End-to-End Tests
 
-### E2E-001: <critical journey>
+### E2E-1: <critical journey>
 - Covers: <requirements or journey>
 - Surface: <public entry point>
 - Setup: <realistic isolated environment>
@@ -116,7 +116,7 @@ obligations.
 None.
 
 <!-- When needed:
-### HT-001: <human judgment or authority>
+### HUMAN-1: <human judgment or authority>
 - Reason: <why an agent cannot perform it>
 - Prerequisites: <prior automated and acceptance evidence>
 - Instructions: <concise user actions>
@@ -125,7 +125,7 @@ None.
 
 ## Coverage Map
 
-| Requirement or journey | INT | E2E | HT |
+| Requirement or journey | INTEG | E2E | HUMAN |
 | --- | --- | --- | --- |
 | <item> | <IDs or —> | <IDs or —> | <IDs or —> |
 ```

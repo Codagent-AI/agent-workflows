@@ -22,9 +22,10 @@ export const OPS = {
   logs: 'checks.logs',
   reviews: 'pr.reviews',
   mergeState: 'pr.merge-state',
+  merge: 'pr.merge',
 } as const;
 
-export const FORGE_OPERATIONS: string[] = Object.values(OPS);
+export const FORGE_OPERATIONS: string[] = Object.values(OPS).filter(op => op !== OPS.merge);
 
 export interface Repo {
   host: string;
@@ -187,6 +188,19 @@ export function defaultTools(): { exec: Exec; forge: Forge } {
   return { exec: runCommand, forge: forgeFromEnv(runCommand, process.env) };
 }
 
+interface MergeMetadata {
+  mutationConditions?: { 'pr.merge'?: string[] };
+}
+
+function mergeConditionProblem(forge: Forge, host: string): string | undefined {
+  const metadata = forge.call<MergeMetadata>('metadata', { host });
+  if (!metadata.ok) return metadata.problem;
+  if (!metadata.value?.mutationConditions?.['pr.merge']?.includes('head')) {
+    return `forge at ${host} does not enforce the head condition for ${OPS.merge}`;
+  }
+  return undefined;
+}
+
 interface Access {
   plugin: { name: string; version: string };
   credentialSource?: string;
@@ -197,15 +211,18 @@ interface Access {
  * plugin that advertises them all and a credential that resolves. It contacts no forge, so
  * a missing plugin or token refuses a run before any agent spends.
  */
-export function checkForgeAccess(exec: Exec, env: NodeJS.ProcessEnv): CheckResult & { message: string } {
+export function checkForgeAccess(exec: Exec, env: NodeJS.ProcessEnv, reviewWait = false): CheckResult & { message: string } {
   const cli = cliFromEnv(env);
   if (cli === undefined) return { ...fail('ARCHON_CLI_COMMAND is not set to a JSON argv array'), message: '' };
   const remote = remoteOf(exec);
   if (!remote.ok) return { ...fail(remote.problem), message: '' };
   const host = remoteHost(remote.value.url);
   if (host === undefined) return { ...fail(`cannot read a host from the git remote '${remote.value.name}'`), message: '' };
-  const checked = createForge(exec, cli).call<Access>('check', { host, operations: FORGE_OPERATIONS });
+  const forge = createForge(exec, cli);
+  const checked = forge.call<Access>('check', { host, operations: reviewWait ? [...FORGE_OPERATIONS, OPS.merge] : FORGE_OPERATIONS });
   if (!checked.ok) return { ...fail(checked.problem), message: '' };
+  const mergeProblem = reviewWait ? mergeConditionProblem(forge, host) : undefined;
+  if (mergeProblem) return { ...fail(mergeProblem), message: '' };
   const { plugin, credentialSource } = checked.value;
   const source = credentialSource === undefined ? '' : `, credential from ${credentialSource}`;
   return { ...pass(), message: `forge ready: ${plugin.name} ${plugin.version} serves ${host}${source}` };

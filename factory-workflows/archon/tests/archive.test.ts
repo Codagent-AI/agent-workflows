@@ -66,10 +66,10 @@ test('INT-009 numbered logs commit only logs; empty logs and ticket messages', (
   box.write('artifacts/decision-log.md', '## Choice\nQuestion: API?\nDecision: preserve it.\n');
   box.write('file.txt','unrelated staged');box.git('add','file.txt');
   const result = run('commit-logs');expect(JSON.parse(result.stdout).ok).toBe(true);
-  expect(box.read(`${active}/decision-log.md`)).toContain('## D-01: Choice');expect(box.read(`${active}/dispute-log.md`)).toBe('No entries.\n');
+  expect(box.read(`${active}/decision-log.md`)).toContain('## DECIDE-1: Choice');expect(box.read(`${active}/dispute-log.md`)).toBe('No entries.\n');
   expect(box.git('show','--format=','--name-only','HEAD').split('\n').sort()).toEqual([`${active}/decision-log.md`,`${active}/dispute-log.md`]);
   expect(box.git('diff','--cached','--name-only')).toBe('file.txt');
-  expect(numberLog('## DP-01: First\ntext\n## Next\nmore','DP')).toContain('## DP-02: Next');
+  expect(numberLog('## DP-01: First\ntext\n## Next\nmore','DISPUTE')).toContain('## DISPUTE-2: Next');
   expect(archiveMessage('abc-123-demo')).toBe('ABC-123: Archive change');
 });
 test('INT-009 rejected log commit reports failure for archive fallback', () => {
@@ -130,4 +130,72 @@ test('INT-008 conflicting spec restoration fails verification and retains origin
   expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
   const local=JSON.parse(box.read('artifacts/archive/local-specs.json'));
   expect(local.staged).toContain('local change');expect(local.error).toContain('original patches retained');expect(box.git('show',`HEAD:${path}`)).toBe('new');
+  const pending = box.read('artifacts/archive/local-specs.json');
+  const retry = archiveChange({ ...input(), round: 2 });
+  expect(retry.ok).toBe(false);
+  expect(retry.problems).toContain('original patches retained');
+  expect(box.read('artifacts/archive/local-specs.json')).toBe(pending);
+  expect(recordArchive(input()).change_folder).toBe(archived);
+  expect(JSON.parse(box.read('artifacts/step-results.json')).archive.ok).toBe(false);
+});
+
+function rejectArchiveCommit() {
+  const hooks = box.path('hooks');
+  box.write('hooks/commit-msg', '#!/bin/sh\nexit 1\n');
+  chmodSync(join(hooks, 'commit-msg'), 0o755);
+  box.git('config', 'core.hooksPath', hooks);
+}
+
+test('INT-012 retries a failed archive from the round head and preserves its earlier attempt', () => {
+  rejectArchiveCommit();
+  expect(archive().ok).toBe(true);
+  expect(recordArchive(input()).change_folder).toBe(archived);
+  expect(verifyArchive(input()).ok).toBe(false);
+  const prior = box.read('artifacts/archive/state.json');
+  box.git('config', 'core.hooksPath', '/dev/null');
+  box.write('file.txt', 'unrelated feedback\n');
+  const head = box.commit('feedback', 'file.txt');
+  const retried = run('archive-change', { INPUTS_ROUND: '2' });
+  expect(retried.status).toBe(0);
+  expect(JSON.parse(retried.stdout).ok).toBe(true);
+  expect(JSON.parse(box.read('artifacts/archive/state.json')).start).toBe(head);
+  expect(box.read('artifacts/archive/attempt-1/state.json')).toBe(prior);
+  expect(box.exists('artifacts/archive/attempt-1/before.json')).toBe(true);
+  expect(box.exists('artifacts/archive/attempt-1/specs-before.json')).toBe(true);
+  expect(verifyArchive(input())).toEqual({ ok: true, problems: '' });
+});
+
+test('INT-012 the retried archive reads the edited delta at the new head', () => {
+  box.fake('openspec', [{ args: ['validate'], responses: [{ status: 1, stderr: 'delta conflict' }] }]);
+  expect(archiveChange(input()).ok).toBe(false);
+  box.write(`${active}/specs/widget/spec.md`, 'targeted spec edit');
+  box.git('add', active);
+  const head = box.commit('edit the delta');
+  const fake = join(box.binDir, 'openspec');
+  writeFileSync(fake, `#!${process.execPath}\nimport { readFileSync, renameSync, mkdirSync, writeFileSync } from 'node:fs';\nif (process.argv[2] === 'archive') { const delta = readFileSync('${active}/specs/widget/spec.md','utf8'); mkdirSync('openspec/changes/archive',{recursive:true}); renameSync('${active}','${archived}'); writeFileSync('openspec/specs/widget/spec.md', delta); }\n`);
+  chmodSync(fake, 0o755);
+  expect(JSON.parse(run('archive-change', { INPUTS_ROUND: '2' }).stdout).ok).toBe(true);
+  expect(box.git('show', 'HEAD:openspec/specs/widget/spec.md')).toBe('targeted spec edit');
+  expect(JSON.parse(box.read('artifacts/archive/state.json')).start).toBe(head);
+  expect(verifyArchive(input()).ok).toBe(true);
+});
+
+
+test.each(['staged', 'unstaged'])('archive retry refuses later %s edits to a previously owned spec without changing either layer', layer => {
+  const path = 'openspec/specs/widget/spec.md';
+  rejectArchiveCommit();
+  expect(archive().ok).toBe(true);
+  expect(verifyArchive(input()).ok).toBe(false);
+  box.git('config', 'core.hooksPath', '/dev/null');
+  const head = box.head();
+  box.write(path, 'new\nLater edit\n');
+  if (layer === 'staged') box.git('add', path);
+  const index = box.git('diff', '--cached');
+  const worktree = box.git('diff');
+  const result = archiveChange({ ...input(), round: 2 });
+  expect(result.ok).toBe(false);
+  expect(result.problems).toContain('Cannot separate later staged or unstaged changes');
+  expect(box.head()).toBe(head);
+  expect(box.git('diff', '--cached')).toBe(index);
+  expect(box.git('diff')).toBe(worktree);
 });

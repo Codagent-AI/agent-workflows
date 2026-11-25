@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   activeFindings, addFindings, applyActions, applyVerdicts, currentCycle, emptyState, findingText,
-  handedOff, handoff, renderResult, settled, startCycle, type Defect, type FindingState, type ReviewState,
+  handedOff, handoff, reopenRequested, renderResult, settled, startCycle, type Defect, type FindingState, type ReviewState,
 } from '../.archon/workflows/codagent/.shared/lib/review.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 
@@ -21,9 +21,9 @@ function stateWithFinding(): ReviewState {
   return state;
 }
 const act = (state: ReviewState, action: 'fixed' | 'declined' | 'replied') =>
-  applyActions(state, [{ id: 'R1', action, note: `fixer ${action}` }]);
+  applyActions(state, [{ id: 'REVIEW-1', action, note: `fixer ${action}` }]);
 const judge = (state: ReviewState, verdict: 'confirmed' | 'rejected' | 'accepted' | 'contested') =>
-  applyVerdicts(state, [{ id: 'R1', verdict, reason: `reviewer ${verdict}` }]);
+  applyVerdicts(state, [{ id: 'REVIEW-1', verdict, reason: `reviewer ${verdict}` }]);
 
 function checkInvalidState(status: FindingState, perform: (state: ReviewState) => void): void {
   const state = stateWithFinding(); const finding = state.findings[0];
@@ -49,7 +49,7 @@ describe('review finding state', () => {
     const state = stateWithFinding();
     act(state, 'fixed'); judge(state, 'confirmed');
     cycle(state, 1); addFindings(state, [defect({ severity: 'medium' }), defect({ severity: 'low' })]);
-    expect(state.findings.map(f => f.id)).toEqual(['R1', 'R2', 'R3']);
+    expect(state.findings.map(f => f.id)).toEqual(['REVIEW-1', 'REVIEW-2', 'REVIEW-3']);
     expect(state.findings.map(f => f.state)).toEqual(['closed', 'open', 'open']);
     expect(state.findings[0]?.history).toEqual([
       { round: 1, actor: 'fixer', action: 'fixed', note: 'fixer fixed' },
@@ -104,7 +104,7 @@ describe('review finding state', () => {
     const result = renderResult(state);
     cycle(state, 1); addFindings(state, [defect()]);
     cycle(state, 2);
-    applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'earlier cycle' }]);
+    applyVerdicts(state, [{ id: 'REVIEW-2', verdict: 'accepted', reason: 'earlier cycle' }]);
     expect(state.ignored.map(entry => [entry.actor, entry.action, entry.note, entry.reason])).toEqual([
       ['fixer', 'fixed', 'unknown attempt', 'unknown finding ID'],
       ['reviewer', 'confirmed', 'reviewer confirmed', 'invalid action for finding state open'],
@@ -113,8 +113,8 @@ describe('review finding state', () => {
     ]);
     expect(state.ignored[0]).toMatchObject({ cycle: 0, id: 'unknown', round: 1 });
     expect(result).toContain('Ignored unknown: fixer fixed (unknown attempt); unknown finding ID');
-    expect(result).toContain('Ignored R1: reviewer confirmed (reviewer confirmed); invalid action for finding state open');
-    expect(result).toContain('Ignored R1: fixer declined (fixer declined); finding was already handed off');
+    expect(result).toContain('Ignored REVIEW-1: reviewer confirmed (reviewer confirmed); invalid action for finding state open');
+    expect(result).toContain('Ignored REVIEW-1: fixer declined (fixer declined); finding was already handed off');
     expect(state.findings.map(entry => entry.state)).toEqual(['open', 'open']);
   });
   test('contest happens once; second and third turns settle accepted replies or disputed findings', () => {
@@ -145,7 +145,7 @@ describe('review finding state', () => {
     addFindings(state, ['high', 'medium', 'low'].map(severity => defect({ severity: severity as Defect['severity'] })));
     expect(activeFindings(state).map(f => f.severity)).toEqual(['high', 'medium', 'low']);
     expect(settled(state)).toBe(false);
-    expect(findingText(state)).not.toContain('R1 [');
+    expect(findingText(state)).not.toContain('REVIEW-1 [');
   });
 });
 
@@ -157,7 +157,7 @@ describe('review rendering and handoff', () => {
     act(state, 'replied'); judge(state, 'contested'); act(state, 'fixed');
     currentCycle(state).blocked = 'credential missing';
     const text = renderResult(state);
-    for (const expected of ['base..head', '[disputed]', 'Ignored R1', 'credential missing', 'reviewer contested']) {
+    for (const expected of ['base..head', '[disputed]', 'Ignored REVIEW-1', 'credential missing', 'reviewer contested']) {
       expect(text).toContain(expected);
     }
   });
@@ -165,17 +165,17 @@ describe('review rendering and handoff', () => {
     const state = stateWithFinding(); act(state, 'declined'); judge(state, 'contested');
     act(state, 'replied'); judge(state, 'contested');
     addFindings(state, [defect({ severity: 'medium', title: 'Accepted' }), defect({ severity: 'low', title: 'Low' })]);
-    applyActions(state, [{ id: 'R2', action: 'declined', note: 'intentional compatibility' }]);
-    applyVerdicts(state, [{ id: 'R2', verdict: 'accepted', reason: 'agreed' }]);
+    applyActions(state, [{ id: 'REVIEW-2', action: 'declined', note: 'intentional compatibility' }]);
+    applyVerdicts(state, [{ id: 'REVIEW-2', verdict: 'accepted', reason: 'agreed' }]);
     currentCycle(state).blocked = 'missing access';
     const ledger = handoff(state, 'No unresolved assumptions or context gaps.\n');
-    for (const expected of ['## Review finding R1', '## Review finding R2', 'Question:', 'Requirement:', 'Decision:',
-      'Rationale:', 'Pending decision:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
+    for (const expected of ['## Review finding REVIEW-1', '## Review finding REVIEW-2', 'Question:', 'Requirement:', 'Decision:',
+      'Rationale:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
       'intentional compatibility', 'The reviewer accepted it.', 'review/before-pr.md']) expect(ledger).toContain(expected);
-    expect(ledger).not.toContain('## Review finding R3');
+    expect(ledger).not.toContain('## Review finding REVIEW-3');
     expect(ledger).not.toContain('No unresolved assumptions');
     expect(renderResult(state)).toContain('Low');
-    expect(handedOff(state)).toContain('R2: Accepted (file.txt:0)');
+    expect(handedOff(state)).toContain('REVIEW-2: Accepted (file.txt:0)');
     expect(handoff(state, ledger)).toBe(ledger);
   });
   test('confirmed fixes add nothing; unfinished earlier cycles hand off and latest acceptance result replaces earlier cycle', () => {
@@ -202,17 +202,29 @@ const workflow = Bun.YAML.parse(readFileSync(join(scripts, '../implement-change.
 const flattenNodes = (entries: ScriptNode[]): ScriptNode[] => entries.flatMap(entry => [entry, ...flattenNodes(entry.loop_group?.nodes ?? [])]);
 const outputSchemas = new Map(flattenNodes(workflow.nodes).filter(entry => entry.script && entry.output_format)
   .map(entry => [entry.script, entry.output_format]));
-function checkOutput(name: string, value: Record<string, unknown>): void {
-  const schema = outputSchemas.get(name);
-  if (!schema) throw new Error(`No output schema for ${name}`);
-  expect(Object.keys(value).sort()).toEqual(Object.keys(schema.properties ?? {}).sort());
+function checkOutput(schema: OutputSchema, value: Record<string, unknown>): void {
+  const properties = schema.properties ?? {};
   expect(schema.additionalProperties).toBe(false);
   for (const key of schema.required ?? []) expect(Object.hasOwn(value, key)).toBe(true);
-  for (const [key, field] of Object.entries(schema.properties ?? {})) {
-    expect(typeof value[key]).toBe(field.type === 'integer' ? 'number' : field.type);
-    if (field.type === 'integer') expect(Number.isInteger(value[key])).toBe(true);
+  for (const [key, actual] of Object.entries(value)) {
+    expect(Object.hasOwn(properties, key)).toBe(true);
+    const type = properties[key].type;
+    expect(typeof actual).toBe(type === 'integer' ? 'number' : type);
+    if (type === 'integer') expect(Number.isInteger(actual)).toBe(true);
   }
 }
+
+test('review script output check permits optional fields and enforces required and declared fields', () => {
+  const schema: OutputSchema = {
+    type: 'object', properties: { files: { type: 'string' }, revisions: { type: 'string' } },
+    required: ['files'], additionalProperties: false,
+  };
+  expect(() => checkOutput(schema, { files: 'file.txt' })).not.toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', revisions: 'abc' })).not.toThrow();
+  expect(() => checkOutput(schema, { revisions: 'abc' })).toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', revisions: 123 })).toThrow();
+  expect(() => checkOutput(schema, { files: 'file.txt', unexpected: '' })).toThrow();
+});
 
 let box: Sandbox;
 let artifacts: string;
@@ -227,7 +239,9 @@ function run(name: string, inputs: Record<string, unknown> = {}, fails = false):
   expect(output.stderr).toBe(''); expect(output.status).toBe(0);
   const parsed = JSON.parse(output.stdout) as Record<string, unknown>;
   expect(output.stdout.trim().split('\n')).toHaveLength(1);
-  checkOutput(name, parsed);
+  const schema = outputSchemas.get(name);
+  if (!schema) throw new Error(`No output schema for ${name}`);
+  checkOutput(schema, parsed);
   return parsed;
 }
 const read = (file: string): string => readFileSync(join(artifacts, file), 'utf8');
@@ -277,17 +291,17 @@ describe('INT-009 review scripts against real git', () => {
     const start = box.head(); box.commitFix(); record(prepare('initial', start), [defect()]);
     for (const action of ['declined', 'replied']) {
       const fixed = run('record-review-fixes', { review_name: 'fix-review-findings', result: { blocked: false, reason: '',
-        actions: [{ id: 'R1', action, note: `fixer ${action} because compatibility` }] } });
+        actions: [{ id: 'REVIEW-1', action, note: `fixer ${action} because compatibility` }] } });
       run('end-review-round', { blocked: false, end: fixed.end, review_name: 're-review', result: {
-        verdicts: [{ id: 'R1', verdict: 'contested', reason: `reviewer disagrees with ${action}` }], findings: [] } });
+        verdicts: [{ id: 'REVIEW-1', verdict: 'contested', reason: `reviewer disagrees with ${action}` }], findings: [] } });
     }
     run('hand-off-review');
     const ledger = read('dispute-log.md');
-    for (const text of ['## Review finding R1', 'fixer declined because compatibility', 'fixer replied because compatibility',
+    for (const text of ['## Review finding REVIEW-1', 'fixer declined because compatibility', 'fixer replied because compatibility',
       'reviewer disagrees with declined', 'reviewer disagrees with replied', 'review/before-pr.md']) expect(ledger).toContain(text);
     expect(read('review/before-pr.md')).toContain('[disputed]');
     expect(persisted().findings[0]).toMatchObject({ state: 'disputed', handed_off: true });
-    box.commitFix('later'); expect(prepare('acceptance', '', 1).handed_off).toContain('R1:');
+    box.commitFix('later'); expect(prepare('acceptance', '', 1).handed_off).toContain('REVIEW-1:');
   });
   test('empty range needs no reviewer and records No open findings at exact head', () => {
     const prepared = prepare('initial', box.head()); expect(prepared.needed).toBe(false);
@@ -318,7 +332,7 @@ describe('INT-009 review scripts against real git', () => {
     record(prepare('initial', start), [defect(), defect({ severity: 'medium', title: 'Declined' }), defect({ severity: 'low', title: 'Low' })]);
     const reviewed = box.head(); box.commitFix('fixer partial fix\n');
     const fixed = run('record-review-fixes', { review_name: 'fix-review-findings', result: { blocked: true,
-      reason: 'missing credential', actions: [{ id: 'R1', action: 'fixed', note: 'partial fix' }] } });
+      reason: 'missing credential', actions: [{ id: 'REVIEW-1', action: 'fixed', note: 'partial fix' }] } });
     expect(fixed).toMatchObject({ blocked: true, start: reviewed, end: box.head() });
     const end = run('end-review-round', { blocked: true }); expect(end.stop).toBe(true);
     expect(persisted().last_reviewed).toBe(reviewed);
@@ -328,7 +342,7 @@ describe('INT-009 review scripts against real git', () => {
     expect(read('review/before-pr.md')).toContain(box.head());
     const ledger = read('dispute-log.md');
     expect(ledger).toContain('missing credential'); expect(ledger).toContain('Tail defect');
-    expect(ledger).not.toContain('## Review finding R3');
+    expect(ledger).not.toContain('## Review finding REVIEW-3');
     run('hand-off-review'); expect(read('dispute-log.md')).toBe(ledger);
   });
   test('one acceptance fixer turn hands off contested declines with both sides before any reply', () => {
@@ -337,9 +351,9 @@ describe('INT-009 review scripts against real git', () => {
     const prepared = prepare('acceptance', '', 1);
     record(prepared, [defect(), defect({ severity: 'medium' })]);
     const fixed = run('record-review-fixes', { review_name: 'fix-round-findings', result: { blocked: false, reason: '',
-      actions: ['R1', 'R2'].map(id => ({ id, action: 'declined', note: `compatibility ${id}` })) } });
+      actions: ['REVIEW-1', 'REVIEW-2'].map(id => ({ id, action: 'declined', note: `compatibility ${id}` })) } });
     const ended = run('end-review-round', { end: fixed.end, blocked: false, review_name: 'round-re-review', result: {
-      verdicts: ['R1', 'R2'].map(id => ({ id, verdict: 'contested', reason: `unsafe behavior ${id}` })), findings: [] } });
+      verdicts: ['REVIEW-1', 'REVIEW-2'].map(id => ({ id, verdict: 'contested', reason: `unsafe behavior ${id}` })), findings: [] } });
     expect(ended.stop).toBe(false);
     run('hand-off-review');
     const state = persisted();
@@ -364,21 +378,50 @@ describe('INT-009 review scripts against real git', () => {
     record(prepared, [defect(), defect({ severity: 'medium' })]);
     box.commit('acceptance fix', 'file.txt');
     const fixed = run('record-review-fixes', { review_name: 'fix-round-findings', result: { blocked: false, reason: '', actions: [
-      { id: 'R1', action: 'fixed', note: 'fixed' }, { id: 'R2', action: 'declined', note: 'compatibility' }] } });
+      { id: 'REVIEW-1', action: 'fixed', note: 'fixed' }, { id: 'REVIEW-2', action: 'declined', note: 'compatibility' }] } });
     expect(fixed.start).toBe(last);
     const output = run('end-review-round', { end: fixed.end, blocked: false, review_name: 'round-re-review', result: {
-      verdicts: [{ id: 'R1', verdict: 'confirmed', reason: 'resolved' }, { id: 'R2', verdict: 'accepted', reason: 'agreed' }], findings: [] } });
+      verdicts: [{ id: 'REVIEW-1', verdict: 'confirmed', reason: 'resolved' }, { id: 'REVIEW-2', verdict: 'accepted', reason: 'agreed' }], findings: [] } });
     expect(output.stop).toBe(true);
     writeFileSync(join(artifacts, 'decision-log.md'), 'No unresolved assumptions or context gaps.\n');
     run('hand-off-review'); const ledger = read('decision-log.md');
-    expect(ledger).not.toContain('Review finding R1'); expect(ledger).toContain('Review finding R2');
+    expect(ledger).not.toContain('Review finding REVIEW-1'); expect(ledger).toContain('Review finding REVIEW-2');
     expect(ledger).toContain('compatibility'); expect(ledger).not.toContain('No unresolved assumptions');
     box.commitFix('second round\n');
     const next = prepare('acceptance', '', 2);
-    expect(next.start).toBe(fixed.end); expect(next.handed_off).toContain('R2:');
+    expect(next.start).toBe(fixed.end); expect(next.handed_off).toContain('REVIEW-2:');
     record(next, [defect({ title: 'new round' })]);
     expect(read('review/acceptance.md')).toContain('new round');
     expect(read('review/acceptance.md')).not.toContain('Handle missing config');
-    expect(persisted().findings.map(f => f.id)).toEqual(['R1', 'R2', 'R3']);
+    expect(persisted().findings.map(f => f.id)).toEqual(['REVIEW-1', 'REVIEW-2', 'REVIEW-3']);
   });
+});
+
+test.each(['confirmed', 'rejected'] as const)('a feedback review reopens only a requested logged finding and records it %s', verdict => {
+  const state = stateWithFinding();
+  addFindings(state, [defect({ title: 'Other handed-off finding' })]);
+  handoff(state, '');
+  startCycle(state, { place: 'feedback', round: 2, start: 'previous', end: 'next' });
+  reopenRequested(state, 'Fix REVIEW-1 only');
+  expect(activeFindings(state).map(finding => finding.id)).toEqual(['REVIEW-1']);
+  judge(state, verdict);
+  expect(state.findings[0].state).toBe(verdict === 'confirmed' ? 'closed' : 'open');
+  expect(state.findings[1].handed_off).toBe(true);
+  expect(renderResult(state)).toContain('previous..next');
+});
+
+test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reopens a logged finding requested through %s', source => {
+  const state = stateWithFinding();
+  handoff(state, '');
+  mkdirSync(join(artifacts, 'review'), { recursive: true });
+  writeFileSync(join(artifacts, 'review/state.json'), JSON.stringify(state));
+  const answer = join(artifacts, 'review-answers-round-1.json');
+  writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DISPUTE-1', option: 'custom' }], note: source }));
+  writeFileSync(join(artifacts, 'review-response-round-1.json'), JSON.stringify([{ item: 'note', status: 'fixed', requestedFindings: ['REVIEW-1'] }]));
+  const start = box.head();
+  const changed = box.commitFix('feedback fix\n');
+  const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start,
+    change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
+  expect(review.revisions).toBe(changed);
+  expect(review.findings).toContain('REVIEW-1 [fixed');
 });

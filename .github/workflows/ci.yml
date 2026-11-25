@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: Codagent-AI/Archon
-          ref: 0ab333c6fe69428e5717b89eb3c0538c18cd965e
+          ref: 55559e35f2faa64c016d99f03f441b3bba02b769
           path: .ci/archon
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2

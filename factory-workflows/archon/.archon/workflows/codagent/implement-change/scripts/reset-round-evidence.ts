@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { artifactsDir, required } from '../../.shared/lib/check.ts';
+import { writeText } from '../../.shared/lib/run-files.ts';
 import { startRound } from '../../.shared/lib/acceptance.ts';
 
 const dir = artifactsDir();
@@ -14,4 +15,5 @@ const round = startRound(
   required(process.env.INPUTS_PREVIOUS_ROUND, 'previous_round'),
   Number(required(process.env.INPUTS_ROUNDS, 'rounds'))
 );
+writeText(join(dir, 'acceptance-round-number.txt'), String(round.round));
 process.stdout.write(`${JSON.stringify(round)}\n`);

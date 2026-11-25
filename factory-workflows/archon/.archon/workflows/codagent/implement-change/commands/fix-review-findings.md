@@ -8,4 +8,4 @@ For each open finding, fix it and commit, or decline to fix it and explain why. 
 
 Do not write declines to the assumptions ledger: the workflow hands off the unresolved and accepted declines with both sides. If blocked, report the reason and any actions already taken; the workflow stops the fix rounds without failing the run.
 
-Return JSON only with every field required: {"blocked":false,"reason":"","actions":[{"id":"R1","action":"fixed|declined|replied","note":"explanation"}]}. Report only actions actually taken; the action must be one of the schema's enum values.
+Return JSON only with every field required: {"blocked":false,"reason":"","actions":[{"id":"REVIEW-1","action":"fixed|declined|replied","note":"explanation"}]}. Report only actions actually taken; the action must be one of the schema's enum values.

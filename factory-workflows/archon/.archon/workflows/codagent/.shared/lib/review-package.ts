@@ -1,17 +1,32 @@
-// Validate the agent's ranking, place required items if needed, and publish the generated block.
-import { join } from 'node:path';
 import { type CheckResult, fail, pass } from './check.ts';
-import { OPS } from './forge.ts';
-import { type Tools, lookupPr, markBlock, spliceBody } from './pull-request.ts';
-import { type Exec, output } from './exec.ts';
-import { readText, writeText, writeJson } from './run-files.ts';
-import { TIERS, type Ranking, type RequiredItem, type Item, type Tier, failedItems } from './review-inventory.ts';
-const TYPES = new Set(['Verification', 'Decision', 'Dispute', 'Late commit', 'Human check']);
+import { TIERS, type Ranking, type RequiredItem, type Item, type Tier } from './review-inventory.ts';
+import { type KeyEvidence, type Question, standardQuestion, validQuestion } from './review-questions.ts';
+
+
+const TYPES = new Set(['Verification', 'Agent decision', 'Decision', 'Risk', 'Failure', 'Dispute', 'Late commit', 'Human check']);
 export function validItem(item: Item): boolean {
   return typeof item?.type === 'string' && item.type.split(',').every(type => TYPES.has(type.trim())) &&
     typeof item.title === 'string' && item.title.trim() !== '' && typeof item.detail === 'string' && item.detail.trim() !== '' &&
     typeof item.link === 'string' && Array.isArray(item.source) && item.source.length > 0 && item.source.every(source => typeof source === 'string');
 }
+const typeAliases: Record<string, string> = { 'Human-only check': 'Human check', 'Human-only testing': 'Human check' };
+function normalizeTypes(item: Item): Item {
+  if (typeof item?.type !== 'string') return item;
+  const types = item.type.split(',').map(value => {
+    const type = value.trim();
+    return Object.hasOwn(typeAliases, type) ? typeAliases[type] : type;
+  });
+  return { ...item, type: [...new Set(types)].join(', ') };
+}
+
+export function isStepFailure(source: string): boolean {
+  return source.startsWith('failure:');
+}
+export function withoutStepFailures(item: Item): Item[] {
+  const source = item.source.filter(code => !isStepFailure(code));
+  return source.length > 0 ? [{ ...item, source }] : [];
+}
+
 function entries(ranking: Ranking): { tier: Tier; item: Item }[] {
   return TIERS.flatMap(tier => (Array.isArray(ranking[tier]) ? ranking[tier] : []).map(item => ({ tier, item })));
 }
@@ -28,25 +43,126 @@ function requiredProblems(ranking: Ranking, required: RequiredItem[]): string[] 
   const all = entries(ranking);
   return required.flatMap(expected => {
     // Failures are inserted by the publisher, never entrusted to the ranker.
-    if (expected.item.type === 'Failure') return [];
+    if (expected.item.source[0]?.startsWith('failure:')) return [];
     const found = all.find(({ item }) => expected.item.source.every(source => item.source?.includes(source)));
     if (!found || TIERS.indexOf(found.tier) > TIERS.indexOf(expected.tier)) return [`missing or under-ranked ${expected.item.source.join(', ')}`];
     return requiredItemProblems(expected, found.item);
   });
 }
-export function checkRanking(ranking: Ranking, required: RequiredItem[]): CheckResult {
-  if (!ranking || typeof ranking.evidence !== 'string' || !TIERS.every(tier => Array.isArray(ranking[tier]))) return fail('ranking shape is invalid');
+export interface RankingContext {
+  shots: string[];
+  journeys: string[];
+  commits: string[];
+  dismissed: string[];
+}
+const emptyContext: RankingContext = { shots: [], journeys: [], commits: [], dismissed: [] };
+function validPick(pick: KeyEvidence, context: RankingContext): boolean {
+  return context.shots.includes(pick?.file) && typeof pick.title === 'string' && Boolean(pick.title.trim()) &&
+    typeof pick.shows === 'string' && Boolean(pick.shows.trim());
+}
+function validJourney(entry: NonNullable<Item['journeys']>[number]): boolean {
+  return typeof entry?.code === 'string' && typeof entry.title === 'string' && typeof entry.commit === 'string';
+}
+function validCollections(item: Item): boolean {
+  const { journeys, questions } = item;
+  return (journeys === undefined || (Array.isArray(journeys) && journeys.every(validJourney))) &&
+    (questions === undefined || (Array.isArray(questions) && questions.every(validQuestion)));
+}
+function validQuestions(item: Item, tier: Tier): boolean {
+  const questions = item.questions ?? [];
+  if (tier === 'white') return questions.length === 0;
+  if (!((Array.isArray(questions) && questions.length > 0) && questions.every(validQuestion))) return false;
+  const retest = questions.some(question => question.options.some(option => option.id === 'retest'));
+  return retest === Boolean(item.journeys?.length);
+}
+function isRetestQuestion(question?: Question): boolean {
+  const ids = new Set(question?.options.map(option => option.id));
+  return ids.size === 2 && ids.has('retest') && ids.has('leave');
+}
+
+function disputeChoices(item: Item, required: RequiredItem[]): Item[] {
+  const disputes = required.filter(row => row.item.specChange).map(row => row.item);
+  return item.source.flatMap(source => disputes.filter(dispute => dispute.source[0] === source));
+}
+
+function matchesDisputeChoices(question: Question | undefined, expected: Item): boolean {
+  const allowed = expected.questions?.[0]?.options ?? [];
+  return question?.options.length === allowed.length && allowed.every(wanted => question.options.some(option =>
+    option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)));
+}
+
+function choiceProblems(ranking: Ranking, required: RequiredItem[]): string[] {
+  return entries(ranking).flatMap(({ item }) => {
+    const disputes = disputeChoices(item, required);
+    if (disputes.length === 0) return [];
+    const questions = item.questions ?? [];
+    const retest = item.journeys?.length ? 1 : 0;
+    if (questions.length !== disputes.length + retest || (retest && !isRetestQuestion(questions.at(-1)))) {
+      return [`Give ${item.title} one separate question per spec-change dispute in source order, then Retest if applicable`];
+    }
+    return disputes.flatMap((expected, index) => matchesDisputeChoices(questions[index], expected) ? [] :
+      [`spec-change dispute ${expected.source[0]} needs exactly the allowed options`]);
+  });
+}
+
+function disputeQuestions(disputes: Item[], found: Item): Question[] {
+  const questions = disputes.flatMap(dispute => dispute.questions ?? []);
+  if (!found.journeys?.length) return questions;
+  return [...questions, { prompt: 'Retest the affected journeys?', options: [
+    { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
+  ] }];
+}
+
+export function bindDisputeQuestions(ranking: Ranking, required: RequiredItem[], repair = false): Ranking {
+  for (const tier of TIERS) {
+    ranking[tier] = ranking[tier].map(item => {
+      const disputes = disputeChoices(item, required);
+      if (disputes.length === 0) return item;
+      const questions = repair ? disputeQuestions(disputes, item) : item.questions;
+      return { ...item, questions: questions?.map((question, index) => ({ ...question, source: disputes[index]?.source[0] })) };
+    });
+  }
+  return ranking;
+}
+
+function sourceProblems(item: Item, context: RankingContext): string[] {
+  const rejected = item.source.filter(source => context.dismissed.includes(source));
+  const journeys = (item.journeys ?? []).filter(entry => !(context.journeys.includes(entry.code) && context.commits.includes(entry.commit)));
+  return [...rejected.map(source => `dismissed item ${source}`), ...journeys.map(entry => `unknown journey or commit ${entry.code} ${entry.commit}`)];
+}
+function evidenceProblems(ranking: Ranking, context: RankingContext, fallback: boolean): string[] {
+  const picks = ranking.keyEvidence ?? [];
+  if (!Array.isArray(picks) || picks.length > 5 || (!fallback && picks.length === 0 && context.shots.length > 0)) {
+    return ['invalid key evidence count'];
+  }
+  return picks.filter(pick => !validPick(pick, context)).map(pick => `invalid key evidence ${pick?.file}`);
+}
+function itemShapeProblem(item: Item): string | undefined {
+  if (!validItem(item)) return 'empty item or unknown type';
+  return validCollections(item) ? undefined : `invalid questions or journeys for ${item.title}`;
+}
+function itemProblems(ranking: Ranking, context: RankingContext): string[] {
   const problems: string[] = []; const titles = new Set<string>();
-  for (const { item } of entries(ranking)) {
-    if (!validItem(item)) { problems.push('empty item or unknown type'); continue; }
+  for (const { tier, item } of entries(ranking)) {
+    const shapeProblem = itemShapeProblem(item);
+    if (shapeProblem) { problems.push(shapeProblem); continue; }
     if (titles.has(item.title)) problems.push(`item appears in two tiers: ${item.title}`);
+    if (!validQuestions(item, tier)) problems.push(`invalid questions for ${item.title}`);
+    problems.push(...sourceProblems(item, context));
+    if (item.source.some(isStepFailure)) problems.push(`Step failure items are supplied by the publisher: ${item.title}`);
     titles.add(item.title);
   }
+  return problems;
+}
+export function checkRanking(ranking: Ranking, required: RequiredItem[], context = emptyContext, fallback = false): CheckResult {
+  if (!ranking || typeof ranking.evidence !== 'string' || !TIERS.every(tier => Array.isArray(ranking[tier]))) return fail('ranking shape is invalid');
+  const problems = itemProblems(ranking, context);
   if (problems.length > 0) return fail(problems);
-  problems.push(...requiredProblems(ranking, required));
+  problems.push(...evidenceProblems(ranking, context, fallback));
+  problems.push(...requiredProblems(ranking, required), ...choiceProblems(ranking, required));
   return problems.length > 0 ? fail(problems) : pass();
 }
-function insertRequired(placed: Ranking, expected: RequiredItem): void {
+function insertRequired(placed: Ranking, expected: RequiredItem, context: RankingContext): void {
     const found = entries(placed).find(({ item }) => expected.item.source.every(source => item.source.includes(source)));
     if (!found) { placed[expected.tier].push({ ...expected.item, source: [...expected.item.source] }); return; }
     const tier = TIERS[Math.min(TIERS.indexOf(found.tier), TIERS.indexOf(expected.tier))];
@@ -54,71 +170,39 @@ function insertRequired(placed: Ranking, expected: RequiredItem): void {
     const type = [...new Set([...found.item.type.split(',').map(value => value.trim()), expected.item.type])].join(', ');
     const lacksSize = expected.item.type === 'Late commit' && requiredItemProblems(expected, found.item).length > 0;
     const detail = lacksSize ? `${found.item.detail}\n\nLate commit ${expected.item.title}:\n${expected.item.detail}` : found.item.detail;
-    placed[tier].push({ ...found.item, type, detail });
+    placed[tier].push(repairedItem({ ...found.item, type, detail }, tier, context));
 }
-export function placeRanking(ranking: Ranking, required: RequiredItem[]): Ranking {
-  const placed: Ranking = { red: [], orange: [], yellow: [], white: [], evidence: ranking?.evidence || 'No testing summary was supplied.' };
+function repairedItem(item: Item, tier: Tier, context: RankingContext): Item {
+  const journeys = (Array.isArray(item.journeys) ? item.journeys : []).filter(entry =>
+    validJourney(entry) && context.journeys.includes(entry.code) && context.commits.includes(entry.commit));
+  const questions = tier === 'white' ? [] : (Array.isArray(item.questions) ? item.questions : []).filter(candidate =>
+    validQuestion(candidate) && (journeys.length > 0 || candidate.options.every(option => option.id !== 'retest')));
+  const cleaned = { ...item, journeys, questions };
+  if (validQuestions(cleaned, tier)) return cleaned;
+  const question = standardQuestion(item.type);
+  if (journeys.length > 0) question.options.unshift({ id: 'retest', label: 'Retest' });
+  return { ...cleaned, questions: [...questions, question] };
+}
+
+export function placeRanking(ranking: Ranking, required: RequiredItem[], context = emptyContext): Ranking {
+  const picks = Array.isArray(ranking?.keyEvidence) ? ranking.keyEvidence : [];
+  const placed: Ranking = { red: [], orange: [], yellow: [], white: [],
+    evidence: ranking?.evidence || 'No testing summary was supplied.',
+    keyEvidence: picks.filter(pick => validPick(pick, context)).slice(0, 5) };
   const titles = new Set<string>();
   for (const { tier, item } of entries(ranking)) {
-    if (validItem(item) && !titles.has(item.title)) { placed[tier].push(item); titles.add(item.title); }
+    const normalized = normalizeTypes(item);
+    if (!validItem(normalized) || titles.has(normalized.title) || normalized.source.some(source => context.dismissed.includes(source))) continue;
+    for (const remaining of withoutStepFailures(normalized)) {
+      placed[tier].push(repairedItem(remaining, tier, context));
+      titles.add(remaining.title);
+    }
   }
-  for (const expected of required.filter(row => row.item.type !== 'Failure')) {
-    insertRequired(placed, expected);
+  for (const expected of required.filter(row => !row.item.source[0]?.startsWith('failure:'))) {
+    insertRequired(placed, { ...expected, item: repairedItem(expected.item, expected.tier, context) }, context);
   }
-  const checked = checkRanking(placed, required);
+  bindDisputeQuestions(placed, required, true);
+  const checked = checkRanking(placed, required, context, true);
   if (!checked.ok) throw new Error(`deterministic ranking failed: ${checked.problems}`);
   return placed;
-}
-function itemLink(item: Item, base: string, head: string): string {
-  if (/^https?:\/\//.test(item.link)) return `[${item.title}](${item.link})`;
-  if (/^[a-f0-9]{40,64}$/.test(item.link)) return `[${item.title}](${base}/commit/${item.link})`;
-  const match = /^([^:]+):(\d+)(?:-(\d+))?$/.exec(item.link);
-  if (match && !match[1].startsWith('/')) return `[${item.title}](${base}/blob/${head}/${match[1]}#L${match[2]}${match[3] ? `-L${match[3]}` : ''})`;
-  return item.link ? `${item.title} (${item.link})` : item.title;
-}
-function renderItem(item: Item, base: string, head: string): string {
-  return `- **${item.type}:** ${itemLink(item, base, head)}\n  ${item.detail.replaceAll('\n', '\n  ')}`;
-}
-const collapse = (title: string, body: string): string => `<details>\n<summary>${title}</summary>\n\n${body || 'None.'}\n\n</details>`;
-/** The run's state, and how many red items block the merge when there are any. */
-function stateLine(failed: number, red: number): string {
-  const state = `Run ${failed > 0 ? 'needs attention' : 'succeeded'}.`;
-  if (red === 0) return state;
-  return `${state} ${red} red ${red === 1 ? 'item blocks' : 'items block'} the merge.`;
-}
-export function renderPackage(input: { ranking: Ranking; failures: Item[]; summary: string; decisions: string; disputes: string; base: string; head: string }): string {
-  const { ranking, failures, base, head } = input;
-  const orange = [...ranking.orange].sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
-  const show = (items: Item[]): string => items.map(item => renderItem(item, base, head)).join('\n');
-  const red = [...failures, ...ranking.red.filter(item => item.type !== 'Failure')];
-  return ['## Review first', stateLine(failures.length, red.length), show(red), show(orange.slice(0, 5)),
-    `${Math.max(0, orange.length - 5)} orange and ${ranking.yellow.length} yellow items collapsed below.`, input.summary,
-    collapse('Other review items', show([...orange.slice(5), ...ranking.yellow])),
-    collapse('Testing evidence', `${ranking.evidence}\n\n${show(ranking.white)}`), collapse('Decision log', input.decisions), collapse('Dispute log', input.disputes)].join('\n\n');
-}
-function committedLink(exec: Exec, head: string, link: string): string {
-  if (/^(https?:|\/)/.test(link) || /:\d+(?:-\d+)?$/.test(link)) return link;
-  return exec('git', ['cat-file', '-e', `${head}:${link}`]).status === 0 ? `${link}:1` : link;
-}
-function linkRanking(exec: Exec, head: string, ranking: Ranking): Ranking {
-  const linked = { ...ranking };
-  for (const tier of TIERS) linked[tier] = ranking[tier].map(item => ({ ...item, link: committedLink(exec, head, item.link) }));
-  return linked;
-}
-export function publishPackage(tools: Tools, dir: string, folder: string, ranking: Ranking): { succeeded: boolean } {
-  const found = lookupPr(tools);
-  if (!found.ok) throw new Error(found.problem);
-  const { repo, view } = found.value;
-  if (!view) throw new Error('no open pull request for review package');
-  const head = output(tools.exec, 'git', ['rev-parse', 'HEAD']) ?? '';
-  const failures = failedItems(dir);
-  const block = renderPackage({ ranking: linkRanking(tools.exec, head, ranking), failures, summary: readText(join(dir, 'pr-body.md')), decisions: readText(join(folder, 'decision-log.md')),
-    disputes: readText(join(folder, 'dispute-log.md')), base: `https://${repo.host}/${repo.path}`, head });
-  const body = spliceBody(view.body, markBlock(block)); const ref = { repo, number: view.pr.number };
-  const edited = tools.forge.call(OPS.editBody, { ref, body });
-  if (!edited.ok) throw new Error(edited.problem);
-  const after = lookupPr(tools);
-  if (!after.ok || after.value.view?.body !== body) throw new Error('review package read-back did not match');
-  writeText(join(dir, 'review-package.md'), block); writeJson(join(dir, 'review-attention.json'), ranking);
-  return { succeeded: failures.length === 0 };
 }

@@ -1,8 +1,12 @@
 You are running autonomously with no human in the loop. Do not stop to ask for confirmation or clarification. Do not say things like "let me know", "ready when you are", or "shall I proceed". Make decisions and complete the entire task.
 
+If the selected journeys below are present, this is a review retest. Rerun only those journeys against this round's revision, recording fresh evidence, screenshots and exercised journeys. Report any failure and leave repairs to a later feedback round.
+
+$INPUTS.journeys
+
 You are the independent acceptance tester for OpenSpec change "$INPUTS.change_name". This is acceptance round index $INPUTS.acceptance_round (zero-based) of at most $INPUTS.acceptance_rounds. Follow the acceptance preparation instructions below with these inputs:
 - approved artifacts: `$INPUTS.change_dir/`;
-- testing envelope and any `HT-*` obligations: `$INPUTS.change_dir/test-plan.md`;
+- testing envelope and any `HUMAN-*` (or legacy human-only codes) obligations: `$INPUTS.change_dir/test-plan.md`;
 - implementation evidence: the implementation session report, `$ARTIFACTS_DIR/session-report.md`, if it exists;
 - evidence directory: `$ARTIFACTS_DIR/`;
 - scratch_dir: `$ARTIFACTS_DIR/.archon/scratch/acceptance-test`;
@@ -21,7 +25,7 @@ Every later round follows a fix, and a fix is itself a change. Reproduce each pr
 
 Do not fix defects, modify tracked files, commit, push, or change the pull request; the workflow fixes and pushes in separate steps. Append product, scope, or design ambiguity to the assumptions ledger instead of deciding it.
 
-Record every clear defect or impediment in `$ARTIFACTS_DIR/acceptance-findings.md` as the instructions require, and any `HT-*` as instructions reserved for the user.
+Give each new acceptance finding an unpadded ACCEPT code in sequence (ACCEPT-1, ACCEPT-2 and so on). Keep the code when a later round refers to it. Record every clear defect or impediment in `$ARTIFACTS_DIR/acceptance-findings.md` as the instructions require, and any `HUMAN-*` (or legacy human-only codes) as instructions reserved for the user.
 
 This step ends before CI: the workflow waits for current-head CI itself and then returns to you to hand off. When you have written the exploration log, the findings, and the tested revision, set `ready` to true only when no clear defect or impediment remains, no tracked file has uncommitted changes, and local `HEAD` is pushed and equals the `head_revision` in `$ARTIFACTS_DIR/pull-request.json`, which the workflow wrote when it last checked the branch's open pull request. Otherwise set `ready` to false and give the reason; the workflow then does not wait for CI. Do not write `acceptance-handoff.md` or `acceptance-round-status.txt` yet.
 
@@ -51,11 +55,11 @@ expect.
 ## Inputs
 
 Resolve from the caller: approved artifacts, the testing envelope naming authorized effects,
-credentials, sandboxes, cost, cleanup, and any `HT-*` obligations reserved for humans; an
+credentials, sandboxes, cost, cleanup, and any `HUMAN-*` (or legacy human-only codes) obligations reserved for humans; an
 implementation summary and any implementation session report; an evidence directory; and optional
 `scratch_dir`, the caller-provided scratch folder. If approved artifacts or the evidence directory are missing, report that and stop.
 
-Carry `HT-*` obligations forward as human-review instructions. Never execute them or claim evidence for
+Carry `HUMAN-*` (or legacy human-only codes) obligations forward as human-review instructions. Never execute them or claim evidence for
 them.
 
 ## Scratch space
@@ -283,3 +287,5 @@ coverage, meaning "this area is signed off." An empty diff sizes to zero steps.
 - Do not obtain human acceptance, mark the PR ready, merge, archive, or release.
 - Do not fuzz or build an exhaustive edge-case matrix. Exploration is targeted by risk, not by volume.
 - Do not treat a successful command exit, an agent summary, or a screenshot alone as proof of behavior.
+
+For any screenshots taken, save PNG, JPEG, GIF or WebP files under $ARTIFACTS_DIR/acceptance-screenshots/round-$INPUTS.acceptance_round/. Add manifest.json beside them as an array with one object per image, with file (the basename), title, shows, revision and alt. Record the journeys you exercised as an array at $ARTIFACTS_DIR/acceptance-journeys/round-$INPUTS.acceptance_round.json. Give each entry a code (JOURNEY-1 and up, continuing the sequence from all previous rounds), title, scenario and repeat instructions.
