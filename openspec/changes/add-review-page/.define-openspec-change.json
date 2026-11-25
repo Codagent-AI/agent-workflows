@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "workflow": "define-openspec-change",
+  "change_name": "add-review-page",
+  "change_dir": "openspec/changes/add-review-page",
+  "status": "complete",
+  "current_step": null,
+  "steps": {
+    "proposal": {
+      "started_at": "2026-11-20T19:00:17.896Z",
+      "completed_at": "2026-11-20T22:28:48.166Z"
+    },
+    "specs": {
+      "started_at": "2026-11-20T22:28:48.166Z",
+      "completed_at": "2026-11-25T00:43:50.135Z"
+    },
+    "design": {
+      "started_at": "2026-11-25T00:43:50.135Z",
+      "completed_at": "2026-11-25T01:41:44.523Z"
+    },
+    "test-plan": {
+      "started_at": "2026-11-25T01:41:44.523Z",
+      "completed_at": "2026-11-25T01:57:05.668Z"
+    },
+    "approach-review": {
+      "started_at": "2026-11-25T01:57:05.668Z",
+      "completed_at": "2026-11-25T02:32:06.934Z"
+    }
+  },
+  "starts": [
+    {
+      "at": "2026-11-20T19:00:17.896Z",
+      "lead": "claude",
+      "mode": "new",
+      "step": "proposal"
+    }
+  ],
+  "calls": [
+    {
+      "call_id": "call-9208f7ff",
+      "step": "proposal",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "changed",
+      "started_at": "2026-11-20T21:38:45.553Z",
+      "ended_at": "2026-11-20T21:41:48.940Z"
+    },
+    {
+      "call_id": "call-41e106b4",
+      "step": "proposal",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-20T22:19:02.000Z",
+      "ended_at": "2026-11-20T22:22:14.239Z"
+    },
+    {
+      "call_id": "call-1e5a7b67",
+      "step": "approach-review",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-25T01:57:41.192Z",
+      "ended_at": "2026-11-25T02:03:51.558Z"
+    }
+  ],
+  "created_at": "2026-11-20T19:00:17.896Z",
+  "updated_at": "2026-11-25T02:32:06.934Z",
+  "completed_at": "2026-11-25T02:32:06.934Z"
+}

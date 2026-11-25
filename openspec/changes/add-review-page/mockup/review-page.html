@@ -1,0 +1,1207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Reference mockup for the add-review-page change: the review page styles itself as this one does.
+     Its content is a sample and its screenshots are placeholders. Where it differs from the specs, the specs win. -->
+<title>Evolving Scenes Review Package</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a masthead band with the PR title and tier tally, then a sticky contents rail beside one reading column. */
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --ink: #161a22;
+  --muted: #5a6271;
+  --faint: #868d9b;
+  --line: #dde1e8;
+  --line-strong: #c6ccd7;
+  --accent: #3145c4;
+  --code-bg: #eaedf3;
+  --red: #b3302a;
+  --red-bg: #fbe7e5;
+  --orange: #b0560f;
+  --orange-bg: #fcede0;
+  --yellow: #765c00;
+  --yellow-bg: #f7eecd;
+  --white-ink: #4a5161;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --measure: 70ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1217; --surface: #161a21; --ink: #e5e8ee; --muted: #a0a8b6; --faint: #7a8291;
+    --line: #262c36; --line-strong: #363e4b; --accent: #93a2ff; --code-bg: #1f242d;
+    --red: #ff8a80; --red-bg: #3a1c1a; --orange: #f5a462; --orange-bg: #382718; --yellow: #e6c65a; --yellow-bg: #332c15;
+    --white-ink: #c3c9d4; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1217; --surface: #161a21; --ink: #e5e8ee; --muted: #a0a8b6; --faint: #7a8291;
+  --line: #262c36; --line-strong: #363e4b; --accent: #93a2ff; --code-bg: #1f242d;
+  --red: #ff8a80; --red-bg: #3a1c1a; --orange: #f5a462; --orange-bg: #382718; --yellow: #e6c65a; --yellow-bg: #332c15;
+  --white-ink: #c3c9d4; color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--ink); font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+code { font: 400 0.86em/1.4 var(--mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3, h4 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+
+.inner { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Masthead */
+.masthead { background: var(--surface); border-bottom: 1px solid var(--line); margin-top: calc(-1 * env(safe-area-inset-top, 0px)); padding-top: calc(env(safe-area-inset-top, 0px) + 40px); padding-bottom: 32px; }
+.masthead .inner { display: grid; gap: 20px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.eyebrow span + span::before { content: "/"; margin-right: 14px; color: var(--line-strong); }
+h1 { font: 600 clamp(26px, 3.4vw, 36px)/1.2 var(--sans); letter-spacing: -0.015em; max-width: 30ch; }
+h1 .prefix { font-family: var(--mono); font-weight: 500; color: var(--muted); font-size: 0.78em; letter-spacing: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--muted); }
+.meta div { display: flex; gap: 8px; align-items: baseline; }
+.meta dt { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+.meta dd { margin: 0; font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.meta { margin: 0; }
+
+.tally { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.state { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; font-weight: 500; }
+.state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2f9e5b; }
+.count { display: grid; grid-template-columns: auto auto; column-gap: 10px; align-items: baseline; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; min-width: 104px; }
+.count b { font: 600 24px/1.1 var(--sans); font-variant-numeric: tabular-nums; }
+.count span { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.count.red b { color: var(--red); } .count.orange b { color: var(--orange); } .count.yellow b { color: var(--yellow); } .count.white b { color: var(--white-ink); }
+.count.zero { opacity: 0.55; }
+a.count { text-decoration: none; color: inherit; }
+a.count:hover { border-color: var(--line-strong); }
+
+/* Shell */
+.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding-block: 40px 96px; align-items: start; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); font-size: 14px; }
+.rail h2 { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 12px; }
+.rail ol, .rail ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rail > ol > li > a { display: block; padding: 5px 0; color: var(--ink); text-decoration: none; font-weight: 500; }
+.rail > ol > li > a:hover { color: var(--accent); }
+.rail ul { margin: 2px 0 8px; padding-left: 2px; }
+.rail ul a { display: grid; grid-template-columns: 10px 18px minmax(0, 1fr); gap: 6px; align-items: baseline; padding: 3px 0; color: var(--muted); text-decoration: none; line-height: 1.35; }
+.rail ul a:hover { color: var(--ink); }
+.rail ul a .n { font: 400 12px/1 var(--mono); color: var(--faint); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; transform: translateY(-1px); }
+.dot.red { background: var(--red); } .dot.yellow { background: var(--yellow); } .dot.white { background: transparent; border: 1px solid var(--line-strong); }
+
+main { min-width: 0; display: grid; gap: 72px; }
+section { display: grid; gap: 24px; scroll-margin-top: 24px; }
+.section-head { display: grid; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line-strong); }
+.section-head h2 { font: 600 24px/1.25 var(--sans); letter-spacing: -0.01em; }
+.section-head p { color: var(--muted); font-size: 15px; max-width: var(--measure); }
+
+.prose { display: grid; gap: 14px; max-width: var(--measure); }
+.ref { color: var(--accent); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.ref:hover { text-decoration-color: var(--accent); }
+.ref code { font-weight: 600; }
+.prose ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.prose h3 { font: 600 17px/1.35 var(--sans); margin-top: 10px; }
+
+/* Tags */
+.tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tier, .kind { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; padding: 5px 8px; border-radius: 4px; white-space: nowrap; }
+.tier.red { color: var(--red); background: var(--red-bg); }
+.tier.orange { color: var(--orange); background: var(--orange-bg); }
+.tier.yellow { color: var(--yellow); background: var(--yellow-bg); }
+.tier.white { color: var(--white-ink); border: 1px solid var(--line-strong); padding: 4px 7px; }
+.kind { color: var(--muted); border: 1px solid var(--line); padding: 4px 7px; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.45; }
+th { text-align: left; font: 500 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+tr:first-child td { border-top: 0; }
+td.num { font-family: var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; width: 1%; }
+td.nowrap { white-space: nowrap; }
+.size { max-width: 560px; }
+.size th.c, .size td.c { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.size td { padding: 8px 14px; }
+.size tr.total td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.size-note { margin: 0; color: var(--muted); font-size: 13.5px; }
+.index td a { color: var(--ink); text-decoration: none; }
+.index td a:hover { color: var(--accent); text-decoration: underline; }
+
+/* Review items */
+.items { display: grid; gap: 0; }
+.item { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 16px; padding-block: 28px; border-top: 1px solid var(--line); scroll-margin-top: 24px; }
+.item:first-child { border-top: 0; padding-top: 8px; }
+.item > .n { font: 500 20px/1.3 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.item-body { display: grid; gap: 14px; min-width: 0; }
+.item h3 { font: 600 19px/1.35 var(--sans); letter-spacing: -0.005em; }
+.src { font: 400 13px/1.3 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.src a { color: var(--accent); }
+.ids { display: flex; flex-wrap: wrap; gap: 6px; }
+.ids code { background: var(--red-bg); color: var(--red); }
+
+.compact .item { padding-block: 20px; }
+.compact .item h3 { font-size: 16.5px; }
+
+/* Decision log */
+.decision { display: grid; gap: 14px; padding-block: 28px; border-top: 1px solid var(--line); scroll-margin-top: 24px; }
+.decision:first-of-type { border-top: 0; padding-top: 8px; }
+.decision header { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; column-gap: 12px; align-items: baseline; }
+.decision .did { font: 500 15px/1.3 var(--mono); color: var(--faint); }
+.decision h3 { font: 600 17.5px/1.35 var(--sans); }
+.decision .phase { display: block; font: 500 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 2px; }
+.decision .raised { font: 400 12.5px/1.3 var(--mono); white-space: nowrap; }
+.fields { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 20px; margin: 0; padding-left: 104px; max-width: calc(var(--measure) + 274px); font-size: 15px; }
+.fields dt { font: 500 11px/1.9 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.fields dd { margin: 0; min-width: 0; }
+.fields dd.decided { font-weight: 500; }
+
+.empty { padding: 20px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--muted); max-width: var(--measure); }
+
+footer.inner { color: var(--faint); font: 400 12.5px/1.5 var(--mono); padding-block: 0 48px; }
+
+
+@media (max-width: 960px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 24px 64px; }
+  .rail { position: static; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+  .rail > ol { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .rail ul { display: none; }
+  .fields { padding-left: 0; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .fields dd { margin-bottom: 10px; }
+  .decision header { grid-template-columns: 88px minmax(0, 1fr); }
+  .decision .raised { grid-column: 2; margin-top: 4px; }
+}
+@media (max-width: 560px) {
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .item > .n { font-size: 14px; margin-bottom: 6px; }
+  .masthead { padding-bottom: 24px; }
+  .count { min-width: 0; flex: 1 1 40%; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+/* Questions: one card per question under its item, the recommended option pre-selected, "Other" and notes in the box below. */
+.ask { display: grid; gap: 14px; margin-top: 6px; max-width: var(--measure); }
+.q { margin: 0; padding: 16px 18px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); display: grid; gap: 12px; min-width: 0; }
+.q legend { float: left; width: 100%; padding: 0; font: 500 15.5px/1.45 var(--sans); }
+.q-eyebrow { display: block; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 8px; }
+.opts { clear: both; display: grid; gap: 6px; }
+.opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.opt:hover { border-color: var(--line-strong); }
+.opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt input { margin: 4px 0 0; accent-color: var(--accent); }
+/* An answered page is a read-only record of what was sent from it. */
+.answered .opt { cursor: default; }
+.answered .opt input:disabled { opacity: 1; }
+.answered textarea.note:disabled, .answered textarea.note[readonly] { background: transparent; color: var(--ink); resize: none; }
+.answered fieldset.q textarea.note:placeholder-shown { display: none; }
+.answered .comment-btn { display: none; }
+.answered .req { display: none; }
+.opt-text { display: grid; gap: 2px; min-width: 0; }
+.opt-label { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-weight: 500; }
+.opt-desc { color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+.rec { font: 500 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; }
+.note { box-sizing: border-box; width: 100%; font: 400 15px/1.45 var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; resize: vertical; }
+.note:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.note.missing { border-color: var(--red); }
+
+.sendbar { position: sticky; bottom: 0; z-index: 10; background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.sendbar-inner { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; padding-block: 12px; }
+.send-status { font-size: 14px; color: var(--muted); }
+.send-status.error { color: var(--red); }
+.send { font: 600 14.5px/1 var(--sans); color: var(--surface); background: var(--accent); border: 0; border-radius: 8px; padding: 11px 18px; cursor: pointer; }
+.send:disabled { opacity: 0.6; cursor: default; }
+.send:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.q-eyebrow .req { margin-left: 10px; color: var(--red); }
+.send-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.merge { font: 600 14.5px/1 var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 18px; cursor: pointer; }
+.merge:hover { border-color: var(--ink); }
+.merge:disabled { opacity: 0.6; cursor: default; }
+.merge:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.confirm { width: min(440px, calc(100vw - 32px)); padding: 22px 22px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); }
+.confirm::backdrop { background: rgb(10 12 16 / 0.6); }
+.confirm h3 { margin: 0 0 8px; font: 600 17px/1.3 var(--sans); }
+.confirm p { margin: 0 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.copy-box { width: min(620px, calc(100vw - 32px)); }
+.copy-box pre { margin: 0 0 16px; max-height: 40vh; overflow: auto; padding: 12px 14px; border-radius: 8px; background: var(--code-bg); color: var(--ink); font: 400 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.next-q { font: 500 14px/1 var(--sans); color: var(--accent); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+.next-q:hover { border-color: var(--accent); }
+.next-q:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Key evidence: a few large screenshots at the reading column's width, then every acceptance screenshot as a thumbnail. Each opens in a viewer with a comment box. */
+.key-shots { display: grid; gap: 28px; }
+.shot { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.shot-open { display: block; width: 100%; padding: 0; border: 0; background: var(--code-bg); cursor: zoom-in; }
+.shot-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.shot-open img { display: block; width: 100%; height: auto; max-height: min(78vh, 900px); object-fit: contain; }
+.shot figcaption { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: start; padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+.shot figcaption .cap { display: grid; gap: 4px; max-width: var(--measure); }
+.shot figcaption b { font-weight: 600; }
+.shot figcaption p { color: var(--muted); font-size: 15px; line-height: 1.5; }
+.comment-btn { font: 500 13.5px/1 var(--sans); color: var(--accent); background: transparent; border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+.comment-btn:hover { border-color: var(--accent); }
+.comment-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shot-note { grid-column: 1 / -1; padding: 9px 12px; border-left: 3px solid var(--accent); background: var(--bg); font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; }
+.shot-note b { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin-right: 8px; }
+@media (max-width: 560px) { .shot figcaption { grid-template-columns: minmax(0, 1fr); } .comment-btn { justify-self: start; } }
+
+.all-shots { display: grid; gap: 24px; margin-top: 12px; }
+.all-shots > h3 { font: 600 18px/1.35 var(--sans); }
+.round { display: grid; gap: 10px; }
+.round h4 { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.round > p { font-size: 14.5px; color: var(--muted); max-width: var(--measure); }
+.thumbs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.thumb { position: relative; display: grid; gap: 6px; width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: zoom-in; }
+.thumb:hover { border-color: var(--line-strong); }
+.thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.thumb img { display: block; width: 100%; height: 96px; object-fit: contain; background: var(--code-bg); border-radius: 4px; }
+.thumb-label { font: 400 12px/1.3 var(--mono); color: var(--muted); }
+.thumb.has-comment { border-color: var(--accent); }
+.thumb.has-comment::after { content: "Comment"; position: absolute; top: 10px; right: 10px; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--surface); background: var(--accent); padding: 3px 5px; border-radius: 3px; }
+
+.viewer { width: min(1180px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); overflow: auto; }
+.viewer::backdrop { background: rgb(10 12 16 / 0.72); }
+.viewer-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.viewer-pos { flex: 1; min-width: 0; font: 500 12px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.viewer-bar button { font: 500 14px/1 var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.viewer-bar button:hover { border-color: var(--accent); color: var(--accent); }
+.viewer-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.viewer-stage { display: grid; place-items: center; padding: 12px; background: var(--code-bg); }
+.viewer-stage img { display: block; width: auto; height: auto; max-width: 100%; max-height: max(240px, calc(100dvh - 340px)); }
+.viewer-info { display: grid; gap: 6px; padding: 14px 18px 18px; }
+.viewer-info h3 { font: 600 17px/1.35 var(--sans); }
+.viewer-info p { color: var(--muted); font-size: 15px; max-width: var(--measure); }
+.viewer-info label { margin-top: 8px; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <div class="eyebrow"><span>Review package</span><span>example/sample-app</span><span>OpenSpec change create-presentations</span></div>
+    <h1><span class="prefix">feat:</span> add evolving scene presentations and generation skill</h1>
+    <dl class="meta">
+      <div><dt>Round</dt><dd>1</dd></div>
+      <div><dt>Head</dt><dd>f400f242</dd></div>
+      <div><dt>Accepted at</dt><dd>4eea639a</dd></div>
+      <div><dt>Archived</dt><dd>2026-11-16</dd></div>
+      <div><dt>Run</dt><dd>e0b71129</dd></div>
+    </dl>
+    <div class="tally" aria-label="Review items by tier">
+      <div class="state">Run succeeded</div>
+      <a class="count red" href="#review-first"><b>4</b><span>Red</span></a>
+      <div class="count orange zero"><b>0</b><span>Orange</span></div>
+      <a class="count yellow" href="#other-items"><b>3</b><span>Yellow</span></a>
+    </div>
+  </div>
+</header>
+
+<div class="inner shell">
+  <nav class="rail" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#evidence">Key evidence</a></li>
+      <li><a href="#review-first">Red items</a>
+        <ul>
+          <li><a href="#item-1"><span class="dot red"></span><span class="n">1</span><span>Skill workflow untested</span></a></li>
+          <li><a href="#item-2"><span class="dot red"></span><span class="n">2</span><span>Fixed 880×1280 canvas</span></a></li>
+          <li><a href="#item-3"><span class="dot red"></span><span class="n">3</span><span>Generic verification</span></a></li>
+          <li><a href="#item-4"><span class="dot red"></span><span class="n">4</span><span>Mode switch projection</span></a></li>
+        </ul>
+      </li>
+      <li><a href="#other-items">Other review items</a>
+        <ul>
+          <li><a href="#item-5"><span class="dot yellow"></span><span class="n">5</span><span>Step 3 morph link</span></a></li>
+          <li><a href="#item-6"><span class="dot yellow"></span><span class="n">6</span><span>Screenshot helper</span></a></li>
+          <li><a href="#item-7"><span class="dot yellow"></span><span class="n">7</span><span>Nested scaffold lint</span></a></li>
+        </ul>
+      </li>
+      <li><a href="#decision-log">Decision log</a></li>
+      <li><a href="#dispute-log">Dispute log</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <!-- Summary -->
+    <section id="summary">
+      <div class="section-head"><h2>Summary</h2></div>
+      <div class="prose">
+        <p>Implements OpenSpec change <code>create-presentations</code>: browser presentations that develop one continuous diagram through named steps, with a distributable skill for creating and modifying them.</p>
+        <ul>
+          <li>Add a style-neutral React scene kit with typed grouped payloads, stable entity motion, fixed-canvas scaling, keyboard/touch navigation, and browse/present modes.</li>
+          <li>Add explicit lazy-loaded presentation routes and the canonical nine-step “How to Use This Skill to Make a Presentation” example, with presentation-owned styling.</li>
+          <li>Package the presentation skill, bootstrap scaffold, and authoring templates, including standalone/monorepo target selection and partial scaffold reuse. Keep vendored kit and script copies aligned.</li>
+          <li>Add production browser verification and settled screenshot capture with advisory overlap, active-navigation, and attribution diagnostics. Include fixes for reference validation, portable scaffold linting, preview process cleanup and signal handling, inspection input validation, and stale capture replacement.</li>
+        </ul>
+        <h3>Lines of code</h3>
+        <div class="table-wrap size">
+          <table>
+            <thead><tr><th>Language</th><th class="c">Files</th><th class="c">Added</th><th class="c">Modified</th><th class="c">Removed</th></tr></thead>
+            <tbody>
+              <tr><td>TypeScript</td><td class="c">103</td><td class="c">937</td><td class="c">210</td><td class="c">2,648</td></tr>
+              <tr><td>JavaScript</td><td class="c">18</td><td class="c">589</td><td class="c">127</td><td class="c">1,216</td></tr>
+              <tr><td>Markdown</td><td class="c">22</td><td class="c">518</td><td class="c">151</td><td class="c">1,234</td></tr>
+              <tr><td>CSS</td><td class="c">4</td><td class="c">79</td><td class="c">0</td><td class="c">464</td></tr>
+              <tr><td>JSON</td><td class="c">9</td><td class="c">97</td><td class="c">19</td><td class="c">32</td></tr>
+              <tr><td>YAML</td><td class="c">1</td><td class="c">1</td><td class="c">6</td><td class="c">1</td></tr>
+              <tr><td>SVG</td><td class="c">2</td><td class="c">0</td><td class="c">0</td><td class="c">2</td></tr>
+              <tr class="total"><td>Total</td><td class="c">159</td><td class="c">2,221</td><td class="c">513</td><td class="c">5,597</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="size-note">Counted by cloc against the base branch. Blank lines, comments and lock files are left out.</p>
+      </div>
+    </section>
+
+    <!-- Key evidence -->
+    <section id="evidence">
+      <div class="section-head"><h2>Key evidence</h2><p>What the acceptance tester saw in a real browser. It accepted revision <code>4eea639a</code> in round 2. Open any screenshot to enlarge it or comment on it. Comments go to the factory with your answers.</p></div>
+      <div class="key-shots">
+        <figure class="shot" data-shot="round2-helper-wide-step-04.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 4 on a desktop screen, accepted revision"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="Step 4 on a desktop screen, accepted revision" width="1440" height="900"></button>
+          <figcaption><div class="cap"><b>Step 4 on a desktop screen, accepted revision</b><p>Each answer adds a beat card under the you and skill exchange, and the morph labels between cards stay on one line. This retest closed <a class="ref" href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76"><code>ACCEPT-2</code> Morph label split across lines</a>.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+        <figure class="shot" data-shot="round2-helper-narrow-step-04.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 4 on a phone screen, accepted revision"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="Step 4 on a phone screen, accepted revision" width="390" height="900"></button>
+          <figcaption><div class="cap"><b>Step 4 on a phone screen, accepted revision</b><p>The scene scales down as one piece and its labels stay readable, 12px at the smallest. This closed <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+        <figure class="shot" data-shot="round1-1440x900-step-09.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 9, the finished scene"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="Step 9, the finished scene" width="1440" height="900"></button>
+          <figcaption><div class="cap"><b>Step 9, the finished scene</b><p>All nine steps build one diagram, framed as the presentation's own output. Taken in round 1, before the morph label fix, so those labels still split.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+      </div>
+      <div class="all-shots">
+        <h3>All acceptance screenshots (25)</h3>
+        <div class="round">
+          <h4>Round 2 · 4eea639a · accepted</h4>
+          <p>Retested <a class="ref" href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76"><code>ACCEPT-2</code> Morph label split across lines</a> at steps 3 and 4. Fixed.</p>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="round2-helper-wide-step-04.png" data-round="Round 2" data-title="Step 4 · 1440×900" data-desc="Both morph labels stay on one line between the three cards." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-narrow-step-04.png" data-round="Round 2" data-title="Step 4 · 390×900" data-desc="The cards read at phone width, and both morph labels stay on one line." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-wide-step-03.png" data-round="Round 2" data-title="Step 3 · 1440×900" data-desc="The first morph label stays on one line." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 3 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-narrow-step-03.png" data-round="Round 2" data-title="Step 3 · 390×900" data-desc="The first morph label stays on one line at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 3 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-axi-wide-step-04.png" data-round="Round 2" data-title="Step 4 · 1440×900 · live browser" data-desc="The same step checked in a live browser." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-axi-narrow-step-04.png" data-round="Round 2" data-title="Step 4 · 390×900 · live browser" data-desc="Cards readable and morph labels on one line, with the step controls and attribution visible." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900 · live browser</span></button></li>
+          </ul>
+        </div>
+        <div class="round">
+          <h4>Round 1 · 986ef34a</h4>
+          <p>Retested <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>, now fixed, and found <a class="ref" href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76"><code>ACCEPT-2</code> Morph label split across lines</a>.</p>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-01.png" data-round="Round 1" data-title="Step 1 · 1440×900" data-desc="The first card and prompt read clearly, with the browse controls." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-04.png" data-round="Round 1" data-title="Step 4 · 1440×900" data-desc="The morph labels split onto two lines as morp and h." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-09.png" data-round="Round 1" data-title="Step 9 · 1440×900" data-desc="The finished scene inside the reveal frame, with the kit, verify and the edit loop." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-01.png" data-round="Round 1" data-title="Step 1 · 390×900" data-desc="Title, caption and controls read at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 1 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-04.png" data-round="Round 1" data-title="Step 4 · 390×900" data-desc="The labels now read at phone width, but morph splits onto two lines." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-09.png" data-round="Round 1" data-title="Step 9 · 390×900" data-desc="The finished scene at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 9 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-initial.png" data-round="Round 1" data-title="Step 1 · 780×380 · live browser" data-desc="At this short viewport the scene shrinks to a sliver. See item 2." data-w="780" data-h="380"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='780' height='380' viewBox='0 0 780 380'%3E%3Crect width='780' height='380' fill='%23d9dde5'/%3E%3Ctext x='390' y='190' font-family='sans-serif' font-size='32' fill='%236b7280' text-anchor='middle'%3EScreenshot 780x380%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="780" height="380"><span class="thumb-label">Step 1 · 780×380 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-01.png" data-round="Round 1" data-title="Step 1 · 1440×900 · live browser" data-desc="The first step in a live browser." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-04.png" data-round="Round 1" data-title="Step 4 · 780×380 · live browser" data-desc="The scene is a few pixels tall at this short viewport; the tester&#x27;s notes call it 1440×900. See item 2." data-w="780" data-h="380"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='780' height='380' viewBox='0 0 780 380'%3E%3Crect width='780' height='380' fill='%23d9dde5'/%3E%3Ctext x='390' y='190' font-family='sans-serif' font-size='32' fill='%236b7280' text-anchor='middle'%3EScreenshot 780x380%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="780" height="380"><span class="thumb-label">Step 4 · 780×380 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-narrow-step-04.png" data-round="Round 1" data-title="Step 4 · 390×900 · live browser" data-desc="The labels read at phone width, but morph splits onto two lines." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-09.png" data-round="Round 1" data-title="Step 9 · 1440×900 · live browser" data-desc="The finished scene, with the next-step control disabled." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900 · live browser</span></button></li>
+          </ul>
+        </div>
+        <div class="round">
+          <h4>Round 0 · 3cc4f166</h4>
+          <p>First pass over the reference presentation. Found <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>.</p>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="helper-wide-first.png" data-round="Round 0" data-title="Step 1 · 1440×900" data-desc="The first scene, with the section list and progress." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-wide-dense.png" data-round="Round 0" data-title="Step 4 · 1440×900" data-desc="Three beat cards build up under the you and skill exchange." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-wide-last.png" data-round="Round 0" data-title="Step 9 · 1440×900" data-desc="The full scene, framed as the presentation&#x27;s own output." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-first.png" data-round="Round 0" data-title="Step 1 · 390×900" data-desc="The scene is centered and scaled down as one piece." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 1 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-dense.png" data-round="Round 0" data-title="Step 4 · 390×900" data-desc="The scene&#x27;s labels are too small to read at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-last.png" data-round="Round 0" data-title="Step 9 · 390×900" data-desc="The final scene holds together, but its labels are still too small." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 9 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="wide-first.png" data-round="Round 0" data-title="Step 1 · 390×844 · live browser" data-desc="The first step in a live browser." data-w="390" data-h="844"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844' viewBox='0 0 390 844'%3E%3Crect width='390' height='844' fill='%23d9dde5'/%3E%3Ctext x='195' y='422' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x844%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="844"><span class="thumb-label">Step 1 · 390×844 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="narrow-first.png" data-round="Round 0" data-title="Step 4 · 390×844 · live browser" data-desc="The tester saved this same image three times, as narrow-first, wide-dense and wide-last." data-w="390" data-h="844"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844' viewBox='0 0 390 844'%3E%3Crect width='390' height='844' fill='%23d9dde5'/%3E%3Ctext x='195' y='422' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x844%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="844"><span class="thumb-label">Step 4 · 390×844 · live browser</span></button></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Review first -->
+    <section id="review-first">
+      <div class="section-head"><h2>Red items</h2></div>
+      <div class="items">
+        <article class="item" id="item-1">
+          <div class="n">1</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">Red</span><span class="kind">Risk</span><span class="kind">Agent decision</span></div>
+            <h3>Skill workflow behaviors rest on static inspection; no agent journey was run</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L1-L10">decision-log.md, lines 1 to 10</a></div>
+            <div class="prose">
+              <p>These checklist rows are marked verified only by reading <code>skills/presentation/SKILL.md</code>:</p>
+<ul><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L3"><code>CHECK-1</code> Requirement gathering without inventing details</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L4"><code>CHECK-2</code> Anchor detection by contract</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L5"><code>CHECK-3</code> Scaffold fully, reuse, or fill missing anchors</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L6"><code>CHECK-4</code> Standalone, monorepo and existing-app targets</a> (including the monorepo <code>presentations/</code> choice and confirmation before writing into a non-empty project)</li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L12"><code>CHECK-10</code> Ambiguous modification asks for the target</a></li></ul>
+              <p><a class="ref" href="#d-01"><code>DECIDE-1</code> Automated verification and static inspection</a> chose that route: it shipped the procedure and did not test prompt wording.</p>
+              <p>The agent journeys that cover these behaviors were never run by implementation or acceptance (acceptance round 2 says so explicitly):</p>
+<ul><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/test-plan.md#L55"><code>JOURNEY-1</code> Scaffold the correct target</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/test-plan.md#L66"><code>JOURNEY-2</code> Preserve and scope a modification</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/test-plan.md#L88"><code>JOURNEY-4</code> Repair verification and warning failures</a></li></ul>
+              <p>The fourth journey, <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/test-plan.md#L77"><code>JOURNEY-3</code> Interact with the evolving reference scene</a>, never ran either, so navigation and mode switching were never tried in a real browser.</p>
+              <p>Target resolution and partial-anchor merging are left to agent judgement rather than an executable planner. If an agent misreads the layout it could target the monorepo root or alter existing root scripts.</p>
+              <p>Only template lookup (<a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L7"><code>CHECK-5</code> Templates resolved from the skill directory</a>) has executable code and tests. No test or run shows an agent following the skill's verify-and-repair steps.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-1-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>The skill&#x27;s workflow was checked only by reading the skill, and no agent ever followed it. What should the factory do?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-1-q1" value="0"><span class="opt-text"><span class="opt-label">Run the agent journeys<span class="rec">Recommended</span></span><span class="opt-desc">An agent follows the skill in scratch projects (standalone, partial monorepo, ambiguous modification) and keeps each exchange as evidence.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="1"><span class="opt-text"><span class="opt-label">Accept the inspection</span><span class="opt-desc">Keep the decision to ship the procedure without running it, and merge as is.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="2"><span class="opt-text"><span class="opt-label">Make target resolution code</span><span class="opt-desc">Replace agent judgment for target and anchor resolution with an executable planner and unit tests.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-1-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+
+        <article class="item" id="item-2">
+          <div class="n">2</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">Red</span><span class="kind">Agent decision</span></div>
+            <h3>Reference presentation uses a fixed 880×1280 canvas with no minimum-viewport contract</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L126-L163">decision-log.md, lines 126 to 163</a></div>
+            <div class="prose">
+              <p>To fix the unreadable labels at 390px (<a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>), <a class="ref" href="#d-12"><code>DECIDE-12</code> Fixed-canvas label readability</a> replaced the reference's design canvas with one tall 880×1280 canvas (36px+ type) at every viewport. <a class="ref" href="#d-13"><code>DECIDE-13</code> Uniform owner bounds and fallback-font room</a> widened and padded entities, allowed wrapping, and extended the height to 1280 for fallback fonts. <a class="ref" href="#d-14"><code>DECIDE-14</code> Unbroken morph label</a> then fixed the <code>morph</code> word splitting onto two lines (<code>morp</code>/<code>h</code>) with nowrap and a monospace face. Acceptance measured 12.03px text at 390×900.</p>
+              <p>The fit scale can still shrink toward zero: the implementation report calculates that at about 300px viewport height the 316px of browse reservations leave no scene height. That was not reproduced.</p>
+              <p>Only 390×900 and 1440×900 were inspected, and only steps 3 and 4 in the last round. Costly to reverse if short landscape viewports matter.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-2-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>At about 300px of viewport height the scene could shrink to nothing, and only two viewport sizes were checked. What should the factory do?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-2-q1" value="0"><span class="opt-text"><span class="opt-label">Guard short viewports<span class="rec">Recommended</span></span><span class="opt-desc">Below a minimum height, scroll the canvas instead of shrinking it, and add a browser check at a short landscape size.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="1"><span class="opt-text"><span class="opt-label">Accept the canvas</span><span class="opt-desc">Presentations run on ordinary screens. Keep the single tall canvas as decided.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="2"><span class="opt-text"><span class="opt-label">Add a landscape canvas</span><span class="opt-desc">Switch to a wide canvas on landscape viewports.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-2-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+
+        <article class="item" id="item-3">
+          <div class="n">3</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">Red</span><span class="kind">Agent decision</span></div>
+            <h3>Generic verification and bootstrap example weaken the canonical-outline guarantee for other callers</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L12-L21">decision-log.md, lines 12 to 21</a></div>
+            <div class="prose">
+              <p><a class="ref" href="#d-02"><code>DECIDE-2</code> Distributable example and generic verification</a>: the bootstrap ships an unstyled two-step <code>example</code> and <code>npm run verify</code> there is <code>verify.mjs --slug example</code>. Verification of any generic slug does not enforce the nine-row outline, only the repository default does. Verification and helper traversal switch an initially present-mode presentation to browse mode, so a generated presentation's delivery appearance is never captured.</p>
+              <p><a class="ref" href="#d-08"><code>DECIDE-8</code> Classify sample defects and prove registration</a> proves registration by looking for one exact landing-page route link in the built app, so a custom host with a hidden registry or duplicate featured/catalog links could fail despite a working route. <a class="ref" href="#d-05"><code>DECIDE-5</code> Sample-validation failure phase</a> and <a class="ref" href="#d-08"><code>DECIDE-8</code> Classify sample defects and prove registration</a> also relabel a sample mismatch as the <code>sample</code> phase instead of <code>render</code>, which changes the failure output that callers and scripts see.</p>
+              <p>The implementation additionally rejects step counts above 1000, a limit the spec does not state. The root and template copies of the scripts must stay byte-aligned.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-3-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question 1 of 2<span class="req">Answer required</span></span>Verification switches a generated presentation to browse mode, so its delivery look is never captured. Should verification capture present mode too?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-3-q1" value="0"><span class="opt-text"><span class="opt-label">Capture both modes<span class="rec">Recommended</span></span><span class="opt-desc">Verify and screenshot each presentation in the mode it opens in, as well as in browse mode.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q1" value="1"><span class="opt-text"><span class="opt-label">Browse mode is enough</span><span class="opt-desc">Keep verification as it is.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-3-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+              <fieldset class="q" data-qid="item-3-q2" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question 2 of 2<span class="req">Answer required</span></span>The implementation rejects presentations with more than 1000 steps, a limit the spec doesn&#x27;t state. What should happen?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-3-q2" value="0"><span class="opt-text"><span class="opt-label">Add the limit to the spec<span class="rec">Recommended</span></span><span class="opt-desc">Keep the limit and state it in the spec.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q2" value="1"><span class="opt-text"><span class="opt-label">Remove the limit</span><span class="opt-desc">Accept any number of steps.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q2" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-3-q2-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+
+        <article class="item" id="item-4">
+          <div class="n">4</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">Red</span><span class="kind">Agent decision</span></div>
+            <h3>Mode switching suppresses layout projection through Motion's global instant-layout operation</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L66-L76">decision-log.md, lines 66 to 76</a></div>
+            <div class="prose">
+              <p><a class="ref" href="#d-07"><code>DECIDE-7</code> Mode changes discard layout snapshots</a> calls <code>useInstantLayoutTransition</code> just before every mode change (key P and the button) so that present/browse geometry snaps instead of morphing, while the grouped scene stays mounted. This works through Motion's projection root, so another presentation embedded on the same page could also snap during the switch.</p>
+              <p>Concurrent embedded presentations were not tested. The behavior is covered by a real-Motion unit test in <code>tests/motion.test.tsx</code> (<a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L23"><code>CHECK-21</code> Mode switch preserves current step</a>) and not by any browser run.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-4-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>Switching modes snaps every Motion layout on the page, so another presentation embedded on the same page could snap too. What should the factory do?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-4-q1" value="0"><span class="opt-text"><span class="opt-label">Accept it<span class="rec">Recommended</span></span><span class="opt-desc">A page shows one presentation at a time. Note the limit in the skill.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-4-q1" value="1"><span class="opt-text"><span class="opt-label">Scope the snap</span><span class="opt-desc">Suppress layout projection only inside this presentation, and test two presentations on one page.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-4-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-4-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+
+    <!-- Other review items -->
+    <section id="other-items">
+      <div class="section-head"><h2>Other review items</h2></div>
+      <div class="items">
+        <article class="item" id="item-5">
+          <div class="n">5</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Yellow</span><span class="kind">Agent decision</span></div>
+            <h3>Step 3 shows a morph link pointing at a card that has not landed yet</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L34-L64">decision-log.md, lines 34 to 64</a></div>
+            <div class="prose">
+              <p>The audit found that the link between consecutive cards first appeared at step 4, while the step-3 caption names it. <a class="ref" href="#d-04"><code>DECIDE-4</code> Reference sample step 3 morph link</a> reported that as a finding. <a class="ref" href="#d-06"><code>DECIDE-6</code> Step 3 outgoing morph link</a> fixed it by drawing the first outgoing link at its final coordinates in step 3, pointing at the future card slot, and keeping it unchanged when the second card lands.</p>
+              <p>The alternatives were to delay the link or to move a card earlier, and both break the spec's accumulation order. The stub may read oddly before its target appears. The unit test for <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L31"><code>CHECK-29</code> Reference scene beats 1 to 5 accumulate</a> covers it and acceptance screenshots show step 3.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-5-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>The first link now appears in step 3, pointing at the slot where the next card will land. Keep it?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-5-q1" value="0" checked><span class="opt-text"><span class="opt-label">Keep it<span class="rec">Recommended</span></span><span class="opt-desc">It matches the caption and keeps the spec&#x27;s accumulation order.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-5-q1" value="1"><span class="opt-text"><span class="opt-label">Change the caption</span><span class="opt-desc">Leave the link to step 4 and reword step 3&#x27;s caption so it doesn&#x27;t name the link.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-5-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-5-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+
+        <article class="item" id="item-6">
+          <div class="n">6</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Yellow</span><span class="kind">Agent decision</span></div>
+            <h3>Screenshot helper defaults and artifact handling</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L90-L124">decision-log.md, lines 90 to 124</a></div>
+            <div class="prose">
+              <p><a class="ref" href="#d-09"><code>DECIDE-9</code> Executable template resolution and capture boundary</a> added a skill-relative <code>templates.mjs</code> resolver and made <code>captureSettled</code> own the configured wait. Capture waits a default 800ms, so a custom animation longer than that may still be moving. There is no auto-discovery or CLI settle option.</p>
+              <p><a class="ref" href="#d-11"><code>DECIDE-11</code> Viewport input domain and artifact replacement</a> validates viewport width and height as positive integers with no range limit, and on rerun deletes and recreates only that presentation's and viewport's output directory. Other artifact sets are kept. <a class="ref" href="#d-10"><code>DECIDE-10</code> Preview lifecycle and termination</a> makes the preview child's liveness signal-aware and makes SIGINT/SIGTERM exit 130/143.</p>
+              <p>Covered by <code>tests/preview-lifecycle.test.ts</code>, <code>tests/inspection-command.test.ts</code>, <code>tests/diagnostics.test.ts</code> and the integration tests <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> and <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L161"><code>INTEG-2</code> Screenshot helper artifacts and warnings</a>.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-6-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>Capture waits a default 800ms, so a custom animation longer than that may still be moving in the screenshot. What should happen?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-6-q1" value="0" checked><span class="opt-text"><span class="opt-label">Keep the default<span class="rec">Recommended</span></span><span class="opt-desc">Authors set a longer wait in the configuration when they need one.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-6-q1" value="1"><span class="opt-text"><span class="opt-label">Add a settle option</span><span class="opt-desc">Add a command-line option for the wait.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-6-q1" value="2"><span class="opt-text"><span class="opt-label">Wait for animations</span><span class="opt-desc">Detect running animations and wait until they finish.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-6-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-6-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+
+        <article class="item" id="item-7">
+          <div class="n">7</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Yellow</span><span class="kind">Agent decision</span></div>
+            <h3>Lint configuration for the nested bootstrap scaffold</h3>
+            <div class="src">Source <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L23-L32">decision-log.md, lines 23 to 32</a></div>
+            <div class="prose">
+              <p><a class="ref" href="#d-03"><code>DECIDE-3</code> Linting nested distributable scaffolds</a> sets each ESLint config's TypeScript parser root from its own <code>import.meta.dirname</code>. It splits route lookup from components, caches lazy elements at module scope, and exempts only test fixtures from the React Refresh export rule.</p>
+              <p><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> now runs the materialized app's lint command. This reduces the risk of lint passing only in the source repository.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-7-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>Each lint configuration now finds its TypeScript root from its own folder, and the integration test runs the generated app&#x27;s lint. Keep it?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-7-q1" value="0" checked><span class="opt-text"><span class="opt-label">Keep it<span class="rec">Recommended</span></span><span class="opt-desc">The generated app lints the same way as the source repository.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-7-q1" value="1"><span class="opt-text"><span class="opt-label">Lint from the root only</span><span class="opt-desc">Drop the generated app&#x27;s own lint check and lint the template sources from the repository root.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-7-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-7-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Decision log -->
+    <section id="decision-log">
+      <div class="section-head">
+        <h2>Decision log</h2>
+        <p>Fourteen decisions, none waiting on you. Each links to the review item that raises it.</p>
+      </div>
+      <div>
+        <article class="decision" id="d-01">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L1">DECIDE-1</a></span><h3><span class="phase">Implementation</span>Automated verification and static inspection</h3><a class="raised" href="#item-1">Item 1</a></header>
+          <dl class="fields">
+            <dt>Question</dt><dd>How should manual visual checks and checklist inspections be handled under the automated-only instruction?</dd>
+            <dt>Requirement</dt><dd>The approved skill must require browser composition review, while this implementation session must not operate the product, inspect screenshots, or run acceptance tests. The workflow prohibits tests of prompt wording.</dd>
+            <dt>Decision</dt><dd class="decided">Ship the full composition-review procedure in the skill and automated screenshot diagnostics, but do not perform interactive or screenshot review in this session. Inspect source files for the checklist's documentation-only rows and save explicit inspection notes; test executable behavior with automated tests only.</dd>
+            <dt>Alternatives</dt><dd>Interactive review would violate the latest instruction; asserting prompt strings would violate the workflow; dropping the skill's review requirement would change the approved definition.</dd>
+            <dt>Rationale</dt><dd>This preserves the shipped requirement while respecting the implementation/acceptance boundary. Static source inspection is prescribed for documentation and does not operate the product.</dd>
+            <dt>What breaks if wrong</dt><dd>Static notes establish procedure coverage, not real agent compliance or subjective visual coherence; independent acceptance must establish those.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-02">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L12">DECIDE-2</a></span><h3><span class="phase">Implementation</span>Distributable example and generic verification</h3><a class="raised" href="#item-3">Item 3</a></header>
+          <dl class="fields">
+            <dt>Question</dt><dd>What should a fresh style-neutral bootstrap verify before the author's presentation exists?</dd>
+            <dt>Requirement</dt><dd><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> requires a registered route smoke check in the materialized app; the repository verifier must enforce the canonical nine-step reference, and root/template scripts must match.</dd>
+            <dt>Decision</dt><dd class="decided">Bootstrap includes an unstyled two-step <code>example</code> presentation and sets its npm verify script to <code>node scripts/verify.mjs --slug example</code>. The identical verifier defaults to canonical-reference validation in the repository and supports explicit registered slugs for generated work. Browser traversal switches initial present mode to browse so titles/captions can be checked.</dd>
+            <dt>Alternatives</dt><dd>Copying the designed reference into the bootstrap would make the bootstrap less minimal; rejecting every non-reference route would prevent skill self-verification of new work; skipping reference validation globally would violate the approved requirement.</dd>
+            <dt>Rationale</dt><dd>A small unstyled example demonstrates all three contracts while keeping the reusable scaffold free of visual defaults. Explicit routes preserve whole-app builds and error checks for all new presentations.</dd>
+            <dt>What breaks if wrong</dt><dd>Generic slugs intentionally do not enforce reference metadata; the default canonical command still does. The helper captures browse-mode artifacts rather than initial live-delivery mode.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-03">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L23">DECIDE-3</a></span><h3><span class="phase">Implementation</span>Linting nested distributable scaffolds</h3><a class="raised" href="#item-7">Item 7</a></header>
+          <dl class="fields">
+            <dt>Question</dt><dd>How should lint distinguish the repository and its nested bootstrap TS configuration?</dd>
+            <dt>Requirement</dt><dd>Root and materialized apps must provide working lint/build tooling, and distributable code must remain usable outside the source repository.</dd>
+            <dt>Decision</dt><dd class="decided">Set ESLint's TypeScript parser root explicitly from each configuration's own <code>import.meta.dirname</code> and continue linting the template source. Separate route lookup from the component module and presentation-template scene components from step data; cache lazy React elements at module scope. Exempt only test fixtures from the React Refresh export rule. Extend <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> to run the materialized app's lint command as well as build/render.</dd>
+            <dt>Alternatives</dt><dd>Ignoring all template files would conceal release defects; disabling the React rules globally would conceal component lifecycle mistakes; hardcoded repository paths would break the distribution.</dd>
+            <dt>Rationale</dt><dd>Both configurations remain location-independent and normal authored modules follow the React export/lifecycle contracts. The browser route behavior is unchanged.</dd>
+            <dt>What breaks if wrong</dt><dd>A materialized template could fail lint or lazy-route navigation; <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> and the affected route/browser checks catch those regressions.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-04">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L34">DECIDE-4</a></span><h3><span class="phase">Audit</span>Reference sample step 3 morph link</h3><a class="raised" href="#item-5">Item 5</a></header>
+          <dl class="fields">
+            <dt>Question</dt><dd>Does step 3 of the reference sample need the "what morphs" link drawn in step 3 itself, or may it first appear at step 4 when the second card lands?</dd>
+            <dt>Requirement</dt><dd><code>specs/presentation-verification/spec.md</code>, "Committed reference sample", row 3 (scene content: first step-card lands in the tray; what morphs is drawn on the link between consecutive cards, not inside them) and row 4 (more step-cards land).</dd>
+            <dt>Decision</dt><dd class="decided">Treat the link as part of step 3's scene content, so the implementation (links only at beat &gt;= 4, <code>src/presentations/how-to-make-a-presentation/steps/Scene.tsx</code>) is reported as a finding. The row 3 caption ("plus what morphs from one step into the next") and scene intent both name the link at step 3; row 4 only adds more cards.</dd>
+            <dt>Alternatives</dt><dd>Accept links first appearing at step 4 (the implementor's reading, with the unit test for <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L31"><code>CHECK-29</code> Reference scene beats 1 to 5 accumulate</a>, <code>expected[2]=['tray','card1']</code>); this leaves step 3 with no visual for the caption's claim.</dd>
+            <dt>Rationale</dt><dd>The scene-intent column is normative; row 4 does not mention links, so row 3 is the only place the spec puts them.</dd>
+            <dt>What breaks if wrong</dt><dd>Adding an outgoing link stub at step 3 would be a small extra entity if the spec meant step 4; low cost.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-05">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L44">DECIDE-5</a></span><h3><span class="phase">Audit</span>Sample-validation failure phase</h3><a class="raised" href="#item-3">Item 3</a></header>
+          <dl class="fields">
+            <dt>Question</dt><dd>Should a title/caption/order mismatch in the reference sample be reported under a sample phase or the render phase?</dd>
+            <dt>Requirement</dt><dd><code>specs/presentation-verification/spec.md</code>, "Pass/fail reporting" (identify which check failed); <code>design.md</code> Verification step 2 (sample assertion is its own check); checklist row <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L33"><code>CHECK-31</code> Bad reference sample fails verification</a> claims "sample-phase failure".</dd>
+            <dt>Decision</dt><dd class="decided">Report as a finding: <code>FAIL [render]: render: step 0: sample: outline mismatch</code> mislabels the failed check.</dd>
+            <dt>Alternatives</dt><dd>Accept render label because validation runs inside the browser traversal.</dd>
+            <dt>Rationale</dt><dd>Design separates the sample assertion from the render check, and the checklist row itself claims a sample-phase failure.</dd>
+            <dt>What breaks if wrong</dt><dd>Only diagnostics wording; no behavioral change.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-06">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L54">DECIDE-6</a></span><h3><span class="phase">Resolve findings</span>Step 3 outgoing morph link</h3><a class="raised" href="#item-5">Item 5</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Resolve finding 1, row <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L31"><code>CHECK-29</code> Reference scene beats 1 to 5 accumulate</a>.</dd>
+            <dt>Question</dt><dd>How can the normative link appear in step 3 while only the first card has landed?</dd>
+            <dt>Requirement</dt><dd>Reference outline step 3 names the morph link; step 4 adds the other cards and retains existing entities.</dd>
+            <dt>Decision</dt><dd class="decided">Introduce the first outgoing morph link in step 3 at its final inter-card coordinates. It points toward the next card's future slot and persists unchanged when that card lands in step 4. Do not move cards earlier or add a placeholder card.</dd>
+            <dt>Alternatives</dt><dd>Delay the link until step 4 (the audited defect), or introduce a second card in step 3 (changes the normative accumulation sequence).</dd>
+            <dt>Rationale</dt><dd>The link represents what changes next while preserving the specified first-card/remaining-cards ordering.</dd>
+            <dt>What breaks if wrong</dt><dd>A link could be interpreted as requiring an already visible target card; the step-3-only-first-card requirement would then conflict with that interpretation. No approved requirement is waived.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-07">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L66">DECIDE-7</a></span><h3><span class="phase">Resolve findings</span>Mode changes discard layout snapshots</h3><a class="raised" href="#item-4">Item 4</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Resolve finding 2, row <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L23"><code>CHECK-21</code> Mode switch preserves current step</a>.</dd>
+            <dt>Question</dt><dd>How should mode geometry change without triggering entity projection or losing grouped component state?</dd>
+            <dt>Requirement</dt><dd>Design says mode switching is a re-render, not a morph; current step and grouped scene persistence must remain intact.</dd>
+            <dt>Decision</dt><dd class="decided">Call Motion's public <code>useInstantLayoutTransition</code> operation immediately before the mode state update, for both the keyboard and button paths. Call the state update separately so the mode remains usable even before a projection root exists.</dd>
+            <dt>Alternatives</dt><dd>Remount the scene (loses persistent state), suppress all subsequent animation (breaks step morphs), or leave mode updates unguarded.</dd>
+            <dt>Rationale</dt><dd>Discarding projection snapshots for the switch commit snaps geometry while preserving the instance and normal later transitions.</dd>
+            <dt>What breaks if wrong</dt><dd>Mode-only projection would still animate or subsequent steps would stop animating. A real-Motion component test asserts no layout starts for both mode changes and positive starts for normal step changes before and after.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-08">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L78">DECIDE-8</a></span><h3><span class="phase">Resolve findings</span>Classify observed sample defects and prove registration</h3><a class="raised" href="#item-3">Item 3</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Resolve finding 3, row <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L33"><code>CHECK-31</code> Bad reference sample fails verification</a>.</dd>
+            <dt>Question</dt><dd>How should browser-discovered metadata defects and source mentions of an unregistered slug be handled?</dd>
+            <dt>Requirement</dt><dd>Verification identifies the failed check and proves the reference is registered/reachable, with normative metadata in order.</dd>
+            <dt>Decision</dt><dd class="decided">Preserve a typed SampleValidationError through browser error causes and classify it as the sample phase. Check the rendered landing registry for an exact route link instead of searching TypeScript source text; traversal then proves that route's actual scene and metadata.</dd>
+            <dt>Alternatives</dt><dd>Classify every browser-discovered failure as render, or parse source strings/AST without proving built registration.</dd>
+            <dt>Rationale</dt><dd>Error phase follows the violated contract rather than where it was observed; runtime registration avoids false positives from comments or unused declarations.</dd>
+            <dt>What breaks if wrong</dt><dd>Metadata or comment-only registration faults could pass or be mislabelled. Controlled missing, comment-only unregistered, reversed, wrong-title and wrong-caption copies assert sample failures; console/page/transition faults retain render phase.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-09">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L90">DECIDE-9</a></span><h3><span class="phase">Resolve findings</span>Executable template resolution and capture boundary</h3><a class="raised" href="#item-6">Item 6</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Resolve findings 8 and 9, covering these rows:<ul><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L7"><code>CHECK-5</code> Templates resolved from the skill directory</a></li><li><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/checklist.md#L39"><code>CHECK-37</code> Screenshots wait for animation settle</a></li></ul></dd>
+            <dt>Question</dt><dd>What production operations should the integration tests invoke to prove lookup and configured settling?</dd>
+            <dt>Requirement</dt><dd>Lookup is relative to the distributed skill rather than caller cwd; each screenshot waits for configured transitions to settle.</dd>
+            <dt>Decision</dt><dd class="decided">Ship and document a skill-relative <code>templates.mjs</code> resolver; <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L49"><code>INTEG-1</code> Materialized bootstrap is complete and style-neutral</a> invokes it in a separate process from an empty external directory for both template kinds. Make <code>captureSettled</code> own the sole configured wait and return DOM state observed immediately before screenshot capture. <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L161"><code>INTEG-2</code> Screenshot helper artifacts and warnings</a> uses a real 1100ms Web Animation and a 1300ms configured interval, so substituting the default 800ms wait leaves step 2 moving. Keep browser errors checked after the capture callback as well as before it.</dd>
+            <dt>Alternatives</dt><dd>Construct template paths only inside test code, or inspect settled text after screenshots following redundant default waits (both audited test gaps).</dd>
+            <dt>Rationale</dt><dd>Tests now exercise public lookup from the unrelated cwd and the actual pre-capture boundary, independently of the default delay.</dd>
+            <dt>What breaks if wrong</dt><dd>Template lookup fails outside the source cwd, or screenshots capture moving states despite later settled metadata.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-10">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L102">DECIDE-10</a></span><h3><span class="phase">Before-PR review</span>Preview lifecycle and termination</h3><a class="raised" href="#item-6">Item 6</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Current review cycle 0, findings:<ul><li><a class="ref" href="#d-10"><code>REVIEW-1</code> Preview cleanup hangs after signal death</a></li><li><a class="ref" href="#d-10"><code>REVIEW-2</code> Preview exit and termination handling</a></li></ul></dd>
+            <dt>Question</dt><dd>How should a signal-dead preview and the first termination signal affect verification/inspection?</dd>
+            <dt>Requirement</dt><dd>Verification must fail actionably and clean up rather than hang; the current review requests conventional immediate signal termination.</dd>
+            <dt>Decision</dt><dd class="decided">Observe exit/error immediately after spawn, consider the child alive only when both exitCode and signalCode are null, and skip waiting on already-dead or spawn-failed children. SIGINT/SIGTERM handlers stop the child and explicitly exit with 130/143; normal completion still closes Chromium and removes both handlers.</dd>
+            <dt>Alternatives</dt><dd>Attaching the exit listener only during cleanup misses already-fired exits. Merely stopping the child consumes the signal and leaves the script waiting for browser timeouts. An asynchronous shutdown/re-raised signal was possible, but the explicitly suggested conventional exit avoids that timeout path.</dd>
+            <dt>Rationale</dt><dd>Node signal exits do not populate exitCode; early observation and explicit signal exit address the two independent failure modes.</dd>
+            <dt>What breaks if wrong</dt><dd>A signal-killed preview can still hang or Ctrl-C can require a second signal. Unit tests simulate signal death during readiness/callback, synchronous cleanup exit, spawn error, conventional exit codes and listener removal without creating processes or opening a browser.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-11">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L114">DECIDE-11</a></span><h3><span class="phase">Before-PR review</span>Viewport input domain and artifact replacement</h3><a class="raised" href="#item-6">Item 6</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Current review cycle 0, finding <a class="ref" href="https://github.com/example/sample-app/commit/3cc4f1660949fbf57beb24a13ab98d2d9ef17475"><code>REVIEW-3</code> Inspection inputs and stale captures</a>.</dd>
+            <dt>Question</dt><dd>Should viewport validation impose the suggested 200–4000 width range, and which artifacts should a rerun replace?</dd>
+            <dt>Requirement</dt><dd>Invalid width must fail before build/filesystem work; reruns must not leave screenshots from previous longer presentations. The approved definition imposes no 200px minimum or 4000px maximum.</dd>
+            <dt>Decision</dt><dd class="decided">Validate both viewport axes as positive integers before build or filesystem work, preserving valid dimensions without adding an arbitrary range restriction. Parse CLI options through an exported function used by the actual entry point. Remove/recreate only the exact presentation/viewport generated output directory before capturing; preserve other presentation/viewport artifacts.</dd>
+            <dt>Alternatives</dt><dd>Add the suggested numerical limits (would impose a new scope restriction), wait for Playwright to reject NaN after building, or leave stale screenshots beside the new report.</dd>
+            <dt>Rationale</dt><dd>This fixes malformed input and stale output without changing the approved viewport contract or unrelated artifact sets.</dd>
+            <dt>What breaks if wrong</dt><dd>Malformed dimensions can waste a build/create junk directories, or a shorter rerun can expose stale images as current. Unit tests cover missing/non-numeric/non-positive/fractional widths, invalid heights, default/valid parsing, and a three-step then one-step run with sibling artifacts preserved.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-12">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L126">DECIDE-12</a></span><h3><span class="phase">Acceptance round 0</span>Fixed-canvas label readability</h3><a class="raised" href="#item-2">Item 2</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Triage <code>acceptance-findings.md</code> finding <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>; <code>acceptance-round-status.txt</code> reports NOT_READY for tested revision 3cc4f166.</dd>
+            <dt>Question</dt><dd>How can the reference scene remain readable at 390×900 without reflowing its fixed composition, changing the normative story, or styling the reusable kit?</dd>
+            <dt>Requirement</dt><dd>Important diagram text must remain readable; the diagram uniformly fits a fixed canvas; stable entities accumulate without repositioning between beats. The default canvas is 880×380 when a presentation does not override it. Per-presentation canvas dimensions are already supported by Presentation/Stage.</dd>
+            <dt>Decision</dt><dd class="decided">Treat the reproduced unreadability as an implementation defect and fix it. Give the reference presentation one 880×1200 design canvas at every viewport, with 36px or larger scene typography (at least 12 screen pixels when fitted at 390×900). Increase entity heights and use short card headings plus separate title/caption/visual lines so labels fit their cards. Keep the conversation row, horizontal accumulating card tray, kit socket, verify-after-cards position, modify arc and reveal frame. Keep all nine normative titles/captions, entity IDs and per-beat accumulation order. Keep kit defaults at 880×380 and all visual changes in presentation-owned files.</dd>
+            <dt>Alternatives</dt><dd>Continuing to shrink the old 8px labels is the reproduced defect. A narrow-only reflow or disconnected alternate diagram would change the fixed-composition behavior. Duplicating the text in an auxiliary reading panel would leave the central scene itself unreadable. A single taller authored canvas uses the existing override contract without introducing those behaviors.</dd>
+            <dt>Rationale</dt><dd>The old aspect ratio left too little vertical room for larger labels inside small cards. A taller fixed composition can fit the available stage at both desktop and narrow sizes while retaining readable text and stable positions. Exact entity coordinates, shapes and visual design were deferred to the implementation in the approved outline.</dd>
+            <dt>What breaks if wrong</dt><dd>Platform font metrics could still cause text overflow or the visual composition could be unsatisfactory despite the computed text-size floor. Unit checks therefore cover all nine beats in both modes, default-kit dimensions and stable geometry on resize. An added <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L81"><code>E2E-1</code> Reference presentation passes production verification</a> production regression measures rendered narrow-view text size, canvas/card containment and uniform scaling with real browser metrics. Browser/acceptance checks are not run in this fix turn, as instructed, so subjective visual acceptance is not claimed.</dd>
+            <dt>Integration and end-to-end regression</dt><dd>Meaningful and practical; extend the existing <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L81"><code>E2E-1</code> Reference presentation passes production verification</a> registered-route journey and reuse its production build, rather than adding another build-heavy suite. The added assertions cover actual font metrics and text bounds, which unit DOM simulation cannot prove.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-13">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L139">DECIDE-13</a></span><h3><span class="phase">Acceptance review</span>Uniform owner bounds and fallback-font room</h3><a class="raised" href="#item-2">Item 2</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Current review cycle 1, open finding:<ul><li><a class="ref" href="https://github.com/example/sample-app/commit/986ef34a17eecd648d9659d7b0fc744fa1b13182"><code>REVIEW-4</code> Text bounds for every scene entity</a></li></ul>Closed findings read for history and not acted on:<ul><li><a class="ref" href="#d-10"><code>REVIEW-1</code> Preview cleanup hangs after signal death</a></li><li><a class="ref" href="#d-10"><code>REVIEW-2</code> Preview exit and termination handling</a></li><li><a class="ref" href="https://github.com/example/sample-app/commit/3cc4f1660949fbf57beb24a13ab98d2d9ef17475"><code>REVIEW-3</code> Inspection inputs and stale captures</a></li></ul></dd>
+            <dt>Question</dt><dd>How should the browser regression detect overflow in all scene entities while preserving readable intentional overlap and accommodating wider fallback fonts?</dd>
+            <dt>Requirement</dt><dd>Important labels must remain readable without accidental collisions; authored entities remain stable on one uniformly scaled canvas; intentional readable overlaps can be explicitly marked. The finding <a class="ref" href="https://github.com/example/sample-app/commit/986ef34a17eecd648d9659d7b0fc744fa1b13182"><code>REVIEW-4</code> Text bounds for every scene entity</a> identifies a confirmed coverage gap, not a reproduced rendering overflow.</dd>
+            <dt>Decision</dt><dd class="decided">Replace the step-card-only condition with the same owner-containment predicate for every visible label, require an entity owner for each reference-scene label, and keep an independent whole-canvas containment check. Share the predicate between unit policy tests and the browser assertions. Exercise default and wide fallback fonts in the existing browser regression. Preserve the intentional reveal-label/frame-border overlap using an explicit marker on that label alone; the marker never exempts whole-canvas bounds. No verify/kit/ghost label is exempted.</dd>
+            <dt>Implementation room</dt><dd>Widen/pad the verify node and show build/render/pass as explicit lines, allow fallback word wrapping without reducing the 36px minimum font, increase verify/kit heights, and extend the authored canvas height to 1280 so the socket and reveal still fit. Keep row ordering and stable coordinates across beats. Use a single ellipsis for the ghost and bounded SVG arrows instead of overflowing text arrow glyphs. Keep kit defaults and templates unchanged.</dd>
+            <dt>Alternatives</dt><dd>Retain a class-specific check (misses the reported cases), clip text or shrink it (hides content or reverses the acceptance readability fix), or blanket-exempt owner checks (would conceal accidental overflow). Moving the deliberate reveal label solely to satisfy a containment pattern would unnecessarily discard intentional composition.</dd>
+            <dt>Rationale</dt><dd>Geometry assertions should test labels against their actual owner rather than only the canvas; extra layout room and wrapping address the wider fallback-font risk without changing the narrative or introducing viewport-specific reflow.</dd>
+            <dt>What breaks if wrong</dt><dd>A fallback font could still overflow an entity or an overly broad exception could hide a collision. Unit tests reject spill beyond each edge for verify, kit, ghost and card-like bounds; check rounding tolerance and explicit owner overlap without excusing canvas overflow; and ensure only the reveal label carries the marker. Rendering remains unverified in this turn because browser/integration/end-to-end tests are prohibited.</dd>
+          </dl>
+        </article>
+
+        <article class="decision" id="d-14">
+          <header><span class="did"><a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L152">DECIDE-14</a></span><h3><span class="phase">Acceptance round 1</span>Unbroken morph label</h3><a class="raised" href="#item-2">Item 2</a></header>
+          <dl class="fields">
+            <dt>Step</dt><dd>Read the current acceptance findings and NOT_READY status for tested revision 986ef34a. The finding <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a> is explicitly reported resolved and was not reopened. The finding <a class="ref" href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76"><code>ACCEPT-2</code> Morph label split across lines</a> reproduces the word morph splitting onto two lines at both narrow and desktop sizes.</dd>
+            <dt>Question</dt><dd>How should a short connector word stay readable on one line without reversing the prior text-size fix or changing the stable diagram geometry?</dd>
+            <dt>Requirement</dt><dd>What morphs is labelled on the inter-card link, with readable text and uniform fixed-canvas scaling. Presentation-owned typography is a deferred visual-design choice; accidental word splitting is not an intended overlap or an acceptable rendering defect.</dd>
+            <dt>Decision</dt><dd class="decided">Fix the finding <a class="ref" href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76"><code>ACCEPT-2</code> Morph label split across lines</a>. Keep the label at 36px in design coordinates, use a regular generic monospace face for predictable five-character advance, and explicitly disable whitespace wrapping, arbitrary overflow wrapping and word breaking on that label only. Keep all entity coordinates, the authored canvas, colors, narrative, font-size floor and existing owner/canvas bounds assertions. Do not clip or ellipsize the word. In the browser fallback-font fixture, use a monospace fallback for this now-monospaced label while retaining the wider proportional-font fixture for other entities.</dd>
+            <dt>Alternatives</dt><dd>Allow morp/h (the reproduced defect), reduce the font size (would regress the readability fixed for <a class="ref" href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573"><code>ACCEPT-1</code> Unreadable narrow labels</a>), or move neighbouring entities/increase gaps (unnecessary composition changes). Compressing glyphs or clipping excess letters would conceal rather than solve the label problem.</dd>
+            <dt>Rationale</dt><dd>The previous generic overflow-wrap rule was appropriate for multiword box content but not for a five-character connector word. A stable monospaced word at the same font size avoids the proportional semibold width that caused the split without introducing viewport-specific reflow.</dd>
+            <dt>What breaks if wrong</dt><dd>An unusually wide monospace fallback could still exceed the owner even though it no longer wraps. The browser regression therefore retains owner/canvas containment and minimum rendered font size, additionally asserts exactly one rendered text fragment for every morph label, and checks expected label presence. Unit CSS checks cover both 390px and 1440px widths and all beats in which the label exists, including persistence and absence of clipping/ellipsis.</dd>
+            <dt>Integration and end-to-end regression</dt><dd>Meaningful and practical; extend the existing <a class="ref" href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/tests/browser.test.mjs#L81"><code>E2E-1</code> Reference presentation passes production verification</a> production route regression with text Range fragment-count assertions and correct fallback font categories. No extra build/server suite is needed. The browser test is added but not run in this turn, as instructed; a new visual acceptance outcome is not claimed.</dd>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <!-- Dispute log -->
+    <section id="dispute-log">
+      <div class="section-head"><h2>Dispute log</h2></div>
+      <div class="empty">No entries.</div>
+    </section>
+  </main>
+</div>
+
+<footer class="inner">Reference mockup with sample content and placeholder screenshots.</footer>
+
+<div class="sendbar" role="region" aria-label="Send feedback or merge">
+  <div class="inner sendbar-inner">
+    <p class="send-status" id="send-status" aria-live="polite"></p>
+    <div class="send-actions">
+      <button type="button" id="next-q" class="next-q" hidden>Next unanswered</button>
+      <button type="button" id="merge" class="merge">Merge</button>
+      <button type="button" id="send" class="send">Send feedback</button>
+    </div>
+  </div>
+</div>
+
+<dialog class="confirm" id="merge-confirm" aria-labelledby="merge-title">
+  <h3 id="merge-title">Merge with open items?</h3>
+  <p id="merge-text"></p>
+  <div class="confirm-actions">
+    <button type="button" class="next-q" id="merge-cancel">Cancel</button>
+    <button type="button" class="send" id="merge-go">Merge anyway</button>
+  </div>
+</dialog>
+
+<dialog class="confirm copy-box" id="copy-fallback" aria-labelledby="copy-title">
+  <h3 id="copy-title">This page can't send from here</h3>
+  <p id="copy-why"></p>
+  <pre id="copy-text"></pre>
+  <div class="confirm-actions">
+    <button type="button" class="next-q" id="copy-close">Close</button>
+    <button type="button" class="send" id="copy-go">Copy command</button>
+  </div>
+</dialog>
+
+<dialog class="viewer" id="viewer" aria-labelledby="viewer-title">
+  <div class="viewer-bar">
+    <p class="viewer-pos" id="viewer-pos"></p>
+    <button type="button" id="viewer-prev" aria-label="Previous screenshot">&larr;</button>
+    <button type="button" id="viewer-next" aria-label="Next screenshot">&rarr;</button>
+    <button type="button" id="viewer-close">Close</button>
+  </div>
+  <div class="viewer-stage"><img id="viewer-img" alt=""></div>
+  <div class="viewer-info">
+    <h3 id="viewer-title"></h3>
+    <p id="viewer-desc"></p>
+    <label for="viewer-note">Comment</label>
+    <textarea class="note" id="viewer-note" rows="3" placeholder="Comment on this screenshot (sent to the factory with your answers)"></textarea>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  // Answers and screenshot comments: drafts stay in this browser. "Send feedback" stores one submission in the
+  // artifact's database; "Merge" stores a merge request instead, after warning when red or orange items are open.
+  var KEY = 'review-answers:e0b71129';
+  var RUN = 'e0b71129';
+  var sets = [].slice.call(document.querySelectorAll('fieldset.q'));
+  var thumbs = [].slice.call(document.querySelectorAll('.thumb'));
+  var statusEl = document.getElementById('send-status');
+  var btn = document.getElementById('send');
+  var nextBtn = document.getElementById('next-q');
+  var mergeBtn = document.getElementById('merge');
+  var confirmEl = document.getElementById('merge-confirm');
+  var OPEN = { red: 4, orange: 0 };
+  var HEAD = 'f400f242';
+  var mergedAt = null;
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var db = null;
+  var sentAt = null;
+  var record = null;
+  var comments = {};
+
+  function clean(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+
+  // Questions
+  function stateOf(fs) {
+    var c = fs.querySelector('input[type=radio]:checked');
+    return { choice: c ? c.value : null, note: fs.querySelector('.note').value.trim() };
+  }
+  function sync(fs) {
+    var st = stateOf(fs);
+    var ta = fs.querySelector('.note');
+    var other = st.choice === 'other';
+    ta.placeholder = other ? 'Your answer' : 'Add a note (optional)';
+    if (!other || st.note) ta.classList.remove('missing');
+    fs.classList.toggle('unanswered', !st.choice);
+  }
+  // Questions on red and orange items start unanswered and must be answered before sending.
+  function pending() {
+    return sets.filter(function (fs) { return fs.dataset.required === 'true' && !stateOf(fs).choice; });
+  }
+  function changedCount() {
+    return sets.filter(function (fs) { var c = stateOf(fs).choice; return c && c !== fs.dataset.rec; }).length;
+  }
+
+  // Screenshot comments
+  function commented() {
+    return thumbs.filter(function (t) { return clean(comments[t.dataset.shot]); });
+  }
+  function commentText() {
+    var c = commented().length;
+    return c ? ' ' + c + (c === 1 ? ' screenshot comment.' : ' screenshot comments.') : '';
+  }
+
+  function show(text, isError) {
+    statusEl.textContent = text;
+    statusEl.classList.toggle('error', !!isError);
+  }
+  function idle() {
+    if (record) return;
+    var left = pending().length;
+    btn.disabled = left > 0;
+    nextBtn.hidden = left === 0;
+    if (left) {
+      show(left + (left === 1 ? ' question on a red item needs' : ' questions on red items need') + ' your answer before you can send.' + commentText(), false);
+      return;
+    }
+    var n = changedCount();
+    var text = sets.length + ' questions answered. ' + (n === 0 ? 'All answers are the recommended ones.' : n + (n === 1 ? ' answer differs' : ' answers differ') + ' from the recommendation.');
+    text += commentText();
+    if (sentAt) text += ' Feedback sent at ' + sentAt + '; send again after any change.';
+    show(text, false);
+  }
+  function goNext() {
+    var fs = pending()[0];
+    if (!fs) return;
+    fs.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+    var first = fs.querySelector('input[type=radio]');
+    if (first) first.focus({ preventScroll: true });
+  }
+  function save() {
+    var draft = {};
+    sets.forEach(function (fs) { draft[fs.dataset.qid] = stateOf(fs); });
+    draft.__shots = comments;
+    // The real page keeps no answers across a reload.
+  }
+  function restore() {
+    var draft = null;
+    if (!draft) return;
+    sets.forEach(function (fs) {
+      var d = draft[fs.dataset.qid];
+      if (!d) return;
+      var input = fs.querySelector('input[type=radio][value="' + d.choice + '"]');
+      if (input) input.checked = true;
+      else if (d.choice === null) fs.querySelectorAll('input[type=radio]').forEach(function (i) { i.checked = false; });
+      fs.querySelector('.note').value = d.note || '';
+    });
+    var saved = draft.__shots;
+    if (saved && typeof saved === 'object') {
+      thumbs.forEach(function (t) {
+        var v = saved[t.dataset.shot];
+        if (typeof v === 'string' && v.trim()) comments[t.dataset.shot] = v;
+      });
+    }
+  }
+  function collect() {
+    return sets.map(function (fs) {
+      var st = stateOf(fs);
+      var item = fs.closest('.item');
+      var picked = fs.querySelector('input[type=radio]:checked');
+      var label = picked ? clean(picked.closest('.opt').querySelector('.opt-label').firstChild.textContent) : '';
+      return {
+        question: fs.dataset.qid,
+        item: clean(item.querySelector('.n').textContent),
+        itemTitle: clean(item.querySelector('h3').textContent),
+        text: clean(fs.querySelector('legend').lastChild.textContent),
+        choice: st.choice === 'other' ? 'Other' : label,
+        recommended: st.choice === fs.dataset.rec,
+        note: st.note
+      };
+    });
+  }
+  function collectComments() {
+    return commented().map(function (t) {
+      return { screenshot: t.dataset.shot, round: t.dataset.round, title: t.dataset.title, comment: clean(comments[t.dataset.shot]) };
+    });
+  }
+
+  // When the page can't reach the run, it offers the answers as an Archon command to copy, and keeps them on the page.
+  var copyEl = document.getElementById('copy-fallback');
+  var copyText = document.getElementById('copy-text');
+  function shellQuote(t) { return "'" + t.replace(/'/g, "'\\''") + "'"; }
+  function offerCopy(kind, body) {
+    document.getElementById('copy-why').textContent = 'The page could not reach the run, so nothing was sent and your answers stay on the page. Run this command to send the ' + (kind === 'merge' ? 'merge' : 'feedback') + ' to the run instead. Fill in <occurrence> from: archon workflow attention ' + RUN + '.';
+    copyText.textContent = 'archon workflow answer ' + RUN + ' --occurrence <occurrence> \\\n  --text ' + shellQuote(JSON.stringify(body));
+    show('Nothing was sent: the page could not reach the run. Copy the command to send it from a terminal.', true);
+    copyEl.showModal();
+    document.getElementById('copy-go').focus();
+  }
+  document.getElementById('copy-close').addEventListener('click', function () { copyEl.close(); btn.focus(); });
+  document.getElementById('copy-go').addEventListener('click', function () {
+    var go = this;
+    var done = function (ok) { go.textContent = ok ? 'Copied' : 'Select and copy it'; setTimeout(function () { go.textContent = 'Copy command'; }, 1600); };
+    try { navigator.clipboard.writeText(copyText.textContent).then(function () { done(true); }, function () { done(false); }); } catch (e) { done(false); }
+  });
+
+  function send() {
+    if (pending().length) { idle(); goNext(); return; }
+    var missing = sets.filter(function (fs) { var st = stateOf(fs); return st.choice === 'other' && !st.note; });
+    if (missing.length) {
+      missing.forEach(function (fs) { fs.querySelector('.note').classList.add('missing'); });
+      var first = missing[0];
+      show('Write your answer for item ' + clean(first.closest('.item').querySelector('.n').textContent) + ', or pick one of its options.', true);
+      first.querySelector('.note').focus();
+      return;
+    }
+    var body = { action: 'feedback', run: RUN, head: HEAD, submittedAt: new Date().toISOString(), answers: collect(), screenshotComments: collectComments() };
+    if (!db) { offerCopy('feedback', body); return; }
+    btn.disabled = true;
+    show('Sending...', false);
+    var attempt = function (retry) {
+      return db.collection('submissions').add(body).catch(function (err) {
+        if (retry && err && err.code === 'unavailable') {
+          return new Promise(function (r) { setTimeout(r, 400 + Math.random() * 600); }).then(function () { return attempt(false); });
+        }
+        throw err;
+      });
+    };
+    attempt(true).then(function () {
+      lockPage(recordNow('feedback'));
+    }).catch(function (err) {
+      btn.disabled = false;
+      var code = err && err.code;
+      if (code === 'quota_exceeded') show('The page has no room for another submission. Ask the factory owner to clear old ones.', true);
+      else if (code === 'revoked' || code === 'not_granted') show('You no longer have access to send answers from this page.', true);
+      else show('The answers were not sent. Try again in a moment.', true);
+    });
+  }
+
+  // Merge: warns first when red or orange items are open, since the answers on the page are not sent.
+  function openText() {
+    var parts = [];
+    if (OPEN.red) parts.push(OPEN.red + (OPEN.red === 1 ? ' red item' : ' red items'));
+    if (OPEN.orange) parts.push(OPEN.orange + (OPEN.orange === 1 ? ' orange item' : ' orange items'));
+    return parts.join(' and ');
+  }
+  function doMerge() {
+    if (!db) { offerCopy('merge', { action: 'merge', run: RUN, head: HEAD }); return; }
+    mergeBtn.disabled = true; btn.disabled = true;
+    show('Merging...', false);
+    db.collection('submissions').add({ action: 'merge', run: RUN, head: HEAD, submittedAt: new Date().toISOString() }).then(function () {
+      lockPage(recordNow('merge'));
+    }).catch(function () {
+      mergeBtn.disabled = false; idle();
+      show('The merge was not sent. Try again in a moment.', true);
+    });
+  }
+  function merge() {
+    if (!OPEN.red && !OPEN.orange) { doMerge(); return; }
+    var n = OPEN.red + OPEN.orange;
+    document.getElementById('merge-text').textContent = openText() + (n === 1 ? ' is' : ' are') + ' still open. If you merge now, the answers on this page will not be sent.';
+    confirmEl.showModal();
+    document.getElementById('merge-cancel').focus();
+  }
+  document.getElementById('merge-cancel').addEventListener('click', function () { confirmEl.close(); mergeBtn.focus(); });
+  document.getElementById('merge-go').addEventListener('click', function () { confirmEl.close(); doMerge(); });
+
+  // Screenshot viewer: every screenshot opens here, with a comment box.
+  var viewer = document.getElementById('viewer');
+  var vImg = document.getElementById('viewer-img');
+  var vTitle = document.getElementById('viewer-title');
+  var vDesc = document.getElementById('viewer-desc');
+  var vPos = document.getElementById('viewer-pos');
+  var vNote = document.getElementById('viewer-note');
+  var current = 0;
+  var opener = null;
+
+  function indexOf(file) {
+    for (var i = 0; i < thumbs.length; i++) if (thumbs[i].dataset.shot === file) return i;
+    return -1;
+  }
+  function mark(file) {
+    var text = clean(comments[file]);
+    var t = thumbs[indexOf(file)];
+    if (t) t.classList.toggle('has-comment', !!text);
+    var fig = document.querySelector('figure.shot[data-shot="' + file + '"]');
+    if (!fig) return;
+    var box = fig.querySelector('.shot-note');
+    box.hidden = !text;
+    box.querySelector('span').textContent = text;
+    fig.querySelector('.comment-btn').textContent = text ? 'Edit comment' : 'Comment';
+  }
+  function showShot(i) {
+    current = (i + thumbs.length) % thumbs.length;
+    var d = thumbs[current].dataset;
+    vImg.width = +d.w;
+    vImg.height = +d.h;
+    vImg.src = thumbs[current].querySelector('img').src;
+    vImg.alt = d.title + '. ' + d.desc;
+    vTitle.textContent = d.title;
+    vDesc.textContent = d.desc;
+    vPos.textContent = d.round + ' · ' + (current + 1) + ' of ' + thumbs.length;
+    vNote.value = comments[d.shot] || '';
+  }
+  function openShot(file, toNote, from) {
+    var i = indexOf(file);
+    if (i < 0) return;
+    opener = from || null;
+    showShot(i);
+    if (!viewer.open) viewer.showModal();
+    if (toNote) vNote.focus();
+  }
+
+  vNote.addEventListener('input', function () {
+    var file = thumbs[current].dataset.shot;
+    if (vNote.value.trim()) comments[file] = vNote.value; else delete comments[file];
+    mark(file);
+    save();
+    idle();
+  });
+  document.getElementById('viewer-prev').addEventListener('click', function () { showShot(current - 1); });
+  document.getElementById('viewer-next').addEventListener('click', function () { showShot(current + 1); });
+  document.getElementById('viewer-close').addEventListener('click', function () { viewer.close(); });
+  viewer.addEventListener('click', function (e) { if (e.target === viewer) viewer.close(); });
+  viewer.addEventListener('keydown', function (e) {
+    if (e.target === vNote) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); showShot(current - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); showShot(current + 1); }
+  });
+  viewer.addEventListener('close', function () {
+    if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+  });
+  thumbs.forEach(function (t) {
+    t.addEventListener('click', function () { openShot(t.dataset.shot, false, t); });
+  });
+  [].slice.call(document.querySelectorAll('figure.shot')).forEach(function (fig) {
+    fig.querySelector('.shot-open').addEventListener('click', function (e) { openShot(fig.dataset.shot, false, e.currentTarget); });
+    fig.querySelector('.comment-btn').addEventListener('click', function (e) { openShot(fig.dataset.shot, true, e.currentTarget); });
+  });
+
+  // Read-only record: once the run receives an answer, it embeds what was sent as #sent-answers,
+  // and the page shows those choices, notes and comments locked, with no buttons.
+  function recordNow(action) {
+    var answers = {};
+    if (action === 'feedback') sets.forEach(function (fs) { answers[fs.dataset.qid] = stateOf(fs); });
+    var shots = {};
+    if (action === 'feedback') Object.keys(comments).forEach(function (k) { if (clean(comments[k])) shots[k] = comments[k]; });
+    return { action: action, sentAt: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), answers: answers, screenshotComments: shots };
+  }
+  function lockPage(rec) {
+    record = rec;
+    var answers = rec.answers || {};
+    sets.forEach(function (fs) {
+      var a = answers[fs.dataset.qid];
+      if (a) {
+        fs.querySelectorAll('input[type=radio]').forEach(function (i) { i.checked = i.value === a.choice; });
+        fs.querySelector('.note').value = a.note || '';
+      }
+      sync(fs);
+      fs.classList.remove('unanswered');
+      fs.querySelectorAll('input, textarea').forEach(function (el) { el.disabled = true; });
+    });
+    var shots = rec.screenshotComments || {};
+    Object.keys(shots).forEach(function (k) { if (typeof shots[k] === 'string') { comments[k] = shots[k]; mark(k); } });
+    vNote.readOnly = true;
+    vNote.placeholder = '';
+    btn.hidden = true; mergeBtn.hidden = true; nextBtn.hidden = true;
+    document.body.classList.add('answered');
+    show(rec.action === 'merge'
+      ? 'You chose Merge on ' + rec.sentAt + '. The run merges the pull request at ' + HEAD + ' and ends. This page is a read-only record.'
+      : 'Feedback sent on ' + rec.sentAt + '. This page is a read-only record of what you sent.', false);
+  }
+
+  restore();
+  sets.forEach(function (fs) {
+    sync(fs);
+    fs.addEventListener('change', function () { sync(fs); save(); idle(); });
+    fs.querySelector('.note').addEventListener('input', function () { sync(fs); save(); });
+  });
+  Object.keys(comments).forEach(mark);
+  btn.addEventListener('click', send);
+  mergeBtn.addEventListener('click', merge);
+  nextBtn.addEventListener('click', goNext);
+  idle();
+  var sentBlock = document.getElementById('sent-answers');
+  if (sentBlock) { try { lockPage(JSON.parse(sentBlock.textContent)); } catch (e) {} }
+
+  // Sending is a stand-in: the real page answers its run's wait (see the review-page spec).
+  // This reference never reaches a run, so both buttons show the copy fallback.
+})();
+</script>
+
+</body>
+</html>
