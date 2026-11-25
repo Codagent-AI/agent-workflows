@@ -104,7 +104,7 @@ The workflow SHALL check that each checklist row has a valid status and the evid
 - **THEN** the check reports that the row does not say why
 
 #### Scenario: Row cites a manual test
-- **WHEN** the checklist cites an acceptance test (`AT-n`) or a human-only test (`HT-n`)
+- **WHEN** the checklist cites an acceptance test (`JOURNEY-n`, or `AT-n` from an older test plan) or a human-only test (`HUMAN-n`, or `HT-n`)
 - **THEN** the check fails and lists the cited IDs
 
 ### Requirement: Evidence repairs are limited to two
@@ -151,8 +151,8 @@ After the findings are resolved, the workflow SHALL check the evidence again.
 The workflow SHALL allow a planned row's planned cells to change only where a finding names that row's ID.
 
 #### Scenario: Finding names the row
-- **WHEN** a finding names row `I-2` and the implementor changes `I-2`'s planned cells
-- **THEN** the evidence check does not report `I-2`
+- **WHEN** a finding names row `CHECK-2` and the implementor changes `CHECK-2`'s planned cells
+- **THEN** the evidence check does not report `CHECK-2`
 
 #### Scenario: No finding names the row
 - **WHEN** a planned row changed and no finding names its ID
@@ -315,3 +315,14 @@ After the session report, the workflow SHALL run the review before the clean-wor
 #### Scenario: Review is off
 - **WHEN** `review_strategy` is `none`
 - **THEN** the clean-worktree check before the pull request follows the session report directly
+
+### Requirement: Checklist rows use CHECK codes
+The implementor SHALL number checklist rows `CHECK-1`, `CHECK-2` and so on, with no zero padding. The workflow SHALL still read a checklist whose rows use the old `I-n` codes.
+
+#### Scenario: New checklist
+- **WHEN** the implementor writes a checklist
+- **THEN** its rows are numbered `CHECK-1`, `CHECK-2` and so on
+
+#### Scenario: Old checklist
+- **WHEN** a checklist's rows use `I-n` codes
+- **THEN** the checks read them as they do `CHECK-n` rows
