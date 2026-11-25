@@ -418,7 +418,10 @@ test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reo
   const answer = join(artifacts, 'review-answers-round-1.json');
   writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DISPUTE-1', option: 'custom' }], note: source }));
   writeFileSync(join(artifacts, 'review-response-round-1.json'), JSON.stringify([{ item: 'note', status: 'fixed', requestedFindings: ['REVIEW-1'] }]));
-  const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start: box.head(),
+  const start = box.head();
+  const changed = box.commitFix('feedback fix\n');
+  const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start,
     change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
+  expect(review.revisions).toBe(changed);
   expect(review.findings).toContain('REVIEW-1 [fixed');
 });
