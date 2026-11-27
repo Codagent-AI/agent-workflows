@@ -129,7 +129,9 @@ function prepareReader(input: FinishInputs, dir: string, ranking: Ranking | null
 }
 function flagReader(input: FinishInputs, dir: string, ranking: Ranking | null) {
   try {
-    const flags = ranking ? flagItems(ranking, JSON.parse(input.result)) : [];
+    const reader = JSON.parse(input.result);
+    if (!Array.isArray(reader?.items)) skipped('flag-items', 'the reader returned no items');
+    const flags = ranking ? flagItems(ranking, reader) : [];
     writeJson(join(dir, 'review/reader-flags.json'), flags);
     return { flagged: flags.length > 0, notes: readerNotes(flags) };
   } catch (error) { skipped('flag-items', error); return { flagged: false, notes: '' }; }

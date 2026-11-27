@@ -81,8 +81,7 @@ describe('review finding state', () => {
       expect(finding.state).toBe(status);
       expect(state.ignored).toHaveLength(4); expect(renderResult(state)).toContain('Ignored unknown');
     }
-    const state = stateWithFinding(); judge(state, 'confirmed'); act(state, 'replied');
-    expect(state.findings[0]?.state).toBe('open');
+    const state = stateWithFinding(); judge(state, 'confirmed'); act(state, 'replied'); expect(state.findings[0]?.state).toBe('open');
     applyActions(state, []); expect(state.findings[0]?.state).toBe('open');
     expect(state.ignored).toHaveLength(2);
   });
@@ -419,10 +418,10 @@ test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reo
 });
 
 test('a review round answer starts the feedback review before the late commit it names', () => {
-  const [before, late, answer] = [box.head(), box.commitFix('late fix\n'), join(artifacts, 'review-answers-round-1.json')];
+  const [before, late, answer, other] = [box.head(), box.commitFix('late fix\n'), join(artifacts, 'review-answers-round-1.json'), 'b'.repeat(40)];
   mkdirSync(join(artifacts, 'review'), { recursive: true }); writeFileSync(join(artifacts, 'review/pages.json'), JSON.stringify([{ round: 1, file: 'review-page-round-1.html', head: late }]));
-  writeFileSync(join(artifacts, 'review-page-round-1.html'), `<script type="application/json" id="page-data">${JSON.stringify({ orange: [{ source: ['DECIDE-2', late] }] })}</script>`);
-  writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DECIDE-2', option: 'review-round' }] })); const fix = box.commitFix('feedback fix\n');
+  writeFileSync(join(artifacts, 'review-page-round-1.html'), `<script type="application/json" id="page-data">${JSON.stringify({ orange: [{ source: ['DECIDE-2', late, other], questions: [{ prompt: 'Shared' }, { source: other, prompt: 'Own' }] }] })}</script>`);
+  writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DECIDE-2', option: 'review-round' }, { item: other, option: 'keep' }] })); const fix = box.commitFix('feedback fix\n');
   const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start: late, change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
   expect([review.start, review.revisions]).toEqual([before, `${late}\n${fix}`]);
   expect(pendingReviewRound(artifacts)).toEqual(['DECIDE-2', late]); const later = join(artifacts, 'review-answers-round-2.json');
@@ -480,10 +479,11 @@ test('the reader check renders page items, flags unclear ones and rewrites only 
   expect(page).toContain('## Item 2\n\n### Clear item');
   expect(page).toContain('- Keep: As built\n- Follow-up\n\nLinks on GitHub: What was disputed');
   expect(page).not.toMatch(/DISPUTE-1|log:|Dispute|Agent decision/);
-  const answer = { asks: 'Whether to keep it', options: [{ label: 'Keep', does: 'Keeps it' }], if_wrong: 'Bad things' };
-  const flags = flagItems(ranking, { items: [{ number: 1, ...answer, if_wrong: ' ', unclear: ['floor'] }, { number: 2, ...answer, unclear: [] }, { number: 9, ...answer, unclear: ['x'] }] });
-  expect(flags).toEqual([{ number: 1, title: 'Checker floor', unclear: ['floor'], missing: ['what happens if the choice is wrong'] }]);
-  expect(readerNotes(flags)).toBe('Item 1: Checker floor\n- Could not understand: "floor"\n- Could not tell what happens if the choice is wrong');
+  const answer = { asks: 'Whether to keep it', options: [{ label: 'Keep', does: 'Keeps it' }, { label: 'Follow-up', does: 'Later' }], if_wrong: 'Bad things' };
+  const flags = flagItems(ranking, { items: [{ number: 1, ...answer, options: [], if_wrong: ' ', unclear: ['floor'] }, { number: 2, ...answer, unclear: [] }, { number: 9, ...answer, unclear: ['x'] }] });
+  expect(flags).toEqual([{ number: 1, title: 'Checker floor', unclear: ['floor'], missing: ['what each option would do', 'what happens if the choice is wrong'] }]);
+  expect([flagItems(ranking, { items: [{ number: 1, ...answer, unclear: [] }] }).map(flag => flag.number), flagItems(ranking, {})]).toEqual([[2], []]);
+  expect(readerNotes(flags)).toBe('Item 1: Checker floor\n- Could not understand: "floor"\n- Could not tell what each option would do\n- Could not tell what happens if the choice is wrong');
   const wording = { prompt: 'Keep the minimum?', options: [{ id: 'keep', label: 'Keep it', detail: 'Plain' }, { id: 'follow-up', label: 'Later', detail: 'After merge' }] };
   const next = applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['Why it was argued'] }, { number: 2, title: 'Not flagged', detail: 'x', questions: [wording] }], [1]);
   expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });

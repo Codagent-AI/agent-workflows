@@ -108,7 +108,7 @@ Every Late commit item SHALL offer the option "Run a review round", which says t
 - **THEN** the page's item also offers "Run a review round" in that question
 
 ### Requirement: No review round with code review off
-When the run's code review is off, a Late commit item SHALL NOT offer "Run a review round", and SHALL offer keeping the commit and leaving it to the person reviewing instead.
+When the run's code review is off, a Late commit item SHALL NOT offer "Run a review round". A question that removing it leaves with one option SHALL offer keeping the commit and leaving it to the person reviewing.
 
 #### Scenario: Code review off
 - **WHEN** the run's review strategy is none and a fix lands after acceptance
@@ -126,7 +126,7 @@ Once the ranking is checked or placed, a reviewer agent in a fresh session, play
 - **THEN** it does not see the item's level, kind, source codes, link targets or Other box
 
 ### Requirement: Unclear items are flagged
-A script SHALL flag each item for which the reader listed a term it cannot understand or left a field empty.
+A script SHALL flag each item for which the reader listed a term it cannot understand or left a field empty, including an item it gave no entry for.
 
 #### Scenario: Unclear term
 - **WHEN** the reader cannot tell what "named test" means in an item

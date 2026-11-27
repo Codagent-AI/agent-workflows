@@ -23,24 +23,26 @@ export function readerItems(ranking: Ranking): string {
   }).join('\n\n');
 }
 
-function missingAnswers(entry: ReaderEntry): string[] {
+function missingAnswers(entry: ReaderEntry, item: Item): string[] {
   const blank = (text: unknown) => typeof text !== 'string' || !text.trim();
+  const options = Array.isArray(entry.options) ? entry.options : [];
+  const expected = (item.questions ?? []).reduce((count, question) => count + question.options.length, 0);
   return [
     ...(blank(entry.asks) ? ['what the question asks you to decide'] : []),
-    ...(entry.options ?? []).filter(option => blank(option.does)).map(option => `what choosing "${option.label}" would do`),
+    ...(options.length < expected ? ['what each option would do'] : []),
+    ...options.filter(option => blank(option.does)).map(option => `what choosing "${option.label}" would do`),
     ...(blank(entry.if_wrong) ? ['what happens if the choice is wrong'] : []),
   ];
 }
 
-/** An item is flagged when the reader quoted a term it could not follow or could not answer a field. */
+/** An item is flagged when the reader quoted a term it could not follow, could not answer a field or skipped it. Output without items flags nothing. */
 export function flagItems(ranking: Ranking, reader: { items?: ReaderEntry[] }): Flag[] {
-  const items = pageItems(ranking);
-  const entries = Array.isArray(reader?.items) ? reader.items : [];
-  return entries.flatMap(entry => {
-    const item = items[entry.number - 1];
-    if (!item) return [];
+  const entries = reader?.items;
+  if (!Array.isArray(entries)) return [];
+  return pageItems(ranking).flatMap((item, index) => {
+    const entry = entries.find(candidate => candidate?.number === index + 1) ?? { number: index + 1, asks: '', options: [], if_wrong: '', unclear: [] };
     const unclear = (Array.isArray(entry.unclear) ? entry.unclear : []).filter(term => typeof term === 'string' && term.trim());
-    const missing = missingAnswers(entry);
+    const missing = missingAnswers(entry, item);
     return unclear.length > 0|| missing.length > 0? [{ number: entry.number, title: item.title, unclear, missing }] : [];
   });
 }

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { remoteOf } from './forge.ts';
 import { gitNetwork } from './git-network.ts';
-import { pageSources, readPages } from './review-pages.ts';
+import { readPages, sharedSources } from './review-pages.ts';
 import { readJson, writeJson } from './run-files.ts';
 
 export function commitParents(exec: Exec, sha: string): string[] {
@@ -76,13 +76,13 @@ export const reviewedCommits = (dir: string) => readJson<string[]>(reviewedPath(
 const isCommit = (code: string) => /^[0-9a-f]{40}$/.test(code);
 const answersFile = (dir: string, round: number) => join(dir, `review-answers-round-${round}.json`);
 
-/** Each saved answer's option with the sources of the item it answers on the page it came from. */
+/** Each saved answer's option with the sources its question answers for on the page it came from. */
 function answeredItems(dir: string, file: string): { option: string; sources: string[] }[] {
   const saved = file ? readJson<{ round?: number; answers?: { item: string; option: string }[] }>(file, {}) : {};
   const answers = saved.answers ?? [];
   const page = answers.length > 0 ? readPages(dir).find(entry => entry.round === saved.round) : undefined;
-  const items = page ? pageSources(dir, page) : [];
-  return answers.map(choice => ({ option: choice.option, sources: [...new Set([choice.item, ...items.find(sources => sources.includes(choice.item)) ?? []])] }));
+  const shared = page ? sharedSources(dir, page) : new Map<string, string[]>();
+  return answers.map(choice => ({ option: choice.option, sources: shared.get(choice.item) ?? [choice.item] }));
 }
 
 /** The commits the saved answers sent to a review round: the commit sources of each item answered that way. */

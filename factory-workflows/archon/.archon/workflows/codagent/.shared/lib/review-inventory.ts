@@ -8,7 +8,7 @@ import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, sta
 import { baseRevisions, commitParents, pendingReviewRound, reviewedCommits, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
-import { type PageEntry, readPages } from './review-pages.ts';
+import { readPages, sharedSources } from './review-pages.ts';
 import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
@@ -141,20 +141,6 @@ function lateCommit(exec: Exec, sha: string): Item[] {
     const size = output(exec, 'git', ['show', ...flags, '--format=', '--shortstat', sha]) ?? '';
     return [{ type: 'Late commit', title: output(exec, 'git', ['show', '-s', '--format=%s', sha]) || 'Changes after acceptance', detail: `This change landed after acceptance and still needs review.\n${size}\nTests: none named.`, links: [{ label: 'Commit after acceptance', target: `commit:${sha}` }], source: [sha] }];
 }
-function sharedSources(dir: string, page: PageEntry): Map<string, string[]> {
-  const html = readText(join(dir, page.file));
-  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(html)?.[1];
-  const data = JSON.parse(block ?? '{}') as Ranking;
-  const shared = new Map<string, string[]>();
-  for (const item of TIERS.flatMap(tier => data[tier] ?? [])) {
-    if (!item.questions?.some(question => !question.source)) continue;
-    const own = new Set(item.questions?.map(question => question.source).filter(Boolean));
-    const sources = item.source.filter(source => !(own.has(source) || item.unlinkedSources?.includes(source)));
-    for (const source of sources) shared.set(source, sources);
-  }
-  return shared;
-}
-
 type ResponseStatus = { item: string; status: string };
 
 function responseRoundFiles(dir: string) {

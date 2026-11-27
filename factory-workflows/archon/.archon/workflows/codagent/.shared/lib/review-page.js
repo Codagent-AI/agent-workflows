@@ -116,7 +116,7 @@
       block.append(recap);
     }
     block.append(prose(data.summary));
-    if (!data.size) { block.append(node('p', 'Change size unavailable.')); return; }
+    if (!data.size) { block.append(node('p', 'Change size unavailable.'), summaryComment()); return; }
     const table = node('table');
     const wrap = node('div', '', 'table-wrap size');
     wrap.append(table);
@@ -569,6 +569,7 @@
     for (const row of rows) row.field.disabled = false;
     for (const comment of openComments) comment.disabled = false;
     updateStatus();
+    if (feedback) feedback.disabled = false;
     if (mergeButton) mergeButton.disabled = false;
     status.textContent = result.kind === 'stale' ? 'The run is not waiting for this page.' : 'Cannot send from here.';
     if (result.kind === 'copy') {

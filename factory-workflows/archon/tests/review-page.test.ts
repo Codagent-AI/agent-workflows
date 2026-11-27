@@ -61,7 +61,7 @@ class Element {
   href = '';
   scrollLeft = 0;
   scrollTop = 0;
-  clientWidth = 0; style: Record<string, string> = {};
+  clientWidth = 0; style: Record<string, string> = {}; disabled = false;
   onclick?: () => void;
   showModal() {}
   focus() {}
@@ -93,7 +93,7 @@ class Element {
   replaceChildren(...children: Element[]) { this.children = children; }
   setAttribute() {}
   addEventListener(event: string, handler: () => void) { this.listeners.set(event, handler); }
-  querySelector() { return undefined; }
+  querySelector() { return undefined; } querySelectorAll(tag: string) { return this.byTag(tag); }
   createTHead() { return this.appendChild(new Element('thead')); }
   createTBody() { return this.appendChild(new Element('tbody')); }
   insertRow() { return this.appendChild(new Element('tr')); }
@@ -400,7 +400,7 @@ test('promoted yellow late commits preserve journeys and gain a Retest choice', 
   expect(placed.orange[0].questions?.flatMap(question => question.options.map(option => option.id))).toContain('retest');
 });
 
-test('mixed evidence renders a safe, ordered page and mirrors command comments', () => {
+test('mixed evidence renders a safe, ordered page and mirrors command comments', async () => {
   const file = 'acceptance-commands/round-1/output.txt';
   const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
   const forgeBase = 'https://github.com/owner/repo';
@@ -417,15 +417,16 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
     red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
     screenshots: [{ file: 'screen.png', href: 'screen.png', title: 'Preview', shows: 'Shows export', round: 2 }] };
   const page = render(data);
-  const main = page('main'); expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
+  const main = page('main'); expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']); expect(main.find('summary-comment')).toBeDefined();
   expect(page('.meta-row').find('red')).toBeDefined();
   expect(page('#send-status').textContent).toContain('1 high concern');
   const grouped = { ...red, questions: [...red.questions, { ...red.questions[0], source: 'another-source' }] };
   const one = render({ ...data, red: [grouped] }); expect(one('#send-status').textContent).toContain('1 high concern');
   one('#send-actions').find('send')?.onclick?.(); expect(one('#send-status').textContent).toBe('Answer the questions in concern 1 before sending.');
   expect(render({ ...data, red: [grouped, red] })('#send-status').textContent).toContain('2 high concerns');
-  const unanswered = render({ ...data, red: [grouped, red] });
-  unanswered('#send-actions').find('send')?.onclick?.();
+  const unanswered = render({ ...data, red: [grouped, red] }); unanswered('#send-actions').find('send')?.onclick?.();
+  const retry = render({ ...data, red: [] }); const button = retry('#send-actions').find('send'); button?.onclick?.(); await Bun.sleep(0);
+  expect([button?.disabled, retry('#send-status').textContent]).toEqual([false, 'Cannot send from here.']);
   expect(unanswered('main').byTag('fieldset').map(field => [field.classList.contains('missing'), field.find('q-missing')?.hidden])).toEqual([[true, false], [true, false], [true, false], [false, true]]);
   const sendStatus = unanswered('#send-status');
   expect([sendStatus.className, sendStatus.textContent, sendStatus.byTag('a').map(anchor => anchor.href)])
@@ -433,8 +434,7 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   page('#send-actions').find('merge')?.onclick?.();
   expect(page('body').find('confirm')?.textContent).toContain('1 high concern');
   const medium = render({ ...data, red: [], orange: [red] });
-  expect(medium('.meta-row').find('orange')).toBeDefined();
-  expect(medium('#send-status').textContent).toContain('1 medium concern');
+  expect(medium('.meta-row').find('orange')).toBeDefined(); expect(medium('#send-status').textContent).toContain('1 medium concern');
   expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href, `${href}0`]);
   expect(page('.masthead .meta').byTag('dd').map(value => value.textContent)).toContain(data.head);
   expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);
