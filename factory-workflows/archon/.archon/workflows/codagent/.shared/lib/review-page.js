@@ -347,7 +347,7 @@
 
   function questionField(item, question, number, tier, concern) {
     const owned = new Set(item.questions.map(entry => entry.source).filter(Boolean));
-    const itemCode = question.source ?? item.source.find(source => !owned.has(source)) ?? item.source[0];
+    const itemCode = question.source ?? item.source.find(source => !owned.has(source) && !item.unlinkedSources?.includes(source)) ?? item.source[0];
     const field = node('fieldset', '', 'q');
     const answer = stored?.answers?.find(value => value.item === itemCode && value.question === number);
     field.disabled = sent || !data.wait;

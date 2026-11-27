@@ -241,6 +241,7 @@ function mergeFailureConcerns(placed: Ranking, candidate: Item): void {
   placed.red.push({ ...head,
     type: [...new Set(group.flatMap(item => item.type.split(',').map(type => type.trim())))].join(', '),
     source: [...new Set(group.flatMap(item => item.source))],
+    unlinkedSources: [...new Set(group.flatMap(item => item.unlinkedSources ?? []))],
     detail: [...new Set(group.map(item => item.detail))].join('\n\n'),
     links: [...new Map(group.flatMap(item => item.links).map(link => [link.target, link])).values()],
     questions: [...new Map(group.flatMap(item => item.questions ?? []).map(question => [JSON.stringify(question), question])).values()],
@@ -266,7 +267,8 @@ function attachUnavailableSources(placed: Ranking, required: RequiredItem[], con
   for (const { tier, item } of entries(placed)) {
     if (item.source.some(isStepFailure) || item.links.length > 0 || item.type.includes('Late commit')) continue;
     placed[tier] = placed[tier].filter(entry => entry !== item);
-    mergeFailureConcerns(placed, { ...item, detail: `${item.title}\n\n${item.detail}`, source: ['failure:archive', ...item.source] });
+    mergeFailureConcerns(placed, { ...item, detail: `${item.title}\n\n${item.detail}`,
+      source: ['failure:archive', ...item.source], unlinkedSources: item.source, questions: [] });
   }
 }
 

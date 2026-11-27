@@ -13,7 +13,7 @@ import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
 export type Tier = typeof TIERS[number];
-export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
+export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; unlinkedSources?: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
 export interface Ranking { red: Item[]; orange: Item[]; yellow: Item[]; evidence: string; keyEvidence?: KeyEvidence[]; }
 export interface RequiredItem { tier: Tier; item: Item; }
 export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[] }; }
@@ -149,7 +149,7 @@ function sharedSources(dir: string, page: PageEntry): Map<string, string[]> {
   for (const item of TIERS.flatMap(tier => data[tier] ?? [])) {
     if (!item.questions?.some(question => !question.source)) continue;
     const own = new Set(item.questions?.map(question => question.source).filter(Boolean));
-    const sources = item.source.filter(source => !own.has(source));
+    const sources = item.source.filter(source => !(own.has(source) || item.unlinkedSources?.includes(source)));
     for (const source of sources) shared.set(source, sources);
   }
   return shared;

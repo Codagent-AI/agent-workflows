@@ -29,12 +29,14 @@ function traceEvent(line: string): { event?: string; sid?: string; child_id?: nu
 }
 
 function hookFailed(trace: string) {
-  const hooks = new Set<string>();
+  const hooks = new Set<number | undefined>();
+  let rootSid: string | undefined;
   for (const line of trace.split('\n')) {
     const event = traceEvent(line);
-    const child = `${event.sid}:${event.child_id}`;
-    if (event.event === 'child_start' && event.hook_name === 'pre-push') hooks.add(child);
-    if (event.event === 'child_exit' && hooks.delete(child) && event.code !== 0) return true;
+    rootSid ??= event.sid;
+    if (!(rootSid && event.sid === rootSid)) continue;
+    if (event.event === 'child_start' && event.hook_name === 'pre-push') hooks.add(event.child_id);
+    if (event.event === 'child_exit' && hooks.delete(event.child_id) && event.code !== 0) return true;
   }
   return hooks.size > 0;
 }

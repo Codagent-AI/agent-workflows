@@ -41,6 +41,8 @@ function commit(exec: Exec, paths: string[], message: string): CheckResult {
 
 const kinds = Object.keys(logs) as LogKind[];
 const logState = (dir: string) => join(dir, 'review/log-state.json');
+const logCopies = (dir: string) => join(dir, 'review/log-copies.json');
+const entryIdentity = (entry: string) => /^## ((?:DECIDE|DISPUTE|D|DP)-\d+): /.exec(entry)?.[1] ?? entry.split('\n', 1)[0];
 const filename = (kind: LogKind) => `${kind}-log.md`;
 
 function runLogs(dir: string) {
@@ -59,24 +61,31 @@ function recordLogFailure(dir: string, result: CheckResult, remaining: string) {
 export function commitLogs(exec: Exec, dir: string, name: string): CheckResult {
   const folder = `openspec/changes/${name}`;
   const source = runLogs(dir);
-  const paths = source.map(({ kind, text }) => {
+  const copies = source.map(({ kind, text }) => {
     const path = join(folder, filename(kind));
-    writeText(path, numberLog(text, logs[kind]));
-    return path;
+    const numbered = numberLog(text, logs[kind]);
+    writeText(path, numbered);
+    return { kind, path, ids: entries(numbered).map(entryIdentity) };
   });
+  writeJson(logCopies(dir), Object.fromEntries(copies.map(({ kind, ids }) => [kind, ids])));
+  const paths = copies.map(copy => copy.path);
   const indexed = exec('git', ['add', '--', ...paths]);
   const result = indexed.status ? fail(indexed.stderr) : commit(exec, paths, logMessage(name));
   if (result.ok) writeJson(logState(dir), Object.fromEntries(source.map(log => [log.kind, log.entries.length])));
   return recordLogFailure(dir, result, 'The archive commit will include these logs.');
 }
 
-function syncFile(exec: Exec, path: string, added: string[], prefix: string) {
+function syncFile(exec: Exec, path: string, added: { text: string; copiedId?: string }[], prefix: string) {
   const original = existsSync(path) ? readText(path) : undefined;
   const committed = output(exec, 'git', ['show', `HEAD:${path}`]) ?? '';
   const current = original ?? committed;
   const key = (entry: string) => entry.replace(/^## (?:DECIDE|DISPUTE|D|DP)-\d+: /, '## ');
-  const seen = new Set(entries(current).map(key));
-  const missing = [...entries(committed), ...added].filter(entry => {
+  const currentEntries = entries(current);
+  const ids = new Set(currentEntries.map(entryIdentity));
+  const seen = new Set(currentEntries.map(key));
+  const missingCommitted = entries(committed).filter(entry => !ids.has(entryIdentity(entry)));
+  const newEntries = added.filter(entry => !(entry.copiedId && ids.has(entry.copiedId))).map(entry => entry.text);
+  const missing = [...missingCommitted, ...newEntries].filter(entry => {
     const id = key(entry);
     if (seen.has(id)) return false;
     seen.add(id);
@@ -99,10 +108,12 @@ function restoreSync(exec: Exec, updates: ReturnType<typeof syncFile>) {
 export function syncLogs(exec: Exec, dir: string, folder: string, name: string): CheckResult {
   const state = logState(dir);
   const prior = readJson<Partial<Record<LogKind, number>>>(state, {});
+  const copies = readJson<Partial<Record<LogKind, string[]>>>(logCopies(dir), {});
   const source = runLogs(dir);
   if (source.every(log => log.entries.length <= (prior[log.kind] ?? 0))) return pass();
   const updates = source.flatMap(log => {
-    const added = log.entries.slice(prior[log.kind] ?? 0);
+    const start = prior[log.kind] ?? 0;
+    const added = log.entries.slice(start).map((text, index) => ({ text, copiedId: copies[log.kind]?.[start + index] }));
     return added.length > 0 ? syncFile(exec, join(folder, filename(log.kind)), added, logs[log.kind]) : [];
   });
   const untracked = updates.filter(update => update.untracked).map(update => update.path);

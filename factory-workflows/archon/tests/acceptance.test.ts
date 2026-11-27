@@ -1,8 +1,10 @@
+import { placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 import { commitLogs, syncLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { gitNetwork } from '../.archon/workflows/codagent/.shared/lib/git-network.ts';
 import { refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
 import { join } from 'node:path';
-import { stepFailures } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { emptyRanking, inventory, stepFailures } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { endAcceptance, pushRecheck, unverifiedRows } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -349,4 +351,65 @@ test('push classifies a hook from an isolated Trace2 file and removes it', () =>
   }, ['push'], () => { throw new Error('must not retry a failed hook'); });
   expect(result).toEqual({ ok: false, person: false, problems: 'Connection timed out' });
   expect(existsSync(trace)).toBe(false);
+});
+
+test('fixing an archive leaves unrelated unlinked decisions and disputes open', () => {
+  const folder = 'openspec/changes/archive/2026-11-26-demo';
+  box.write(`${folder}/checklist.md`, '| ID | Behavior | Status |\n|---|---|---|\n| C-1 | Export | verified |\n');
+  box.write(`${folder}/decision-log.md`, '## DECIDE-1: Choose a format\nReason: Readers.\n');
+  box.write(`${folder}/dispute-log.md`, '## DISPUTE-1: PR comment on spacing\nReason: Style.\n');
+  put('review/accepted-head.txt', 'abc');
+  put('step-results.json', '{"archive":{"ok":false,"remaining":"","problems":"commit failed"}}');
+  const exec = (_cmd: string, args: readonly string[]) => ({
+    status: Number(args[0] === 'show' || args[0] === 'cat-file'),
+    stdout: args[0] === 'rev-parse' ? 'abc' : '', stderr: '',
+  });
+  const input = { dir: evidence, changeFolder: folder, exec };
+  const { required, context } = inventory(input);
+  const placed = placeRanking(emptyRanking(), required, context);
+  expect(placed.red[0].unlinkedSources).toEqual(['DECIDE-1', 'DISPUTE-1']);
+  put('review/pages.json', '[{"round":1,"file":"page.html","status":"feedback sent"}]');
+  put('page.html', pageHtml(placed));
+  put('review-response-round-1.json', '[{"item":"failure:archive","status":"fixed"}]');
+  put('step-results.json', '{"archive":{"ok":true}}');
+  expect(inventory(input).required.flatMap(row => row.item.source)).toEqual(['DECIDE-1', 'DISPUTE-1']);
+});
+
+test('log retry keeps a copied entry settled after the archive commits it', () => {
+  const folder = 'openspec/changes/demo';
+  put('decision-log.md', '## Choose a format\nReason: Readers.\n');
+  const reply = (stdout = '', status = 0) => ({ status, stdout, stderr: '' });
+  expect(commitLogs((_cmd, args) => reply('', Number(args[0] === 'commit')), evidence, 'demo').ok).toBe(false);
+  const path = `${folder}/decision-log.md`;
+  const archived = box.read(path);
+  const settled = `${archived.replace('Choose a format', 'Choose a default format')}Settled in review round 1\n`;
+  box.write(path, settled);
+  put('decision-log.md', '## Choose a format\nReason: Readers.\n\n## Later choice\nReason: Export.\n');
+  const exec = (_cmd: string, args: readonly string[]) =>
+    reply(args[0] === 'show' && args[1].endsWith('decision-log.md') ? archived : '');
+  expect(syncLogs(exec, evidence, folder, 'demo').ok).toBe(true);
+  const text = box.read(path);
+  expect(text.match(/^## DECIDE-/gm)).toHaveLength(2);
+  expect(text).toContain(settled);
+  expect(text).toContain('DECIDE-2: Later choice');
+});
+
+test.each(['Authentication failed', 'Connection reset'])('ignores nested hook failures when the outer push reports %s', stderr => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const result = gitNetwork((_cmd, _args, options) => {
+    const trace = options?.env?.GIT_TRACE2_EVENT ?? '';
+    writeFileSync(trace, [
+      { event: 'version', sid: 'outer' },
+      { event: 'child_start', sid: 'outer', child_id: 0, hook_name: 'pre-push' },
+      { event: 'child_start', sid: 'outer/inner', child_id: 0, hook_name: 'pre-push' },
+      { event: 'child_exit', sid: 'outer/inner', child_id: 0, code: 1 },
+      { event: 'child_exit', sid: 'outer', child_id: 0, code: 0 },
+    ].map(event => JSON.stringify(event)).join('\n'));
+    attempts++;
+    return { status: 1, stdout: '', stderr };
+  }, ['push'], delay => delays.push(delay));
+  expect(result.person).toBe(true);
+  expect(attempts).toBe(stderr === 'Authentication failed' ? 1 : 4);
+  expect(delays).toEqual(stderr === 'Authentication failed' ? [] : [10_000, 30_000, 90_000]);
 });

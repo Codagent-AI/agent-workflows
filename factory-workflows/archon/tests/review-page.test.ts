@@ -496,5 +496,5 @@ test('fallback groups a checklist row with an uncommitted archive under its fail
   expect(ranking.red).toHaveLength(1);
   expect(ranking.red[0].source).toEqual(['failure:archive', 'CHECK-1']);
   expect(ranking.red[0].detail).toContain(row.title);
-  expect(ranking.red[0].links).toEqual([]);
+  expect(ranking.red[0]).toMatchObject({ links: [], unlinkedSources: ['CHECK-1'] });
 });
