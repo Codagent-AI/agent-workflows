@@ -453,13 +453,14 @@ test('INT-007 Retest selects journeys from a red Late commit and ignores an unse
   const retest = [{ prompt: 'Rerun?', options: [{ id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Leave' }] }];
   const orange = [first, second].map((commit, index) => ({ ...item('Late commit', commit), questions: retest,
     journeys: [{ code: `JOURNEY-${index + 1}`, title: `Journey ${index + 1}`, commit }] }));
+  const scenario = 'A reviewer saves a preference.', repeat = '1. Save.\n2. Reload and verify.';
+  box.write('artifacts/acceptance-journeys/round-0.json', JSON.stringify(orange.map(entry => ({ ...entry.journeys[0], scenario, repeat }))));
   publishPackage(forge.tools, { dir: dir(), folder, ranking: { ...emptyRanking(), red: [orange[0]], orange: [orange[1]] } }, options);
   const answer = JSON.stringify({ action: 'feedback', round: 1, head: second, answers: [{ item: first, question: 0, option: 'retest' }], screenshotComments: [] });
   const round = started(forge, answer);
   expect(round).toMatchObject({ retest: true, round: 2 });
-  expect(JSON.parse(round.journeys).map((entry: { code: string }) => entry.code)).toEqual(['JOURNEY-1']);
+  expect(JSON.parse(round.journeys)).toEqual([expect.objectContaining({ code: 'JOURNEY-1', scenario, repeat, artifact: 'acceptance-journeys/round-0.json' })]);
 });
-
 test('ranked step failures keep their details and fallback supplies a plain linked-or-linkless failure', () => {
   steps({ finalize: failedStep, acceptance: { ...failedStep, push: true } });
   const forge = publisher();

@@ -376,3 +376,12 @@ test('duplicate command outputs keep the first valid entry and report the collid
   expect(commands(box.path('artifacts'), problems).map(command => command.excerpt)).toEqual(['first']);
   expect(problems.map(problem => problem.detail)).toEqual([expect.stringContaining('Duplicate command output run.txt')]);
 });
+
+test('acceptance journey manifests keep scenario and multiline repeat steps and flag entries without repeat', () => {
+  const journey = { code: 'JOURNEY-1', title: 'Save settings', scenario: 'A reviewer changes a preference.', repeat: '1. Save.\n2. Reload and verify.' };
+  const path = 'acceptance-journeys/round-0.json';
+  box.write(`artifacts/${path}`, JSON.stringify([journey, { code: 'JOURNEY-2', title: 'Export settings', scenario: 'A reviewer exports settings.' }]));
+  const media = reviewMedia(box.path('artifacts'));
+  expect(media.journeys).toEqual([{ ...journey, artifact: path }]);
+  expect(media.problems).toEqual([{ path: box.path(`artifacts/${path}`), detail: expect.stringContaining('entry 2') }]);
+});

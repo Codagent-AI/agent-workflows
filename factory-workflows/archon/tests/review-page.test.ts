@@ -9,7 +9,7 @@ import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 import { runInNewContext } from 'node:vm';
-import { collectReview, initialChoice, sendReview, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { collectReview, sendReview, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 
@@ -53,31 +53,6 @@ test.each(['round-12', 'no wait', '409', 'file', 'offline', 'offline after GET']
   expect(mock.calls()).toBe(expectedCalls[scenario] ?? 1);
 });
 
-test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
-  expect(missingAnswers([{ required: true, option: '', other: '' }, { required: true, option: 'other', other: '  ' },
-    { required: true, option: 'other', other: 'choice' }, { required: false, option: '', other: '' }])).toBe(2);
-});
-
-
-test('question defaults start blank for required tiers and restore saved answers', () => {
-  for (const tier of ['red', 'orange']) expect(initialChoice(tier, 'recommended', false)).toBe('');
-  expect(initialChoice('yellow', 'recommended', false)).toBe('recommended');
-  expect(initialChoice('yellow', 'recommended', true)).toBe('');
-  expect(initialChoice('red', 'recommended', true, 'other')).toBe('other');
-});
-
-test('collects choice values, notes and nonblank screenshot comments with the acceptance round', () => {
-  const row = { item: 'CHECK-1', question: 1, option: 'other', other: 'Try again', note: 'More context' };
-  const input = { round: 2, head: 'reviewed', rows: [{ ...row, required: true }],
-    screenshots: [{ file: 'one.png', round: 1 }, { file: 'two.png', round: 3 }],
-    comments: new Map([['one.png', ''], ['two.png', 'Alignment']]) };
-  expect(collectReview({ ...input, action: 'feedback' })).toEqual({
-    action: 'feedback', round: 2, head: 'reviewed', answers: [row],
-    screenshotComments: [{ file: 'two.png', round: 3, comment: 'Alignment' }], commandComments: [],
-  });
-  expect(collectReview({ ...input, action: 'merge' })).toEqual({ action: 'merge', round: 2, head: 'reviewed' });
-});
-
 test('change size totals combine both languages and all change columns', () => {
   expect(sizeTotals([{ files: 3, added: 5, modified: 3, removed: 2 }, { files: 1, added: 7, modified: 1, removed: 6 }]))
     .toEqual({ files: 4, added: 12, modified: 4, removed: 8 });
@@ -89,6 +64,8 @@ class Element {
   private text = '';
   value = '';
   href = '';
+  scrollLeft = 0;
+  scrollTop = 0;
   onclick?: () => void;
   showModal() {}
   focus() {}
@@ -99,8 +76,9 @@ class Element {
   classList = {
     add: (name: string) => { this.className += ` ${name}`; },
     contains: (name: string) => this.className.split(' ').includes(name),
-    toggle: (name: string, value: boolean) => {
+    toggle: (name: string, value = !this.classList.contains(name)) => {
       this.className = [...this.className.split(' ').filter(part => part && part !== name), ...(value ? [name] : [])].join(' ');
+      return value;
     },
   };
   prepend(child: Element) { this.children.unshift(child); }
@@ -115,6 +93,7 @@ class Element {
     }
   }
   appendChild(child: Element) { this.append(child); return child; }
+  replaceChildren(...children: Element[]) { this.children = children; }
   setAttribute() {}
   addEventListener(event: string, handler: () => void) { this.listeners.set(event, handler); }
   querySelector() { return undefined; }
@@ -142,11 +121,11 @@ function render(data: unknown, stored: unknown = null) {
   return querySelector;
 }
 
-test('dynamic review markup keeps item content and recommendation out of the number and radio columns', () => {
+test('dynamic review markup lays out concerns and toggles the screenshot viewer from its scroll origin', () => {
   const data = { title: 'Review title', round: 2, run: 'run-1', head: 'head', codes: {},
     summary: 'Summary', recap: [{ note: 'Round update' }], decisions: '## DECIDE-1: Choice\n- Rationale: Reason',
     disputes: '', keyEvidence: [], wait: false, orange: [], yellow: [],
-    screenshots: [{ href: 'one.png', file: 'one.png', round: 0, title: 'Start' }, { href: 'two.png', file: 'two.png', round: 2, title: 'Retest' }],
+    screenshots: [{ href: 'one.png', file: 'one.png', round: 0, title: 'Start', shows: 'Before' }, { href: 'two.png', file: 'two.png', round: 2, title: 'Retest', shows: 'After' }],
     size: [{ language: 'Go', files: 1, added: 2, modified: 3, removed: 4 }],
     red: [{ type: 'Failure', title: 'Item title', source: ['CHECK-1'], detail: 'Details',
       questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }] }] };
@@ -162,6 +141,15 @@ test('dynamic review markup keeps item content and recommendation out of the num
   const gallery = main.children.find(child => child.id === 'acceptance-evidence');
   expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 3', 'Acceptance round 1']);
   expect(gallery?.find('thumb-label')?.textContent).toBe('Retest');
+  gallery?.byTag('button')[0].onclick?.();
+  const stage = querySelector('body').find('viewer-stage') as Element;
+  const toggle = querySelector('body').find('viewer-info')?.byTag('button')[0];
+  toggle?.onclick?.();
+  expect([stage.classList.contains('full-size'), toggle?.textContent]).toEqual([true, 'Fit to view']);
+  stage.scrollLeft = 300;
+  stage.scrollTop = 150;
+  toggle?.onclick?.();
+  expect([stage.classList.contains('full-size'), toggle?.textContent, stage.scrollLeft, stage.scrollTop]).toEqual([false, 'Open full size', 0, 0]);
   expect(main.find('fields')).toBeUndefined();
   expect(main.find('total')?.children.map(child => child.textContent)).toEqual(['Total', '1', '2', '3', '4']);
   expect(main.children[0].children.map(child => child.tag)).toEqual(['div', 'ul', 'div', 'div']);
@@ -412,14 +400,15 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   const file = 'acceptance-commands/round-1/output.txt';
   const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
   const forgeBase = 'https://github.com/owner/repo';
-  const href = `${forgeBase}/blob/reviewed/file.txt#L2`;
+  const head = '0123456789abcdef0123456789abcdef01234567';
+  const href = `${forgeBase}/blob/${head}/file.txt#L2`;
   const red = { type: 'Failure', title: 'The `verify` command fails', source: ['failure:acceptance'], failLine: 'Acceptance stopped.',
     questions: [{ source: 'hidden-id', prompt: 'How should export work?', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }],
-    detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [lookalike](https://github.com/owner/repo-lookalike/blob/reviewed/file.txt) [local](file:///tmp/private)`,
+    detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [lookalike](https://github.com/owner/repo-lookalike/blob/${head}/file.txt) [local](file:///tmp/private)`,
     evidence: command, links: [] };
   const yellow = { ...red, type: 'Agent decision', title: 'Use the default', evidence: undefined, failLine: undefined,
     source: ['DECIDE-1'], links: [{ label: 'What changed', href }, { label: 'Why', href: `${href}0` }] };
-  const data = { title: 'Export settings', round: 2, head: 'reviewed', run: 'review-run', repository: 'owner/repo', pullRequest: 7,
+  const data = { title: 'Export settings', round: 2, head, run: 'review-run', repository: 'owner/repo', pullRequest: 7,
     pullRequestUrl: `${forgeBase}/pull/7`, logs: { decisions: href, disputes: `${href}0` }, forgeBase, summary: '', recap: [], size: null,
     red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
     screenshots: [{ file: 'screen.png', href: 'screen.png', title: 'Preview', shows: 'Shows export', round: 2 }] };
@@ -437,6 +426,7 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(medium('.meta-row').find('orange')).toBeDefined();
   expect(medium('#send-status').textContent).toContain('1 medium concern');
   expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href, `${href}0`]);
+  expect(page('.masthead .meta').byTag('dd').map(value => value.textContent)).toContain(data.head);
   expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);
   expect(main.byTag('article').map(article => article.children[0].textContent)).toEqual(['1', '2']);
   expect(main.find('tier-head')?.find('dot')?.className).toBe('dot red');

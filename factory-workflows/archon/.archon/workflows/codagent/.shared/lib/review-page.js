@@ -168,6 +168,8 @@
     const detail = node('div');
     const fullSize = button('Open full size', 'comment-btn', () => {
       const expanded = stage.classList.toggle('full-size');
+      stage.scrollLeft = 0;
+      stage.scrollTop = 0;
       fullSize.textContent = expanded ? 'Fit to view' : 'Open full size';
     });
     const comment = node('textarea', '', 'note');

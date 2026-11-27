@@ -288,6 +288,21 @@ coverage, meaning "this area is signed off." An empty diff sizes to zero steps.
 - Do not fuzz or build an exhaustive edge-case matrix. Exploration is targeted by risk, not by volume.
 - Do not treat a successful command exit, an agent summary, or a screenshot alone as proof of behavior.
 
-For any screenshots taken, save PNG, JPEG, GIF or WebP files under $ARTIFACTS_DIR/acceptance-screenshots/round-$INPUTS.acceptance_round/. Add manifest.json beside them as an array with one object per image, with file (the basename), title, shows, revision and alt. Record the journeys you exercised as an array at $ARTIFACTS_DIR/acceptance-journeys/round-$INPUTS.acceptance_round.json. Give each entry a code (JOURNEY-1 and up, continuing the sequence from all previous rounds), title, scenario and repeat instructions.
+For any screenshots taken, save PNG, JPEG, GIF or WebP files under $ARTIFACTS_DIR/acceptance-screenshots/round-$INPUTS.acceptance_round/. Add manifest.json beside them as an array with one object per image, with file (the basename), title, shows, revision and alt.
+
+Record the journeys you exercised as a JSON array at $ARTIFACTS_DIR/acceptance-journeys/round-$INPUTS.acceptance_round.json. Each object must have the exact keys `code`, `title`, `scenario` and `repeat`, all with string values. Continue the JOURNEY code sequence from previous rounds. Put the steps to rerun the scenario in the string named `repeat`. Use escaped newlines within the string for multiple steps. The review page and Retest use these records.
+
+```json
+[
+  {
+    "code": "JOURNEY-1",
+    "title": "Export settings",
+    "scenario": "A reviewer exports settings after changing a preference.",
+    "repeat": "1. Open Settings and change a preference.\n2. Select Export and verify the downloaded file contains the preference."
+  }
+]
+```
+
+Read the saved journey manifest back before reporting the round result. Check that it parses as an array and that every object has string values under all four required keys.
 
 For each command whose output shows a behavior you checked, save its full output as a text file under $ARTIFACTS_DIR/acceptance-commands/round-$INPUTS.acceptance_round/. Write manifest.json beside the output as an array with title, shows, revision, command, excerpt, and output for each entry. Use a separate output file for each entry. Set output to the saved file’s basename and use a verbatim run of at most 20 whole lines from it for the excerpt. Keep secrets out of commands, excerpts and saved evidence. The manifest is optional when there is no command evidence.

@@ -6,6 +6,7 @@ import {
   activeFindings, addFindings, applyActions, applyVerdicts, currentCycle, emptyState, findingText,
   handedOff, handoff, reopenRequested, renderResult, settled, startCycle, type Defect, type FindingState, type ReviewState,
 } from '../.archon/workflows/codagent/.shared/lib/review.ts';
+import { collectReview, initialChoice, missingAnswers } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 
 const scripts = resolve(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts');
@@ -424,4 +425,28 @@ test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reo
     change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
   expect(review.revisions).toBe(changed);
   expect(review.findings).toContain('REVIEW-1 [fixed');
+});
+
+test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
+  expect(missingAnswers([{ required: true, option: '', other: '' }, { required: true, option: 'other', other: '  ' },
+    { required: true, option: 'other', other: 'choice' }, { required: false, option: '', other: '' }])).toBe(2);
+});
+
+test('question defaults start blank for required tiers and restore saved answers', () => {
+  for (const tier of ['red', 'orange']) expect(initialChoice(tier, 'recommended', false)).toBe('');
+  expect(initialChoice('yellow', 'recommended', false)).toBe('recommended');
+  expect(initialChoice('yellow', 'recommended', true)).toBe('');
+  expect(initialChoice('red', 'recommended', true, 'other')).toBe('other');
+});
+
+test('collects choice values, notes and nonblank screenshot comments with the acceptance round', () => {
+  const row = { item: 'CHECK-1', question: 1, option: 'other', other: 'Try again', note: 'More context' };
+  const input = { round: 2, head: 'reviewed', rows: [{ ...row, required: true }],
+    screenshots: [{ file: 'one.png', round: 1 }, { file: 'two.png', round: 3 }],
+    comments: new Map([['one.png', ''], ['two.png', 'Alignment']]) };
+  expect(collectReview({ ...input, action: 'feedback' })).toEqual({
+    action: 'feedback', round: 2, head: 'reviewed', answers: [row],
+    screenshotComments: [{ file: 'two.png', round: 3, comment: 'Alignment' }], commandComments: [],
+  });
+  expect(collectReview({ ...input, action: 'merge' })).toEqual({ action: 'merge', round: 2, head: 'reviewed' });
 });
