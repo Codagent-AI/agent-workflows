@@ -181,7 +181,7 @@
       image.alt = current.alt;
       title.textContent = current.title;
       detail.replaceChildren(story(current.shows));
-      position.textContent = `Acceptance round ${current.round} · ${index + 1} of ${shots.length}`;
+      position.textContent = `Acceptance round ${current.round + 1} · ${index + 1} of ${shots.length}`;
       previous.disabled = index === 0;
       next.disabled = index === shots.length - 1;
       comment.value = comments.get(current.file) ?? '';
@@ -225,7 +225,7 @@
     return figure;
   }
 
-  function commandComment(entry) {
+  function commandComment(entry, card) {
     const footer = node('div', '', 'cmd-foot');
     const field = node('textarea', '', 'note');
     let editing = false;
@@ -242,7 +242,8 @@
       if (field.value !== current) field.value = current;
       field.hidden = !current && !editing;
       edit.hidden = editing || !data.wait || sent;
-      footer.hidden = field.hidden && edit.hidden;
+      footer.hidden = field.hidden && (!card.classList.contains('cmd-row') || edit.hidden);
+      card.classList.toggle('has-comment', Boolean(current.trim()));
     };
     if (!commentMarks.has(entry.file)) commentMarks.set(entry.file, []);
     commentMarks.get(entry.file).push(refresh);
@@ -251,20 +252,24 @@
       comments.set(entry.file, field.value);
       for (const update of commentMarks.get(entry.file)) update();
     });
-    footer.append(edit, field);
+    footer.append(field);
     refresh();
-    return footer;
+    return { footer, edit };
   }
 
   function commandEvidence(entry, collapsible = false) {
-    const card = node(collapsible ? 'details' : 'div', '', collapsible ? 'cmd-row' : 'cmd');
-    const header = node(collapsible ? 'summary' : 'div', '', collapsible ? '' : 'cmd-head');
-    const cap = node('span', '', 'cap');
-    cap.append(node('b', entry.title), inline(node('span'), entry.shows));
+    const card = node(collapsible ? 'details' : 'figure', '', collapsible ? 'cmd-row' : 'cmd');
+    const header = node(collapsible ? 'summary' : 'figcaption', '', collapsible ? '' : 'cmd-head');
+    const cap = node(collapsible ? 'span' : 'div', '', 'cap');
+    if (!collapsible) cap.append(node('span', `Round ${entry.round + 1}${revisionLabel([entry])}`, 'cmd-meta'));
+    cap.append(node('b', entry.title), inline(node(collapsible ? 'span' : 'p'), entry.shows));
+    const { footer, edit } = commandComment(entry, card);
     header.append(cap);
+    if (collapsible) footer.prepend(edit);
+    else header.append(edit);
     const command = node('div', '', 'cmd-line');
-    command.append(node('code', entry.command));
-    card.append(header, command, node('pre', entry.excerpt, 'excerpt'), commandComment(entry));
+    command.append(node('span', '$', 'prompt'), node('code', entry.command));
+    card.append(header, command, node('pre', entry.excerpt, 'excerpt'), footer);
     return card;
   }
 
@@ -282,31 +287,48 @@
     return list;
   }
 
+  function revisionLabel(entries) {
+    const revisions = [...new Set(entries.map(entry => entry.revision?.slice(0, 8)).filter(Boolean))];
+    return revisions.length ? ` · ${revisions.join(', ')}` : '';
+  }
+
+  function evidenceRound(round) {
+    const shots = data.screenshots.filter(shot => shot.round === round);
+    const entries = commands.filter(entry => entry.round === round);
+    const group = node('div', '', 'round');
+    group.append(node('h4', `Acceptance round ${round + 1}${revisionLabel([...entries, ...shots])}`));
+    const recap = data.acceptanceRecaps?.[round];
+    if (recap) group.append(story(recap));
+    if (entries.length) {
+      const list = node('ul', '', 'cmds');
+      for (const entry of entries) {
+        const row = node('li');
+        row.append(commandEvidence(entry, true));
+        list.append(row);
+      }
+      group.append(node('h5', `Commands (${entries.length})`), list);
+    }
+    if (shots.length) group.append(node('h5', `Screenshots (${shots.length})`), thumbnails(shots));
+    return group;
+  }
+
   function renderEvidence() {
+    let key;
     if (data.keyEvidence.length) {
-      const { block } = section('key-evidence', 'Key evidence');
+      key = section('key-evidence', 'Key evidence').block;
       const list = node('div', '', 'key-shots');
       for (const entry of data.keyEvidence) list.append(entry.kind === 'command' ? commandEvidence(entry) : primaryShot(entry));
-      block.append(list);
+      key.append(list);
     }
-    const rounds = [...new Set([...data.screenshots, ...commands].map(entry => entry.round))].sort((a, b) => a - b);
+    const rounds = [...new Set([...data.screenshots, ...commands].map(entry => entry.round))].sort((a, b) => b - a);
     if (!rounds.length) return;
-    const { block } = section('acceptance-evidence', 'All acceptance evidence', false);
-    for (const round of rounds) {
-      const group = node('div', '', 'round');
-      group.append(node('h4', 'Acceptance round ' + round));
-      const recap = data.acceptanceRecaps?.[round];
-      if (recap) group.append(story(recap));
-      const entries = commands.filter(entry => entry.round === round);
-      if (entries.length) {
-        const list = node('div', '', 'cmds');
-        for (const entry of entries) list.append(commandEvidence(entry, true));
-        group.append(list);
-      }
-      const shots = data.screenshots.filter(shot => shot.round === round);
-      if (shots.length) group.append(thumbnails(shots));
-      block.append(group);
-    }
+    const gallery = node('div', '', 'all-shots');
+    gallery.id = 'acceptance-evidence';
+    const shotCount = data.screenshots.length;
+    const title = `All acceptance evidence (${shotCount} screenshot${shotCount === 1 ? '' : 's'}, ${commands.length} command${commands.length === 1 ? '' : 's'})`;
+    gallery.append(node(key ? 'h3' : 'h2', title));
+    for (const round of rounds) gallery.append(evidenceRound(round));
+    (key ?? panels).append(gallery);
   }
 
   function readRow(row) {
@@ -410,7 +432,9 @@
       const group = node('div', '', 'tier-group');
       group.id = tier;
       const title = `${name} (${data[tier].length})`;
-      group.append(node('h3', title, 'tier-head'));
+      const heading = node('h3', '', 'tier-head');
+      heading.append(node('span', '', 'dot ' + tier), name, node('span', `(${data[tier].length})`, 'c'));
+      group.append(heading);
       const items = node('div', '', tier === 'red' ? 'items' : 'items compact');
       const nested = node('ul');
       const tierEntry = node('li');

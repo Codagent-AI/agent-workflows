@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { remoteOf } from './forge.ts';
-import { gitNetwork } from './pull-request.ts';
+import { gitNetwork } from './git-network.ts';
 import { readJson } from './run-files.ts';
 
 export function commitParents(exec: Exec, sha: string): string[] {

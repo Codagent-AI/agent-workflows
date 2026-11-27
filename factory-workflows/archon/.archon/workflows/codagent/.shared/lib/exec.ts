@@ -27,7 +27,7 @@ export const runCommand: Exec = (command, args, options = {}) => {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) {
-    return { status: 127, stdout: '', stderr: `${command}: ${result.error.message}` };
+    return { status: 127, stdout: result.stdout ?? '', stderr: [result.stderr, `${command}: ${result.error.message}`].filter(Boolean).join('\n') };
   }
   return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 };

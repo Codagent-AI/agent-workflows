@@ -54,7 +54,7 @@ publish-review-package: {"succeeded":false,"page":"review-page-round-1.html","me
 end-run: {"succeeded":false,"reason":""}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 repair-final-wait: {"blocked":true,"reason":"missing credential","actions":[]}
-mark-ready-after-final-repair: {"ok":false,"problems":"ready denied"}
+mark-ready-after-final-repair: {"ok":false,"problems":"REPAIR_BLOCKED: missing credential"}
 recheck-final-ci: {"status":"error","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"forge read failed"}
 push-recheck: {"ok":true,"problems":""}
 fixture:

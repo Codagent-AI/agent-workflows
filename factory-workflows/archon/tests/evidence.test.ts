@@ -1,3 +1,4 @@
+import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { humanChecks } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -328,4 +329,40 @@ test('the ranking inventory extracts only checks in the human-only section', () 
   const folder = 'openspec/changes/test';
   box.write(`${folder}/test-plan.md`, '## Human-Only Testing\n### HUMAN-2: Inspect the layout\n## End-to-End Tests\n### E2E-1: Submit\n');
   expect(humanChecks(folder)).toEqual([{ code: 'HUMAN-2', title: 'Inspect the layout' }]);
+});
+
+test('command manifests validate whole lines, normalize excerpts, and reach ranking preparation', () => {
+
+  const start = box.head();
+  const input = { start, dir: box.path('artifacts'), changeFolder: 'openspec/changes/demo' };
+  box.write('artifacts/pull-request.json', JSON.stringify({ head_revision: start }));
+  box.write(`${input.changeFolder}/checklist.md`, '| ID | Behavior | Status |\n|---|---|---|\n| C-1 | Export | verified |\n');
+  const base = 'artifacts/acceptance-commands/round-1';
+  const entry = { title: 'Check export', shows: 'Rejects input', revision: input.start, command: 'tool verify', excerpt: '  invalid\n  detail', output: 'ok.txt' };
+  box.write(`${base}/ok.txt`, '\u001b[31m  invalid\u001b[0m\r\n  detail\r\nfull only\r\n');
+  const twenty = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+  box.write(`${base}/long.txt`, `${twenty}\nline 20\n`);
+  const bad = [{ ...entry, excerpt: 'invalid' }, { ...entry, output: 'missing.txt' },
+    { ...entry, output: 'long.txt', excerpt: `${twenty}\nline 20` }, { output: 'bad.txt' }, { ...entry, excerpt: '' }];
+  box.write(`${base}/manifest.json`, JSON.stringify([entry, { ...entry, output: 'long.txt', excerpt: twenty }, ...bad]));
+  box.write('artifacts/acceptance-screenshots/round-2/screen.png', 'example');
+  box.write('artifacts/acceptance-screenshots/round-2/manifest.json', JSON.stringify([
+    { file: 'screen.png', title: 'Screen', shows: 'Shows export', revision: input.start, alt: 'Export' }, null,
+  ]));
+  const media = reviewMedia(input.dir);
+  expect(media.commands.map(command => command.excerpt)).toEqual([entry.excerpt, twenty]);
+  expect(media.commands[0]).toMatchObject({ file: 'acceptance-commands/round-1/ok.txt', round: 1 });
+  expect(media.problems).toHaveLength(6);
+  expect(media.problems.map(problem => problem.path)).toEqual(expect.arrayContaining([
+    box.path(`${base}/missing.txt`), box.path(`${base}/long.txt`), box.path(`${base}/manifest.json`),
+  ]));
+  const script = '../.archon/workflows/codagent/implement-change/scripts/finish.ts';
+  const result = Bun.spawnSync([process.execPath, new URL(script, import.meta.url).pathname], { cwd: box.dir, env: {
+    ...process.env, ARTIFACTS_DIR: input.dir, INPUTS_OP: 'prepare-ranking', INPUTS_CHANGE_FOLDER: input.changeFolder,
+  } });
+  expect(result.exitCode).toBe(0);
+  const evidence = JSON.parse(box.read('artifacts/review/evidence.json'));
+  expect(evidence.map((value: { round: number }) => value.round)).toEqual([2, 1, 1]);
+  expect(JSON.parse(box.read('artifacts/review/media-problems.json'))).toHaveLength(6);
+  expect(reviewMedia(box.path('empty'))).toMatchObject({ commands: [], shots: [], problems: [] });
 });

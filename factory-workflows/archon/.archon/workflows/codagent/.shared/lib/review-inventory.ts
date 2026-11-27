@@ -9,7 +9,7 @@ import { baseRevisions, commitParents, reviewRevisions } from './review-revision
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
 import { type PageEntry, readPages } from './review-pages.ts';
-import { citesCiTest, ciTestScopes } from './review-ci.ts';
+import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
 export type Tier = typeof TIERS[number];
@@ -32,14 +32,14 @@ function checklistItems(input: InventoryInput): RequiredItem[] {
   const columns = rawCells(table.header);
   const finalize = readJson<Partial<CiResult>>(join(input.dir, 'ci/latest.json'), {});
   const steps = readJson<Record<string, StepResult>>(join(input.dir, 'step-results.json'), {});
-  const ciScopes = steps.finalize?.ok ? ciTestScopes(input.exec, finalize) : [];
+  const checked = steps.finalize?.ok && passedFinalizeChecks(input.exec, finalize);
   return table.rows.filter(row => !isSeparatorRow(row)).flatMap(row => {
     const cells = rawCells(row);
     const cell = (name: string) => cells[columns.indexOf(name)];
     const status = cell('Status');
     if (status === 'verified') return [];
     const failed = status === 'failed';
-    const ciEvidence = status === 'not verified' && citesCiTest(input.exec, cells.join(' '), ciScopes);
+    const ciEvidence = status === 'not verified' && checked && citesExistingTest(input.exec, cells.join(' '));
     const line = text.split('\n').indexOf(row) + 1;
     return [{ tier: ciEvidence ? 'yellow' as const : 'red' as const, item: {
       type: failed ? 'Failure' : 'Risk', title: cell('Behavior'),
@@ -87,18 +87,16 @@ const failures: Record<string, [string, string]> = {
   'check-response': ['The response to the feedback failed its check', 'Correct the rejected responses.'],
   description: ['The pull request description was not updated', 'Retry updating the pull request description.'],
   'review-media': ['Some acceptance evidence could not be shown', 'Review the remaining evidence for those behaviors.'],
-  logs: ['The review logs could not be committed', 'Review the log entries that are missing from the branch.'],
 };
 
-function acceptanceFailureLine(dir: string, result: StepResult, title: string): string {
-  const index = readText(join(dir, 'acceptance-round-number.txt')).trim();
-  const round = result.round ?? (/^\d+$/.test(index) ? Number(index) + 1 : 0);
+function acceptanceFailureLine(result: StepResult, title: string): string {
+  const { round } = result;
   if (result.push) return `Acceptance stopped${round ? ` after round ${round}` : ''} because the push failed.`;
   return round ? `${title} after ${round} rounds.` : `${title}.`;
 }
 
-function failureLine(dir: string, step: string, result: StepResult, title: string): string {
-  if (step === 'acceptance') return acceptanceFailureLine(dir, result, title);
+function failureLine(step: string, result: StepResult, title: string): string {
+  if (step === 'acceptance') return acceptanceFailureLine(result, title);
   if (step === 'finalize') {
     const checks = result.failedChecks?.join(', ');
     if (checks) return `Finalize did not pass. The following checks must pass before merging: ${checks}.`;
@@ -114,7 +112,7 @@ export function stepFailures(dir: string, mediaProblems = reviewMedia(dir).probl
   return Object.entries(failures).flatMap(([step, [title, detail]]) => {
     const result = results[step];
     if (!result || result.ok) return [];
-    return [{ type: 'Failure', title, detail, failLine: failureLine(dir, step, result, title),
+    return [{ type: 'Failure', title, detail, failLine: failureLine(step, result, title),
       links: [], source: [`failure:${step}`], questions: [standardQuestion('Failure')] }];
   });
 }
@@ -141,7 +139,7 @@ function lateCommit(exec: Exec, sha: string): Item[] {
     if (files === undefined) throw new Error(`could not inspect ${sha}`);
     if (files.split('\n').filter(Boolean).every(file => file.startsWith('openspec/'))) return [];
     const size = output(exec, 'git', ['show', ...flags, '--format=', '--shortstat', sha]) ?? '';
-    return [{ type: 'Late commit', title: output(exec, 'git', ['show', '-s', '--format=%s', sha]) || 'Changes after acceptance', detail: `${size}\nTests: none named.`, links: [{ label: 'Commit after acceptance', target: `commit:${sha}` }], source: [sha] }];
+    return [{ type: 'Late commit', title: output(exec, 'git', ['show', '-s', '--format=%s', sha]) || 'Changes after acceptance', detail: `This change landed after acceptance and still needs review.\n${size}\nTests: none named.`, links: [{ label: 'Commit after acceptance', target: `commit:${sha}` }], source: [sha] }];
 }
 function sharedSources(dir: string, page: PageEntry): Map<string, string[]> {
   const html = readText(join(dir, page.file));
@@ -166,9 +164,23 @@ function responseRoundFiles(dir: string) {
   }).sort((a, b) => a.round - b.round);
 }
 
+function keepsOpen(status: string): boolean {
+  return !['fixed', 'no-change', 'unchanged', 'settled'].includes(status);
+}
+
+function mergeStatuses(statuses: Map<string, string>, source: string, status: string) {
+  const prior = statuses.get(source);
+  if (prior === undefined || !keepsOpen(prior)) statuses.set(source, status);
+}
+
 function roundStatuses(entries: ResponseStatus[], shared: Map<string, string[]>) {
-  const inherited = entries.flatMap(({ item, status }) => (shared.get(item) ?? []).map(source => [source, status]));
-  return [...inherited, ...entries.map(({ item, status }) => [item, status])];
+  const direct = new Map<string, string>();
+  for (const { item, status } of entries) mergeStatuses(direct, item, status);
+  const inherited = new Map<string, string>();
+  for (const [item, status] of direct) {
+    for (const source of shared.get(item) ?? []) mergeStatuses(inherited, source, status);
+  }
+  return [...inherited, ...direct];
 }
 
 export function responseStatuses(dir: string): Map<string, string> {

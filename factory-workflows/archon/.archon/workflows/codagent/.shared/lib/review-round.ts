@@ -39,7 +39,7 @@ type Mode = 'first' | 'feedback' | 'refused' | 'stale' | 'merged' | 'closed';
 export const outcomesPath = (dir: string) => join(dir, 'review/outcome.json');
 export const answersPath = (dir: string, round: number) => join(dir, `review-answers-round-${round}.json`);
 export const responsePath = (dir: string, round: number) => join(dir, `review-response-round-${round}.json`);
-export const roundFailures = ['merge-base', 'address-feedback', 'check-response', 'description'];
+export const roundFailures = ['merge-base', 'address-feedback', 'check-response', 'description', 'logs'];
 
 function pageAnswer(text: string): Partial<ReviewAnswer> | undefined {
   try {

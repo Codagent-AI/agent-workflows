@@ -1,3 +1,4 @@
+import { recordAcceptanceFailure } from './acceptance.ts';
 import { renderReport } from './ci-report.ts';
 // Adapters for finish nodes. All expected failures become reports so the package still runs.
 import { join } from 'node:path';
@@ -114,12 +115,12 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
   return checked;
 }
 function readyNode(input: FinishInputs, dir: string): CheckResult {
+  if (input.push) checkPush(acceptancePush(runCommand, 'CI wait repair'), true, input.blocked ? input.reason : '');
   if (input.blocked) {
     // The node's output is only ok and problems; the terminal mark stays in the run file.
     const blocked = fail(`REPAIR_BLOCKED: ${input.reason}`);
     recordFinalizeCheck(dir, input.step, { ...blocked, terminal: true }); return blocked;
   }
-  if (input.push) checkPush(acceptancePush(runCommand, 'CI wait repair'), true);
   const checked = markReady(defaultTools());
   recordFinalizeCheck(dir, input.step, checked); return checked;
 }
@@ -223,5 +224,5 @@ export function finishRun(input: FinishInputs): void {
 }
 export function endAcceptance(dir: string, reason: string, push = false): void {
   writeText(join(dir, 'acceptance-stop.txt'), reason);
-  recordStep(dir, 'acceptance', { ok: false, push, problems: reason, remaining: 'Review the acceptance failure before merging.' });
+  recordAcceptanceFailure(dir, reason, push);
 }

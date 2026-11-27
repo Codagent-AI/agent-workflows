@@ -1,4 +1,4 @@
-import { readText } from './run-files.ts';
+import { readJson, readText, recordStep, type StepResult } from './run-files.ts';
 // The acceptance rounds' evidence files and convergence gate.
 //
 // Convergence requires all of:
@@ -129,6 +129,12 @@ function readBack(evidenceDir: string, expected: Finalized['status']): void {
   if (problems.length > 0) throw new Error(problems.join('\n'));
 }
 
+export function recordAcceptanceFailure(dir: string, problems: string, push = false): void {
+  const index = readText(join(dir, 'acceptance-round-number.txt')).trim();
+  const round = /^\d+$/.test(index) ? Number(index) + 1 : undefined;
+  recordStep(dir, 'acceptance', { ok: false, round, push, problems, remaining: 'Review the acceptance failure before merging.' });
+}
+
 /**
  * Writes acceptance-preparation-status.txt. On failure it also writes a short
  * acceptance-handoff.md, keeping any tester-written handoff as acceptance-handoff-tester.md.
@@ -136,8 +142,8 @@ function readBack(evidenceDir: string, expected: Finalized['status']): void {
  */
 export function finalize(exec: Exec, evidenceDir: string, rounds: string): Finalized {
   const reasons = convergenceReasons(exec, evidenceDir);
-  const results = readText(join(evidenceDir, 'step-results.json'));
-  if (results.includes('"acceptance"')) reasons.push('Acceptance ended on a blocked fix or failed push; see step-results.json');
+  const { acceptance } = readJson<Record<string, StepResult>>(join(evidenceDir, 'step-results.json'), {});
+  if (nonEmptyFile(join(evidenceDir, 'acceptance-stop.txt'))) reasons.push('Acceptance ended on a blocked fix or failed push; see step-results.json');
   const current = head(exec);
   mkdirSync(evidenceDir, { recursive: true });
   const statusFile = join(evidenceDir, ARTIFACTS.preparationStatus);
@@ -157,6 +163,7 @@ export function finalize(exec: Exec, evidenceDir: string, rounds: string): Final
   if (nonEmptyFile(handoff) && !(readFileSync(handoff, 'utf8').split('\n')[0] ?? '').startsWith(GENERATED_HEADING)) {
     renameSync(handoff, testerHandoff);
   }
+  if (!acceptance) recordAcceptanceFailure(evidenceDir, reasons.join('\n'));
   const reasonLines = reasons.map(reason => `- ${reason}\n`).join('');
   const lines = [
     `${GENERATED_HEADING} ${rounds || 'the allowed'} rounds\n`,

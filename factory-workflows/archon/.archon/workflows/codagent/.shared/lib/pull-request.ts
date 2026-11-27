@@ -4,6 +4,7 @@
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, type Sleep, output, sleep as wait } from './exec.ts';
 import { type Forge, OPS, type PrView, type Repo, type Reply, problem, remoteOf, resolveRepo } from './forge.ts';
+import { gitNetwork, type PushResult } from './git-network.ts';
 import { status } from './worktree.ts';
 
 /** What the pack's scripts need to reach git and the forge. */
@@ -108,37 +109,6 @@ export function restoreDraft(tools: Tools): CheckResult {
   if (view === null) return fail(`no open pull request for branch '${branch}' to keep as a draft`);
   const drafted = tools.forge.call(OPS.draft, { ref: { repo, number: view.pr.number } });
   return drafted.ok ? pass() : fail(drafted.problem);
-}
-
-type PushResult = CheckResult & { person: boolean };
-
-const transient = /ETIMEDOUT|timed? out|could not resolve host|connection reset|RPC failed|early EOF|remote end hung up unexpectedly|(?:returned error:|HTTP(?:\/\S+)?) 5\d\d|internal server error|bad gateway|service unavailable/i;
-const credentials = /authentication failed|could not read username|invalid username or password|terminal prompts disabled|permission denied \(publickey\)|returned error: 40[13]/i;
-const workflowScope = /refusing to allow[^\n]*workflow/i;
-const retryDelays = [10_000, 30_000, 90_000];
-
-function personFailure(detail: string): string {
-  if (workflowScope.test(detail)) {
-    return "GitHub refused the push because it changes .github/workflows and the token lacks the workflow scope. Push with a token that has it, then resume the run.";
-  }
-  if (credentials.test(detail)) {
-    return 'GitHub refused the push because the credentials are expired, invalid or lack access. Log in again, then resume the run.';
-  }
-  return '';
-}
-
-export function gitNetwork(exec: Exec, args: string[], sleep: Sleep = wait): PushResult {
-  for (const delay of [...retryDelays, 0]) {
-    const result = exec('git', args, { timeout: 300_000, env: { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } });
-    if (result.status === 0) return { ...pass(), person: false };
-    const detail = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
-    const person = personFailure(detail);
-    if (person) return { ...fail(person), person: true };
-    if (!transient.test(detail)) return { ...fail(detail || `git ${args[0]} exited ${result.status}`), person: false };
-    if (delay === 0) return { ...fail(`GitHub was unavailable after 3 retries: ${detail.split('\n').at(-1)}. Resume the run when GitHub is back.`), person: true };
-    sleep(delay);
-  }
-  throw new Error('Git retry loop exhausted without a result');
 }
 
 function mergeFetched(exec: Exec): CheckResult {

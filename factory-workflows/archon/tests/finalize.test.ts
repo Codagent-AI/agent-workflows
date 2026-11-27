@@ -1,3 +1,4 @@
+import { gitNetwork } from '../.archon/workflows/codagent/.shared/lib/git-network.ts';
 import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 import { standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
@@ -14,7 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { ciGate, finalCi, finalizeProblems, waitFinalize, recordFinalize, recordFinalizeCheck } from '../.archon/workflows/codagent/.shared/lib/finalize.ts';
 import { blank, type CiResult } from '../.archon/workflows/codagent/.shared/lib/ci.ts';
-import { markReady, acceptancePush, gitNetwork } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
+import { markReady, acceptancePush } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 import { createSandbox, type Sandbox, noSleep, ok, rule, prView, reply, failed } from './helpers.ts';
 let box: Sandbox;
 beforeEach(()=>{box=createSandbox();});afterEach(()=>box.dispose());
@@ -320,15 +321,16 @@ test('acceptance recheck stops on a failed push and the post-round node retries 
     expect(box.gitIn(box.path('origin.git'), 'rev-parse', 'feature')).toBe(box.head());
   });
 
-  test('keeps a pre-push hook refusal eligible for repair', async () => {
+  test('keeps timeout and authentication wording from a failed hook eligible for repair', async () => {
     box.addBareOrigin();
     box.git('push', '-q', '--set-upstream', 'origin', 'feature');
     box.commitFix();
     const hook = box.path('.git/hooks/pre-push');
-    await Bun.write(hook, '#!/bin/sh\necho hook-refusal >&2\nexit 1\n');
+    await Bun.write(hook, '#!/bin/sh\necho "test timed out: Connection timed out; Authentication failed" >&2\nexit 1\n');
     box.git('config', 'core.hooksPath', box.path('.git/hooks'));
     expect(Bun.spawnSync(['chmod', '+x', hook]).exitCode).toBe(0);
-    expect(acceptancePush(box.exec)).toMatchObject({ ok: false, person: false, problems: expect.stringContaining('hook-refusal') });
+    expect(acceptancePush(box.exec, 'review fixes', () => { throw new Error('hook must not retry'); }))
+      .toMatchObject({ ok: false, person: false, problems: expect.stringContaining('test timed out') });
   });
 
 test('GitHub targets use the reviewed head and reject paths or commits outside the pull request', () => {
@@ -454,7 +456,8 @@ test('failure to commit synced logs records the failure, restores the tree, and 
   const refusal = syncLogs((command, args, options) => args[0] === 'commit'
     ? { status: 1, stdout: '', stderr: 'commit refused' } : box.exec(command, args, options), dir, folder, 'demo');
   expect(refusal.ok).toBe(false);
-  expect(stepFailures(dir).map(item => item.source[0])).toContain('failure:logs');
+  expect(JSON.parse(box.read('artifacts/step-results.json')).logs.ok).toBe(false);
+  expect(stepFailures(dir)).toEqual([]);
   expect(box.git('status', '--porcelain', '--untracked-files=no')).toBe('');
   expect(JSON.parse(box.read('artifacts/review/log-state.json')).decision).toBe(0);
   expect(syncLogs(box.exec, dir, folder, 'demo').ok).toBe(true);
@@ -486,5 +489,10 @@ test('shared answers settle every grouped source while separate declined dispute
   expect(checkRanking(emptyRanking(), result.required, result.context).problems).toContain('DISPUTE-4');
   const placed = placeRanking(emptyRanking(), result.required, result.context);
   expect(placed.yellow[0].title).toBe('Export fields');
+  box.write('artifacts/review-response-round-1.json', JSON.stringify([
+    { item: 'D-2', status: 'settled' }, { item: 'DECIDE-1', status: 'declined' }, { item: 'DECIDE-1', status: 'fixed' },
+  ]));
+  expect(inventory({ exec: box.exec, dir, changeFolder: folder }).required.flatMap(row => row.item.source))
+    .toEqual(['DECIDE-1', 'DECIDE-4', 'DISPUTE-1', 'DISPUTE-2', 'DISPUTE-3', 'DISPUTE-4']);
   expect(placed.yellow[0].links).toEqual([{ label: 'How the agent decided', target: 'log:DECIDE-4' }]);
 });

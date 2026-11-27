@@ -102,12 +102,26 @@ function choiceProblems(ranking: Ranking, required: RequiredItem[]): string[] {
   });
 }
 
-function disputeQuestions(disputes: Item[], found: Item): Question[] {
-  const questions = disputes.flatMap(dispute => dispute.questions ?? []);
-  if (!found.journeys?.length) return questions;
-  return [...questions, { prompt: 'Retest the affected journeys?', options: [
-    { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
-  ] }];
+function isSharedQuestion(question: Question): boolean {
+  const ids = new Set(question.options.map(option => option.id));
+  return !(ids.has('spec-edit') || ids.has('retest') || (ids.has('follow-up') && ids.has('drop')));
+}
+
+function repairDisputeQuestions(item: Item, disputes: Item[]): Question[] {
+  const unused = [...item.questions ?? []];
+  const own = disputes.flatMap(dispute => {
+    const index = unused.findIndex(question => matchesDisputeChoices(question, dispute));
+    return index < 0 ? dispute.questions ?? [] : unused.splice(index, 1);
+  });
+  const hasSharedSource = item.source.some(code => disputes.every(dispute => !dispute.source.includes(code)));
+  const shared = hasSharedSource ? unused.filter(question => !question.source && isSharedQuestion(question)) : [];
+  const retest = item.journeys?.length ? [unused.find(isRetestQuestion) ?? {
+    prompt: 'Retest the affected journeys?', options: [
+      { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
+    ],
+  }] : [];
+  if (hasSharedSource && shared.length + retest.length === 0) shared.push(standardQuestion(item.type));
+  return [...own, ...shared, ...retest];
 }
 
 export function bindDisputeQuestions(ranking: Ranking, required: RequiredItem[], repair = false): Ranking {
@@ -117,7 +131,7 @@ export function bindDisputeQuestions(ranking: Ranking, required: RequiredItem[],
       if (disputes.length === 0) return item;
       const current = item.questions ?? [];
       const valid = validDisputeQuestions(current, disputes, item);
-      const questions = repair && !valid ? disputeQuestions(disputes, item) : item.questions;
+      const questions = repair && !valid ? repairDisputeQuestions(item, disputes) : item.questions;
       return { ...item, questions: questions?.map((question, index) => ({ ...question, source: disputes[index]?.source[0] })) };
     });
   }
@@ -218,18 +232,33 @@ function repairCandidate(item: Item, context: RankingContext, permitted: (code: 
   return repairedItem({ ...candidate, source, links, evidence }, context);
 }
 
-function repairCandidates(ranking: Ranking, required: RequiredItem[], context: RankingContext) {
-  const identities = new Set<string>();
-  const used = new Set<string>();
-  const failures = new Set(required.flatMap(row => row.item.source.filter(isStepFailure)));
-  return entries(ranking).flatMap(({ tier, item }) => {
-    const candidate = repairCandidate(item, context, code => !isStepFailure(code) ||
-      (tier === 'red' && failures.has(code) && !used.has(code)));
-    if (!candidate || identities.has(itemIdentity(candidate))) return [];
-    for (const code of candidate.source.filter(isStepFailure)) used.add(code);
-    identities.add(itemIdentity(candidate));
-    return [{ tier, item: candidate }];
+function mergeFailureConcerns(placed: Ranking, candidate: Item): void {
+  const codes = candidate.source.filter(isStepFailure);
+  const related = placed.red.filter(item => codes.some(code => item.source.includes(code)));
+  placed.red = placed.red.filter(item => !related.includes(item));
+  const group = [...related, candidate];
+  const head = group[0];
+  placed.red.push({ ...head,
+    type: [...new Set(group.flatMap(item => item.type.split(',').map(type => type.trim())))].join(', '),
+    source: [...new Set(group.flatMap(item => item.source))],
+    detail: [...new Set(group.map(item => item.detail))].join('\n\n'),
+    links: [...new Map(group.flatMap(item => item.links).map(link => [link.target, link])).values()],
+    questions: [...new Map(group.flatMap(item => item.questions ?? []).map(question => [JSON.stringify(question), question])).values()],
+    journeys: group.flatMap(item => item.journeys ?? []),
+    evidence: group.find(item => item.evidence)?.evidence,
   });
+}
+
+function placeCandidates(placed: Ranking, ranking: Ranking, required: RequiredItem[], context: RankingContext): void {
+  const identities = new Set<string>();
+  const failures = new Set(required.flatMap(row => row.item.source.filter(isStepFailure)));
+  for (const { tier, item } of entries(ranking)) {
+    const candidate = repairCandidate(item, context, code => !isStepFailure(code) || failures.has(code));
+    if (!candidate || identities.has(itemIdentity(candidate))) continue;
+    if (candidate.source.some(isStepFailure)) mergeFailureConcerns(placed, candidate);
+    else placed[tier].push(candidate);
+    identities.add(itemIdentity(candidate));
+  }
 }
 
 export function placeRanking(ranking: Ranking, required: RequiredItem[], context = emptyContext): Ranking {
@@ -237,7 +266,7 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[], context
   const placed: Ranking = { red: [], orange: [], yellow: [],
     evidence: ranking?.evidence || 'No testing summary was supplied.',
     keyEvidence: picks.filter(pick => validPick(pick, context)).slice(0, 5) };
-  for (const { tier, item } of repairCandidates(ranking, required, context)) placed[tier].push(item);
+  placeCandidates(placed, ranking, required, context);
   for (const expected of required) {
     insertRequired(placed, { ...expected, item: repairedItem(expected.item, context) }, context);
   }

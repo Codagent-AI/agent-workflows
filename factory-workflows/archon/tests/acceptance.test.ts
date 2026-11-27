@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { stepFailures } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { endAcceptance, pushRecheck, unverifiedRows } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync, symlinkSync } from 'node:fs';
@@ -271,4 +274,33 @@ test('a recheck push reaches the remote branch',()=>{
   const bare=box.addBareOrigin();box.git('push','-q','--set-upstream','origin','HEAD');const head=box.commitFix();
   expect(pushRecheck(box.path('evidence')).ok).toBe(true);
   expect(box.gitIn(box.dir,'--git-dir',bare,'rev-parse',`refs/heads/${box.git('branch','--show-current')}`)).toBe(head);
+});
+
+test.each([true, false])('acceptance preserves its final round count after a failed retest (push stopped: %s)', push => {
+  put('acceptance-round-number.txt', '2');
+  if (push) endAcceptance(evidence, 'push refused', true);
+  finalize(box.exec, evidence, '3');
+  const line = push ? 'Acceptance stopped after round 3 because the push failed.' : 'Acceptance did not converge after 3 rounds.';
+  expect(JSON.parse(box.read('evidence/step-results.json')).acceptance.round).toBe(3);
+  expect(stepFailures(evidence)[0].failLine).toBe(line);
+  put('acceptance-round-number.txt', '3');
+  recordRetest(evidence, 2, false, 'retest failed');
+  expect(stepFailures(evidence)[0].failLine).toBe(line);
+});
+
+test('blocked CI wait repair pushes its commit before reporting the finalize blocker', () => {
+  const bare = box.addBareOrigin();
+  const head = box.commitFix('partially repaired');
+  const script = join(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const run = () => Bun.spawnSync([process.execPath, script], { cwd: box.dir, env: {
+    ...process.env, ARTIFACTS_DIR: evidence, INPUTS_OP: 'mark-ready', INPUTS_PUSH: 'true', INPUTS_BLOCKED: 'true',
+    INPUTS_REASON: 'CI still needs access', INPUTS_STEP: 'mark-ready-after-final-repair',
+  } });
+  const blocked = run();
+  expect(blocked.exitCode).toBe(0);
+  expect(JSON.parse(blocked.stdout.toString())).toMatchObject({ ok: false, problems: expect.stringContaining('CI still needs access') });
+  expect(box.gitIn(bare, 'rev-parse', 'feature')).toBe(head);
+  expect(JSON.parse(box.read('evidence/finalize-results.json'))['mark-ready-after-final-repair']).toMatchObject({ terminal: true });
+  box.git('remote', 'set-url', 'origin', box.path('missing.git'));
+  expect(run().exitCode).toBe(1);
 });

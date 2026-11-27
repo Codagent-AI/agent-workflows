@@ -96,7 +96,14 @@ class Element {
   children: Element[] = [];
   dataset: Record<string, string> = {};
   listeners = new Map<string, () => void>();
-  classList = { add: () => undefined };
+  classList = {
+    add: (name: string) => { this.className += ` ${name}`; },
+    contains: (name: string) => this.className.split(' ').includes(name),
+    toggle: (name: string, value: boolean) => {
+      this.className = [...this.className.split(' ').filter(part => part && part !== name), ...(value ? [name] : [])].join(' ');
+    },
+  };
+  prepend(child: Element) { this.children.unshift(child); }
   get textContent(): string { return this.text + this.children.map(child => child.textContent).join(''); }
   set textContent(value: string) { this.text = value; }
   byTag(tag: string): Element[] { return [...(this.tag === tag ? [this] : []), ...this.children.flatMap(child => child.byTag(tag))]; }
@@ -153,8 +160,8 @@ test('dynamic review markup keeps item content and recommendation out of the num
   expect(option?.children[1].find('rec')).toBeDefined();
   expect(querySelector('.rail > ol').find('dot')).toBeDefined();
   const gallery = main.children.find(child => child.id === 'acceptance-evidence');
-  expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 0', 'Acceptance round 2']);
-  expect(gallery?.find('thumb-label')?.textContent).toBe('Start');
+  expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 3', 'Acceptance round 1']);
+  expect(gallery?.find('thumb-label')?.textContent).toBe('Retest');
   expect(main.find('fields')).toBeUndefined();
   expect(main.find('total')?.children.map(child => child.textContent)).toEqual(['Total', '1', '2', '3', '4']);
   expect(main.children[0].children.map(child => child.tag)).toEqual(['div', 'ul', 'div', 'div']);
@@ -163,14 +170,16 @@ test('dynamic review markup keeps item content and recommendation out of the num
 test('placing a dispute grouped with a late commit retains a separate Retest question', () => {
   const commit = 'a'.repeat(40);
   const journey = { code: 'JOURNEY-1', title: 'Launch', commit };
-  const item = { type: 'Dispute, Late commit', title: 'Shared issue', detail: 'One cause', links: [{ label: 'Source', target: 'file.txt' }],
+  const shared = { prompt: 'Keep this integration?', options: [{ id: 'keep', label: 'Keep' }, { id: 'remove', label: 'Remove' }] };
+  const item = { type: 'Dispute, Late commit', questions: [shared], title: 'Shared issue', detail: 'One cause', links: [{ label: 'Source', target: 'file.txt' }],
     source: ['DISPUTE-1', commit], journeys: [journey] };
   const expected = { ...item, type: 'Dispute', source: ['DISPUTE-1'], journeys: [],
     specChange: true, questions: [disputeQuestion('')] };
   const context = { media: [], commands: [], dismissed: [], journeys: [journey.code], commits: [commit] };
   const placed = placeRanking({ ...emptyRanking(), orange: [item] }, [{ tier: 'red', item: expected }], context);
   expect(placed.red[0].questions?.map(question => question.options.map(option => option.id)))
-    .toEqual([['follow-up', 'drop'], ['retest', 'leave']]);
+    .toEqual([['follow-up', 'drop'], ['keep', 'remove'], ['retest', 'leave']]);
+  expect(placed.red[0].questions?.[1].prompt).toBe(shared.prompt);
 });
 
 test('review submission calls a receiver-sensitive fetch for both actions', async () => {
@@ -399,59 +408,24 @@ test('promoted yellow late commits preserve journeys and gain a Retest choice', 
   expect(placed.orange[0].questions?.flatMap(question => question.options.map(option => option.id))).toContain('retest');
 });
 
-test('command manifests validate whole lines, normalize excerpts, and reach ranking preparation', () => {
-  const box = createSandbox();
-  try {
-    const input = rankingFixture(box);
-    const base = 'artifacts/acceptance-commands/round-1';
-    const entry = { title: 'Check export', shows: 'Rejects input', revision: input.start, command: 'tool verify', excerpt: '  invalid\n  detail', output: 'ok.txt' };
-    box.write(`${base}/ok.txt`, '\u001b[31m  invalid\u001b[0m\r\n  detail\r\nfull only\r\n');
-    const twenty = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
-    box.write(`${base}/long.txt`, `${twenty}\nline 20\n`);
-    const bad = [{ ...entry, excerpt: 'invalid' }, { ...entry, output: 'missing.txt' },
-      { ...entry, output: 'long.txt', excerpt: `${twenty}\nline 20` }, { output: 'bad.txt' }];
-    box.write(`${base}/manifest.json`, JSON.stringify([entry, { ...entry, output: 'long.txt', excerpt: twenty }, ...bad]));
-    box.write('artifacts/acceptance-screenshots/round-2/screen.png', 'example');
-    box.write('artifacts/acceptance-screenshots/round-2/manifest.json', JSON.stringify([
-      { file: 'screen.png', title: 'Screen', shows: 'Shows export', revision: input.start, alt: 'Export' }, null,
-    ]));
-    const media = reviewMedia(input.dir);
-    expect(media.commands.map(command => command.excerpt)).toEqual([entry.excerpt, twenty]);
-    expect(media.commands[0]).toMatchObject({ file: 'acceptance-commands/round-1/ok.txt', round: 1 });
-    expect(media.problems).toHaveLength(5);
-    expect(media.problems.map(problem => problem.path)).toEqual(expect.arrayContaining([
-      box.path(`${base}/missing.txt`), box.path(`${base}/long.txt`), box.path(`${base}/manifest.json`),
-    ]));
-    const script = '../.archon/workflows/codagent/implement-change/scripts/finish.ts';
-    const result = Bun.spawnSync([process.execPath, new URL(script, import.meta.url).pathname], { cwd: box.dir, env: {
-      ...process.env, ARTIFACTS_DIR: input.dir, INPUTS_OP: 'prepare-ranking', INPUTS_CHANGE_FOLDER: input.changeFolder,
-    } });
-    expect(result.exitCode).toBe(0);
-    const evidence = JSON.parse(box.read('artifacts/review/evidence.json'));
-    expect(evidence.map((value: { round: number }) => value.round)).toEqual([2, 1, 1]);
-    expect(JSON.parse(box.read('artifacts/review/media-problems.json'))).toHaveLength(5);
-    expect(reviewMedia(box.path('empty'))).toMatchObject({ commands: [], shots: [], problems: [] });
-  } finally { box.dispose(); }
-});
-
 test('mixed evidence renders a safe, ordered page and mirrors command comments', () => {
   const file = 'acceptance-commands/round-1/output.txt';
-  const command = { kind: 'command', file, round: 1, command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
+  const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
   const forgeBase = 'https://github.com/owner/repo';
   const href = `${forgeBase}/blob/reviewed/file.txt#L2`;
   const red = { type: 'Failure', title: 'The `verify` command fails', source: ['failure:acceptance'], failLine: 'Acceptance stopped.',
     questions: [{ source: 'hidden-id', prompt: 'How should export work?', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }],
-    detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [local](file:///tmp/private)`,
+    detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [lookalike](https://github.com/owner/repo-lookalike/blob/reviewed/file.txt) [local](file:///tmp/private)`,
     evidence: command, links: [] };
   const yellow = { ...red, type: 'Agent decision', title: 'Use the default', evidence: undefined, failLine: undefined,
-    source: ['DECIDE-1'], links: [{ label: 'What changed', href }] };
+    source: ['DECIDE-1'], links: [{ label: 'What changed', href }, { label: 'Why', href: `${href}0` }] };
   const data = { title: 'Export settings', round: 2, head: 'reviewed', run: 'review-run', repository: 'owner/repo', pullRequest: 7,
-    pullRequestUrl: `${forgeBase}/pull/7`, logs: { decisions: href }, forgeBase, summary: '', recap: [], size: null,
+    pullRequestUrl: `${forgeBase}/pull/7`, logs: { decisions: href, disputes: `${href}0` }, forgeBase, summary: '', recap: [], size: null,
     red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
     screenshots: [{ file: 'screen.png', href: 'screen.png', title: 'Preview', shows: 'Shows export', round: 2 }] };
   const page = render(data);
   const main = page('main');
-  expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'acceptance-evidence', 'concerns']);
+  expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
   expect(page('.meta-row').find('red')).toBeDefined();
   expect(page('#send-status').textContent).toContain('1 high concern');
   page('#send-actions').find('merge')?.onclick?.();
@@ -459,8 +433,13 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   const medium = render({ ...data, red: [], orange: [red] });
   expect(medium('.meta-row').find('orange')).toBeDefined();
   expect(medium('#send-status').textContent).toContain('1 medium concern');
-  expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href]);
+  expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href, `${href}0`]);
   expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);
+  expect(main.byTag('article').map(article => article.children[0].textContent)).toEqual(['1', '2']);
+  expect(main.find('tier-head')?.find('dot')?.className).toBe('dot red');
+  expect(main.find('tier-head')?.find('c')?.textContent).toBe('(1)');
+  expect(main.find('links')?.byTag('a').map(anchor => anchor.textContent)).toEqual(['What changed', 'Why']);
+  expect(main.find('links-label')?.textContent).toBe('On GitHub');
   const concern = main.find('item-body');
   expect(concern?.children.map(child => child.className)).toEqual(['tags', '', 'fail-line', 'prose', 'cmd', 'ask']);
   expect(concern?.find('ask')?.textContent).not.toContain('hidden-id');
@@ -471,7 +450,16 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(page('.rail > ol').byTag('code').map(code => code.textContent)).toEqual(['verify']);
   expect(main.byTag('pre').map(entry => entry.textContent)).toEqual(Array(3).fill(command.excerpt));
   expect(main.byTag('details')).toHaveLength(1);
-  const comments = [main.children[1].byTag('textarea')[0], main.children[2].byTag('textarea')[0]];
+  const key = main.children[1];
+  const gallery = key.find('all-shots');
+  expect(gallery?.children[0].textContent).toBe('All acceptance evidence (1 screenshot, 1 command)');
+  expect(gallery?.byTag('h4').map(heading => heading.textContent)).toEqual(['Acceptance round 3', 'Acceptance round 2 · decafbad']);
+  expect(gallery?.byTag('h5').map(heading => heading.textContent)).toEqual(['Screenshots (1)', 'Commands (1)']);
+  expect(key.find('cmd-head')?.find('cmd-meta')?.textContent).toBe('Round 2 · decafbad');
+  expect(key.find('cmd-head')?.byTag('p')[0].textContent).toBe(command.shows);
+  expect(key.find('cmd-head')?.find('comment-btn')).toBeDefined();
+  expect(key.find('prompt')?.textContent).toBe('$');
+  const comments = [key.byTag('textarea')[0], main.byTag('details')[0].byTag('textarea')[0]];
   expect(comments[0].hidden).toBe(true);
   main.children[1].find('comment-btn')?.onclick?.();
   expect(comments[0].hidden).toBe(false);
@@ -479,13 +467,14 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   comments[0].listeners.get('input')?.();
   expect(comments[1].value).toBe(comments[0].value);
   expect(comments[1].hidden).toBe(false);
+  expect(main.byTag('details')[0].classList.contains('has-comment')).toBe(true);
   const answer = collectReview({ action: 'feedback', round: 2, head: data.head, rows: [], screenshots: [],
     commands: [command, command], comments: new Map([[file, comments[1].value]]) });
   expect('commandComments' in answer && answer.commandComments).toEqual([{ ref: file, round: 1, comment: comments[0].value }]);
   const answered = render(data, answer)('main');
   expect(answered.children[1].byTag('textarea')[0].value).toBe(comments[0].value);
   const commandOnly = render({ ...data, red: [], yellow: [], screenshots: [], wait: false })('main');
-  expect(commandOnly.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'acceptance-evidence', 'concerns']);
+  expect(commandOnly.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
   const empty = render({ ...data, red: [], yellow: [], commands: [], screenshots: [], keyEvidence: [], wait: false });
   expect(empty('main').children.map(child => child.id)).toEqual(['summary', 'concerns']);
   expect(empty('main').find('empty')).toBeDefined();

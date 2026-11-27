@@ -45,7 +45,7 @@ function plain(text: string): string {
 }
 
 function matchingExcerpt(excerpt: string, fullOutput: string): boolean {
-  return excerpt.split('\n').length <= 20 && `\n${plain(fullOutput)}\n`.includes(`\n${excerpt}\n`);
+  return excerpt.trim() !== '' && excerpt.split('\n').length <= 20 && `\n${plain(fullOutput)}\n`.includes(`\n${excerpt}\n`);
 }
 
 function readCommand(folder: string, entry: CommandManifest, problems: ManifestProblem[]): CommandEvidence[] {
