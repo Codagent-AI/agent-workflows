@@ -81,7 +81,8 @@ export function commitLogs(exec: Exec, dir: string, name: string): CheckResult {
 
 function syncFile(exec: Exec, path: string, added: { text: string; copiedId?: string }[], prefix: string) {
   const original = existsSync(path) ? readText(path) : undefined;
-  const committed = output(exec, 'git', ['show', `HEAD:${path}`]) ?? '';
+  const saved = exec('git', ['show', `HEAD:${path}`]);
+  const committed = saved.status === 0 ? saved.stdout : '';
   const current = original ?? committed;
   const key = (entry: string) => entry.replace(/^## (?:DECIDE|DISPUTE|D|DP)-\d+: /, '## ');
   const currentIds = new Set(entries(current).map(entryIdentity));
@@ -97,8 +98,11 @@ function syncFile(exec: Exec, path: string, added: { text: string; copiedId?: st
     return true;
   });
   const text = appendEntries(restored, numberNewEntries(restored, missing, prefix));
-  if (text.trim() === committed.trim()) return [];
-  writeText(path, text);
+  if (text.trim() === committed.trim()) {
+    if (saved.status === 0 && (original === undefined || text !== current)) writeText(path, committed);
+    return [];
+  }
+  if (text !== original) writeText(path, text);
   return [{ path, original, untracked: output(exec, 'git', ['ls-files', '--', path]) === '' }];
 }
 

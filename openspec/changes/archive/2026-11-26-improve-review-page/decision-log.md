@@ -271,3 +271,13 @@ Settled in review round 1
 - **Alternatives** — Change the current workflow or drop the proposed concern.
 - **Rationale** — The selected option explicitly schedules the work after merge.
 - **What breaks if wrong** — Implementing the concern now would alter the approved behavior of this change. Losing the follow-up would leave the failure visible only in run diagnostics.
+
+## DECIDE-25: Restore committed log content even when synchronization needs no commit
+
+- **Step** — Fix the second-round pull request review finding in finalize.
+- **Question** — How should synchronization handle a pending entry already in HEAD when its worktree copy is incomplete or missing?
+- **Requirement** — Preserve committed log entries and their codes. Synchronization of entries already in HEAD should make no new commit.
+- **Decision** — Compare the synchronized content with HEAD to decide whether to commit. If restoration is needed and no commit is required, write the exact HEAD contents to the worktree. Leave an already complete copy alone.
+- **Alternatives** — Skip the worktree repair whenever the synchronized content matches HEAD, or force a new commit for a worktree-only restoration.
+- **Rationale** — A worktree repair and a new commit serve different purposes. The targeted regression covered a missing entry and an entirely missing file. Both now restore the committed contents, advance the sync count and leave HEAD and the index unchanged. See `fix-pr-log-restore-before.log` and `fix-pr-log-restore.log`.
+- **What breaks if wrong** — Review inventory can omit a committed decision because it reads the worktree, even after synchronization advances its saved entry count.

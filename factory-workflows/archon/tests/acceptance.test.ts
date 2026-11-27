@@ -357,6 +357,25 @@ test('log sync restores committed codes and numbers only new decisions', () => {
   expect(committed).toContain(first);
 });
 
+test.each([false, true])('log sync restores a committed duplicate without a commit (file removed: %s)', removed => {
+  const folder = 'openspec/changes/demo';
+  const path = `${folder}/decision-log.md`;
+  const first = '## DECIDE-1: Export defaults\nReason: Keep the CLI predictable.';
+  const committed = `${first}\n\n## DECIDE-2: Share settings\nReason: Reuse the file.\n`;
+  box.write(path, committed);
+  box.git('add', path);
+  box.commit('commit existing decisions');
+  const head = box.head();
+  if (removed) rmSync(box.path(path));
+  else box.write(path, `${first}\n`);
+  put('decision-log.md', '## Share settings\nReason: Reuse the file.\n');
+  expect(syncLogs(box.exec, evidence, folder, 'demo').ok).toBe(true);
+  expect(box.read(path)).toBe(committed);
+  expect(box.head()).toBe(head);
+  expect(box.git('status', '--porcelain', '--', path)).toBe('');
+  expect(JSON.parse(box.read('evidence/review/log-state.json')).decision).toBe(1);
+});
+
 test('a decision grouped with a spec-change dispute needs a shared question', () => {
   const own = disputeQuestion('');
   const dispute = { type: 'Dispute', title: 'Default export', detail: 'Change the spec.', specChange: true,
