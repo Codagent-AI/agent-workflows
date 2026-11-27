@@ -10,6 +10,8 @@
   const commands = data.commands ?? [];
   const tierNames = { red: 'High', orange: 'Medium', yellow: 'Low' };
   for (const entry of stored?.commandComments ?? []) comments.set(entry.ref, entry.comment);
+  const storedNote = (stored?.answers ?? []).find(entry => entry.item === 'note')?.note;
+  if (storedNote) comments.set('#summary', storedNote);
   let sending = false;
   const openComments = new Set();
   let sent = Boolean(stored);
@@ -101,19 +103,20 @@
   }
 
   function renderSummary() {
-    const { block } = section('summary', 'Summary');
+    const { block } = section('summary', 'Description');
     if (data.recap.length) {
-      const recap = node('ul');
+      const recap = node('div', '', 'prose');
+      const list = node('ul');
       for (const entry of data.recap) {
-        const row = node('li');
-        row.append(story(entry.note));
-        if (entry.href) row.append(link(entry.label, entry.href));
-        recap.append(row);
+        const row = inline(node('li'), entry.note);
+        if (entry.href) row.append(' ', link(entry.label, entry.href));
+        list.append(row);
       }
+      recap.append(node('h3', `Since round ${data.round - 1}`), list);
       block.append(recap);
     }
     block.append(prose(data.summary));
-    if (!data.size) { block.append(node('p', 'Change size unavailable.')); return; }
+    if (!data.size) { block.append(node('p', 'Change size unavailable.'), summaryComment()); return; }
     const table = node('table');
     const wrap = node('div', '', 'table-wrap size');
     wrap.append(table);
@@ -122,13 +125,36 @@
     const keys = ['files', 'added', 'modified', 'removed'];
     const total = { language: 'Total', ...sizeTotals(data.size) };
     const body = table.createTBody();
-    for (const values of [...data.size, total]) {
+    const sorted = [...data.size].sort((a, b) => b.added - a.added || b.files - a.files);
+    for (const values of [...sorted, total]) {
       const row = body.insertRow();
       if (values === total) row.className = 'total';
       row.append(node('td', values.language));
       for (const key of keys) row.append(node('td', String(values[key]), 'c'));
     }
     block.append(wrap);
+    block.append(summaryComment());
+  }
+
+  function summaryComment() {
+    const footer = node('div', '', 'summary-comment');
+    const field = node('textarea', '', 'note');
+    field.id = 'summary-comment';
+    field.setAttribute('aria-label', 'Comment on the summary');
+    field.placeholder = 'Comment on the summary, the change size, or anything without its own comment box';
+    field.disabled = sent || sending || !data.wait;
+    field.value = comments.get('#summary') ?? '';
+    let editing = false;
+    const edit = button('Comment on the summary', 'comment-btn', () => { editing = true; refresh(); field.focus(); });
+    const refresh = () => {
+      field.hidden = !field.value && !editing;
+      edit.hidden = editing || Boolean(field.value) || !data.wait || sent;
+    };
+    openComments.add(field);
+    field.addEventListener('input', () => { comments.set('#summary', field.value); });
+    footer.append(edit, field);
+    refresh();
+    return footer;
   }
 
   const commentMarks = new Map();
@@ -159,26 +185,49 @@
     const position = node('p', '', 'viewer-pos');
     const previous = button('Previous', '', () => { index -= 1; refresh(); });
     const next = button('Next', '', () => { index += 1; refresh(); });
-    bar.append(position, previous, next, button('Close', '', () => dialog.close()));
     const stage = node('div', '', 'viewer-stage');
     const image = node('img');
     stage.append(image);
+    // Fit sizes the screenshot to the stage's width; a taller one scrolls. Zoom scales the fit.
+    let zoom = 1;
+    const zoomLevel = node('span', '100%', 'viewer-zoom');
+    const zoomOut = button('−', '', () => setZoom(zoom / 1.5));
+    const zoomIn = button('+', '', () => setZoom(zoom * 1.5));
+    const fit = button('Fit', '', () => setZoom(1));
+    zoomOut.setAttribute('aria-label', 'Zoom out');
+    zoomIn.setAttribute('aria-label', 'Zoom in');
+    const zoomGroup = node('div', '', 'viewer-zoom-group');
+    zoomGroup.append(zoomOut, zoomLevel, zoomIn, fit);
+    bar.append(position, zoomGroup, previous, next, button('Close', '', () => dialog.close()));
+    function fitWidth() {
+      return Math.max(120, stage.clientWidth - 24);
+    }
+    function setZoom(value) {
+      zoom = Math.min(8, Math.max(0.25, value));
+      const width = Math.round(fitWidth() * zoom);
+      image.style.width = `${width}px`;
+      stage.classList.toggle('zoomed', width > stage.clientWidth - 24);
+      zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
+    }
+    image.addEventListener('load', () => setZoom(1));
+    stage.addEventListener('wheel', event => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      setZoom(zoom * Math.exp(-event.deltaY * 0.01));
+    }, { passive: false });
+    const onResize = () => setZoom(zoom);
+    window.addEventListener('resize', onResize);
     const info = node('div', '', 'viewer-info');
     const title = node('h3');
     const detail = node('div');
-    const fullSize = button('Open full size', 'comment-btn', () => {
-      const expanded = stage.classList.toggle('full-size');
-      stage.scrollLeft = 0;
-      stage.scrollTop = 0;
-      fullSize.textContent = expanded ? 'Fit to view' : 'Open full size';
-    });
     const comment = node('textarea', '', 'note');
     comment.setAttribute('aria-label', 'Screenshot comment');
     comment.disabled = sent || sending;
     openComments.add(comment);
-    info.append(title, detail, fullSize, comment);
+    info.append(title, detail, comment);
     function refresh() {
       const current = shots[index];
+      zoom = 1;
       image.src = current.href;
       stage.scrollLeft = 0;
       stage.scrollTop = 0;
@@ -197,7 +246,7 @@
       for (const update of commentMarks.get(current.file) ?? []) update();
     });
     dialog.append(bar, stage, info);
-    dialog.addEventListener('close', () => { openComments.delete(comment); dialog.remove(); });
+    dialog.addEventListener('close', () => { window.removeEventListener('resize', onResize); openComments.delete(comment); dialog.remove(); });
     document.body.append(dialog);
     refresh();
     dialog.showModal();
@@ -210,6 +259,8 @@
     image.src = shot.href;
     image.alt = shot.alt || shot.title;
     control.setAttribute('aria-label', `Enlarge ${shot.title}`);
+    // A tall full-page capture shows its top at full width instead of shrinking to a sliver.
+    image.addEventListener('load', () => control.classList.toggle('tall', image.naturalHeight > image.naturalWidth * 3));
     control.append(image);
     return control;
   }
@@ -336,20 +387,54 @@
   }
 
   function readRow(row) {
-    return { item: row.item, question: row.question, required: row.required,
+    return { item: row.item, question: row.question, required: row.required, options: row.options,
       option: row.field.querySelector('input:checked')?.value ?? '', other: row.other.value, note: row.note.value };
+  }
+
+  // Send feedback stays clickable. A click with questions unanswered marks each one and names its concern.
+  let checked = false;
+  function pendingRows() {
+    return rows.filter(row => missingAnswers([readRow(row)]) > 0);
   }
 
   function updateStatus() {
     if (!feedback || sent || sending) return;
-    const missing = missingAnswers(rows.map(readRow));
-    feedback.disabled = missing > 0;
-    const pending = rows.filter(row => missingAnswers([readRow(row)]) > 0);
-    const counts = tierCounts(tier => new Set(pending.filter(row => row.tier === tier).map(row => row.concern)).size);
-    status.textContent = missing ? `Unanswered questions in ${counts}.` : '';
+    const pending = pendingRows();
+    for (const row of rows) {
+      const missing = checked && pending.includes(row);
+      const other = readRow(row).option === 'other';
+      row.field.classList.toggle('missing', missing);
+      row.other.classList.toggle('missing', missing && other);
+      row.hint.hidden = !missing;
+      row.hint.textContent = other ? 'Write your answer, or choose another option.' : 'Choose an answer.';
+    }
+    status.classList.toggle('error', checked && pending.length > 0);
+    status.textContent = '';
+    if (!pending.length) return;
+    if (!checked) {
+      const counts = tierCounts(tier => new Set(pending.filter(row => row.tier === tier).map(row => row.concern)).size);
+      status.textContent = `Unanswered questions in ${counts}.`;
+      return;
+    }
+    const concerns = [...new Map(pending.map(row => [row.concern, row.position])).entries()];
+    status.append(`Answer the ${pending.length === 1 ? 'question' : 'questions'} in ${concerns.length === 1 ? 'concern' : 'concerns'} `);
+    concerns.forEach(([id, position], index) => {
+      if (index) status.append(index === concerns.length - 1 ? ' and ' : ', ');
+      status.append(link(position, '#' + id));
+    });
+    status.append(' before sending.');
   }
 
-  function questionField(item, question, number, tier, concern) {
+  function sendFeedback() {
+    checked = true;
+    updateStatus();
+    const first = pendingRows()[0];
+    if (!first) { void send('feedback'); return; }
+    first.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    (first.field.querySelector('input:checked') ?? first.field.querySelector('input'))?.focus({ preventScroll: true });
+  }
+
+  function questionField(item, question, number, tier, concern, position) {
     const owned = new Set(item.questions.map(entry => entry.source).filter(Boolean));
     const itemCode = question.source ?? item.source.find(source => !owned.has(source) && !item.unlinkedSources?.includes(source)) ?? item.source[0];
     const field = node('fieldset', '', 'q');
@@ -389,8 +474,10 @@
     note.placeholder = 'Optional note';
     note.setAttribute('aria-label', 'Optional note');
     note.value = answer?.note ?? '';
-    field.append(other, note);
-    rows.push({ field, concern, item: itemCode, question: number, required: tier !== 'yellow', tier, other, note });
+    const hint = node('p', '', 'q-missing');
+    hint.hidden = true;
+    field.append(other, hint, note);
+    rows.push({ field, concern, position, item: itemCode, question: number, required: tier !== 'yellow', tier, other, note, hint, options: question.options });
     field.addEventListener('input', updateStatus);
     return field;
   }
@@ -414,7 +501,7 @@
     body.append(prose(item.detail));
     if (item.evidence) body.append(commandEvidence(item.evidence));
     const ask = node('div', '', 'ask');
-    item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier, id)));
+    item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier, id, number)));
     body.append(ask);
     if (item.links?.length) {
       const links = node('div', '', 'links');
@@ -466,7 +553,7 @@
 
   async function send(action) {
     if (sending || sent) return;
-    const answer = collectReview({ action, round: data.round, head: data.head, rows: rows.map(readRow), screenshots: data.screenshots, commands, comments });
+    const answer = collectReview({ action, round: data.round, head: data.head, rows: rows.map(readRow), screenshots: data.screenshots, commands, comments, note: comments.get('#summary') ?? '' });
     sending = true;
     for (const row of rows) row.field.disabled = true;
     for (const comment of openComments) comment.disabled = true;
@@ -482,6 +569,7 @@
     for (const row of rows) row.field.disabled = false;
     for (const comment of openComments) comment.disabled = false;
     updateStatus();
+    if (feedback) feedback.disabled = false;
     if (mergeButton) mergeButton.disabled = false;
     status.textContent = result.kind === 'stale' ? 'The run is not waiting for this page.' : 'Cannot send from here.';
     if (result.kind === 'copy') {
@@ -550,7 +638,7 @@
     if (stored.note) status.append(story(stored.note));
   } else if (data.wait) {
     feedback = node('button', 'Send feedback', 'send');
-    feedback.onclick = () => { void send('feedback'); };
+    feedback.onclick = sendFeedback;
     actions.append(feedback);
     if (data.merge) {
       mergeButton = node('button', 'Merge', 'merge');

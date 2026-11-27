@@ -263,7 +263,8 @@ just tested. That file is the diff base for the next pass.
 
 For any UI, store screenshots under `<evidence-directory>/acceptance-screenshots/` with the behavior
 demonstrated, what the reviewer should notice, the tested SHA, and a concise text equivalent.
-Screenshots support an observation; they are not proof on their own.
+Screenshots support an observation; they are not proof on their own. Capture them at twice the
+pixel density, such as a device scale factor of 2, so a person can read them when zoomed in.
 
 ## After a fix
 

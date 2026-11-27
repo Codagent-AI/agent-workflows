@@ -16,7 +16,9 @@ import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type 
 import { reviewMedia } from './review-media.ts';
 import { refreshBase } from './review-revisions.ts';
 import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
+import { settleQuestions } from './review-questions.ts';
 import { currentPage, publishPackage } from './publish-review.ts';
+import { flagItems, pageItems, passingRewrite, readerItems, readerNotes, type Flag } from './review-reader.ts';
 import { outcomesPath, startRound } from './review-round.ts';
 import { abortMerge, checkResponse, finishMerge, mergeBase, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, type StepResult, writeText } from './run-files.ts';
@@ -24,7 +26,7 @@ interface FinishInputs {
   op: string; name: string; folder: string; blocked: boolean; reason: string;
   result: string; previous: string; status: string; step: string;
   /** False when stop_after is acceptance: the run ends after the acceptance rounds. */
-  finish?: boolean; push?: boolean; strict?: boolean;
+  finish?: boolean; push?: boolean; strict?: boolean; review?: boolean;
   answer?: string; mode?: string; round?: number; wait?: boolean; run?: string; archonUrl?: string; archiveNeeded?: boolean;
 }
 export function finishInputs(env: NodeJS.ProcessEnv): FinishInputs {
@@ -37,7 +39,7 @@ export function finishInputs(env: NodeJS.ProcessEnv): FinishInputs {
   run: env.WORKFLOW_ID, archonUrl: env.INPUTS_ARCHON_URL,
   archiveNeeded: env.INPUTS_ARCHIVE_NEEDED !== 'false',
   finish: env.INPUTS_STOP_AFTER !== 'acceptance',
-  push: env.INPUTS_PUSH === 'true', strict: env.INPUTS_STRICT === 'true' };
+  push: env.INPUTS_PUSH === 'true', strict: env.INPUTS_STRICT === 'true', review: env.INPUTS_REVIEW !== 'false' };
 }
 function archiveNode(input: FinishInputs, dir: string): unknown {
   const args = { exec: runCommand, dir, name: input.name, round: input.round };
@@ -80,15 +82,15 @@ function ciNode(input: FinishInputs, dir: string): unknown {
   }
   return runCiWait(input, dir, cycle);
 }
-export function rankingForPublication(input: InventoryInput): Ranking {
+export function rankingForPublication(input: InventoryInput, review = true): Ranking {
   const saved = readJson<Ranking | null>(join(input.dir, 'review-attention.json'), null);
   if (saved) return saved;
   const inv = inventory(input);
-  return placeRanking(emptyRanking(), inv.required, inv.context);
+  return settleQuestions(placeRanking(emptyRanking(), inv.required, inv.context), review);
 }
 function publishNode(input: FinishInputs, dir: string) {
   if (input.mode === 'stale') return { ...currentPage(dir, input.reason), succeeded: false };
-  const ranking = rankingForPublication({ exec: runCommand, dir, changeFolder: input.folder });
+  const ranking = rankingForPublication({ exec: runCommand, dir, changeFolder: input.folder }, input.review);
   return publishPackage(defaultTools(), { dir, folder: input.folder, ranking },
     { round: input.round ?? 1, wait: input.wait ?? true, run: input.run ?? '', archonUrl: input.archonUrl ?? '' });
 }
@@ -108,11 +110,48 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
   const ranking = JSON.parse(input.result) as Ranking;
   if (input.op === 'place-ranking') {
-    writeJson(join(dir, 'review-attention.json'), placeRanking(ranking, inv.required, inv.context)); return pass();
+    writeJson(join(dir, 'review-attention.json'), settleQuestions(placeRanking(ranking, inv.required, inv.context), input.review)); return pass();
   }
   const checked = checkRanking(ranking, inv.required, inv.context);
-  if (checked.ok) writeJson(join(dir, 'review-attention.json'), bindDisputeQuestions(ranking, inv.required));
+  if (checked.ok) writeJson(join(dir, 'review-attention.json'), settleQuestions(bindDisputeQuestions(ranking, inv.required), input.review));
   return checked;
+}
+// The reader check never fails its node: without a usable result the page publishes the ranking it has.
+const skipped = (step: string, error: unknown) => process.stderr.write(`reader check: ${step} skipped: ${String(error)}\n`);
+function prepareReader(input: FinishInputs, dir: string, ranking: Ranking | null) {
+  const skip = { ready: false, items: '', proposal: '' };
+  if (!ranking || pageItems(ranking).length === 0) return skip;
+  try {
+    const items = join(dir, 'review/reader-items.md');
+    writeText(items, `${readerItems(ranking)}\n`);
+    return { ready: true, items, proposal: join(input.folder, 'proposal.md') };
+  } catch (error) { skipped('prepare-reader', error); return skip; }
+}
+function flagReader(input: FinishInputs, dir: string, ranking: Ranking | null) {
+  try {
+    const reader = JSON.parse(input.result);
+    if (!Array.isArray(reader?.items)) skipped('flag-items', 'the reader returned no items');
+    const flags = ranking ? flagItems(ranking, reader) : [];
+    writeJson(join(dir, 'review/reader-flags.json'), flags);
+    return { flagged: flags.length > 0, notes: readerNotes(flags) };
+  } catch (error) { skipped('flag-items', error); return { flagged: false, notes: '' }; }
+}
+// A rewrite changes wording only, so it is checked as leniently as the ranking it rewrites.
+function applyReaderRewrite(input: FinishInputs, dir: string, ranking: Ranking | null): CheckResult {
+  if (!ranking) return fail('no ranking to rewrite');
+  const flagged = readJson<Flag[]>(join(dir, 'review/reader-flags.json'), []).map(flag => flag.number);
+  const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
+  const next = passingRewrite(ranking, JSON.parse(input.result).items, flagged, candidate => checkRanking(candidate, inv.required, inv.context, true).ok);
+  if (next === ranking) return fail('no rewrite passed the ranking check');
+  writeJson(join(dir, 'review/ranking-before-rewrite.json'), ranking);
+  writeJson(join(dir, 'review-attention.json'), next);
+  return pass();
+}
+function readerNode(input: FinishInputs, dir: string): unknown {
+  const ranking = readJson<Ranking | null>(join(dir, 'review-attention.json'), null);
+  if (input.op === 'prepare-reader') return prepareReader(input, dir, ranking);
+  if (input.op === 'flag-items') return flagReader(input, dir, ranking);
+  return applyReaderRewrite(input, dir, ranking);
 }
 function readyNode(input: FinishInputs, dir: string): CheckResult {
   if (input.push) checkPush(acceptancePush(runCommand, 'CI wait repair'), true, input.blocked ? input.reason : '');
@@ -176,6 +215,9 @@ function dispatch(input: FinishInputs, dir: string): unknown {
     case 'push-recheck': return pushRecheck(dir, input.strict, input.blocked ? input.reason : '');
     case 'publish-review-package': return input.finish === false ? endedAfterAcceptance(dir) : publishNode(input, dir);
     case 'prepare-ranking': return prepareRanking(input, dir);
+    case 'prepare-reader':
+    case 'flag-items':
+    case 'apply-rewrite': return readerNode(input, dir);
     case 'commit-logs': return commitLogs(runCommand, dir, input.name);
     case 'sync-logs': return syncLogs(runCommand, dir, input.folder, input.name);
     case 'archive-change':

@@ -49,6 +49,7 @@ record-finalize: {"ok":true,"problems":""}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
 rank-review: {"red":[],"orange":[],"yellow":[],"evidence":"passed","keyEvidence":[]}
 check-ranking: {"ok":true,"problems":""}
+prepare-reader: {"ready":false,"items":"","proposal":""}
 exec-code: true
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 push-recheck: {"ok":true,"problems":""}

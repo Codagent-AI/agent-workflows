@@ -46,6 +46,11 @@ record-finalize: {"ok":true,"problems":""}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
 rank-review: {"red":[],"orange":[],"yellow":[],"evidence":"passed","keyEvidence":[]}
 check-ranking: {"ok":true,"problems":""}
+prepare-reader: {"ready":true,"items":"/tmp/reader-items.md","proposal":"openspec/changes/archive/2026-11-16-valid-change/proposal.md"}
+read-review: {"items":[{"number":1,"asks":"","options":[],"if_wrong":"","unclear":["checker floor"]}]}
+flag-items: {"flagged":true,"notes":"Item 1: Title\n- Could not understand: \"checker floor\""}
+rewrite-items: {"items":[{"number":1,"title":"Rewritten","detail":"Plain words","questions":[],"links":[]}]}
+apply-rewrite: {"ok":true,"problems":""}
 start-round: {"round":2,"mode":"feedback","reason":"","change_folder":"openspec/changes/archive/2026-11-16-valid-change","archive_needed":false,"retest":false,"journeys":"[]","answers_file":"fixture-saved-answers.json","review_head":"2222222222222222222222222222222222222222","work":true,"publish":true}
 publish-review-package: {"succeeded":true,"page":"review-page-round-2.html","message":"Review round 2: fixture"}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
@@ -78,6 +83,8 @@ fixture:
     - final-ci
     - record-finalize
     - rank-review
+    - read-review
+    - rewrite-items
     - publish-review-package
     - prepare-feedback-review
     - feedback-review

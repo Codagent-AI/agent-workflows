@@ -1725,7 +1725,7 @@ nodes:
         script: "finish"
         runtime: "bun"
         timeout: 1200000
-        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$rank-review.output","previous":"","status":"","step":"check-ranking","previous_blocked":false,"op":"check-ranking"}
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$rank-review.output","previous":"","status":"","step":"check-ranking","previous_blocked":false,"review":"$validate-inputs.output.review","op":"check-ranking"}
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
       - id: "repair-ranking"
@@ -1745,7 +1745,7 @@ nodes:
         script: "finish"
         runtime: "bun"
         timeout: 1200000
-        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"recheck-ranking","previous_blocked":false,"op":"check-ranking"}
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"recheck-ranking","previous_blocked":false,"review":"$validate-inputs.output.review","op":"check-ranking"}
         when: "$start-round.output.publish == 'true' && $check-ranking.output.ok == 'false'"
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1755,18 +1755,70 @@ nodes:
         script: "finish"
         runtime: "bun"
         timeout: 1200000
-        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"place-ranking","previous_blocked":false,"op":"place-ranking"}
+        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"$repair-ranking.output","previous":"","status":"","step":"place-ranking","previous_blocked":false,"review":"$validate-inputs.output.review","op":"place-ranking"}
         when: "$start-round.output.publish == 'true' && $recheck-ranking.output.ok == 'false'"
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
+      - id: "prepare-reader"
+        depends_on: ["check-ranking","recheck-ranking","place-ranking"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.publish == 'true'"
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"op":"prepare-reader","change_folder":"$record-archive.output.change_folder"}
+        output_format: {"type":"object","properties":{"ready":{"type":"boolean"},"items":{"type":"string"},"proposal":{"type":"string"}},"required":["ready","items","proposal"],"additionalProperties":false}
+
+      - id: "read-review"
+        depends_on: ["prepare-reader"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.publish == 'true' && $prepare-reader.output.ready == 'true'"
+        model: ["@reviewer","medium"]
+        context: "fresh"
+        mutates_checkout: false
+        command: "read-review"
+        with: {"items":"$prepare-reader.output.items","proposal":"$prepare-reader.output.proposal"}
+        output_format: {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"number":{"type":"integer"},"asks":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"does":{"type":"string"}},"required":["label","does"],"additionalProperties":false}},"if_wrong":{"type":"string"},"unclear":{"type":"array","items":{"type":"string"}}},"required":["number","asks","options","if_wrong","unclear"],"additionalProperties":false}}},"required":["items"],"additionalProperties":false}
+
+      - id: "flag-items"
+        depends_on: ["read-review"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.publish == 'true' && $prepare-reader.output.ready == 'true'"
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"op":"flag-items","change_folder":"$record-archive.output.change_folder","result":"$read-review.output"}
+        output_format: {"type":"object","properties":{"flagged":{"type":"boolean"},"notes":{"type":"string"}},"required":["flagged","notes"],"additionalProperties":false}
+
+      - id: "rewrite-items"
+        depends_on: ["flag-items"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.publish == 'true' && $flag-items.output.flagged == 'true'"
+        model: ["@reviewer","medium"]
+        context: {"resume":"rank-review"}
+        mutates_checkout: false
+        command: "rewrite-items"
+        with: {"items":"$prepare-reader.output.items","notes":"$flag-items.output.notes"}
+        output_format: {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"number":{"type":"integer"},"title":{"type":"string"},"detail":{"type":"string"},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"links":{"type":"array","items":{"type":"string"}}},"required":["number","title","detail","questions","links"],"additionalProperties":false}}},"required":["items"],"additionalProperties":false}
+
+      - id: "apply-rewrite"
+        depends_on: ["rewrite-items"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.publish == 'true' && $flag-items.output.flagged == 'true'"
+        script: "finish"
+        runtime: "bun"
+        timeout: 1200000
+        with: {"op":"apply-rewrite","change_folder":"$record-archive.output.change_folder","result":"$rewrite-items.output"}
+        output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+
       - id: publish-review-package
-        depends_on: ["start-round","check-ranking","recheck-ranking","place-ranking"]
+        depends_on: ["start-round","check-ranking","recheck-ranking","place-ranking","prepare-reader","flag-items","apply-rewrite"]
         trigger_rule: none_failed_min_one_success
         when: "$start-round.output.mode != 'merged' && $start-round.output.mode != 'closed'"
         timeout: 1200000
         script: finish
         runtime: bun
-        with: {"op":"publish-review-package","change_folder":{"from":"$record-archive.output.change_folder","if_skipped":""},"mode":"$start-round.output.mode","reason":"$start-round.output.reason","round":"$start-round.output.round","review_wait":"$INPUTS.review_wait","archon_url":"$INPUTS.archon_url"}
+        with: {"op":"publish-review-package","change_folder":{"from":"$record-archive.output.change_folder","if_skipped":""},"mode":"$start-round.output.mode","reason":"$start-round.output.reason","round":"$start-round.output.round","review_wait":"$INPUTS.review_wait","archon_url":"$INPUTS.archon_url","review":"$validate-inputs.output.review"}
         output_format: {"type":"object","properties":{"page":{"type":"string"},"message":{"type":"string"},"succeeded":{"type":"boolean"}},"required":["page","message","succeeded"],"additionalProperties":false}
 
       - id: wait-for-review

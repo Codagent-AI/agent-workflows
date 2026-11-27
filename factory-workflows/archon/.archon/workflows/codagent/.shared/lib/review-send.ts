@@ -45,8 +45,9 @@ export function initialChoice(tier: string, recommended: string, answered: boole
 
 export function collectReview(input: {
   action: 'feedback' | 'merge'; round: number; head: string;
-  rows: { item: string; question: number; required: boolean; option: string; other: string; note: string }[];
+  rows: { item: string; question: number; required: boolean; option: string; other: string; note: string; options?: { id: string; label: string; detail?: string }[] }[];
   screenshots: { file: string; round: number }[]; commands?: { file: string; round: number }[]; comments: ReadonlyMap<string, string>;
+  note?: string;
 }) {
   const answer = { action: input.action, round: input.round, head: input.head };
   if (input.action === 'merge') return answer;
@@ -55,7 +56,13 @@ export function collectReview(input: {
       const comment = input.comments.get(file);
       return comment?.trim() ? [{ file, round, comment }] : [];
     });
-  return { ...answer, answers: input.rows.map(({ required, ...choice }) => choice),
+  const note = input.note?.trim() ? [{ item: 'note', question: 0, option: '', other: '', note: input.note }] : [];
+  // The chosen option's label and wording go with its ID, so the next round reads what the option promised.
+  const wording = (options: { id: string; label: string; detail?: string }[] = [], id = '') => {
+    const chosen = options.find(option => option.id === id);
+    return chosen ? { label: chosen.label, detail: chosen.detail ?? '' } : {};
+  };
+  return { ...answer, answers: [...input.rows.map(({ required, options, ...choice }) => ({ ...choice, ...wording(options, choice.option) })), ...note],
     screenshotComments: comments(input.screenshots),
     commandComments: comments(input.commands ?? []).map(({ file, round, comment }) => ({ ref: file, round, comment })) };
 }

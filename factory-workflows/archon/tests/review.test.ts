@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   activeFindings, addFindings, applyActions, applyVerdicts, currentCycle, emptyState, findingText,
   handedOff, handoff, reopenRequested, renderResult, settled, startCycle, type Defect, type FindingState, type ReviewState,
 } from '../.archon/workflows/codagent/.shared/lib/review.ts';
-import { collectReview, initialChoice, missingAnswers } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { collectReview, initialChoice, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { applyRewrite, flagItems, passingRewrite, readerItems, readerNotes } from '../.archon/workflows/codagent/.shared/lib/review-reader.ts';
+import { markReviewRoundDone, pendingReviewRound, reviewedCommits } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { settleQuestions } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 
 const scripts = resolve(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts');
@@ -35,12 +38,9 @@ function checkInvalidState(status: FindingState, perform: (state: ReviewState) =
 }
 function checkInvalidActions(status: FindingState): void {
   const allowedFixer: Partial<Record<FindingState, string[]>> = { open: ['fixed', 'declined'], contested: ['fixed', 'replied'] };
-  const allowedReviewer: Partial<Record<FindingState, string[]>> = {
-    fixed: ['confirmed', 'rejected'], declined: ['accepted', 'contested'], replied: ['accepted', 'contested'],
-  };
+  const allowedReviewer: Partial<Record<FindingState, string[]>> = { fixed: ['confirmed', 'rejected'], declined: ['accepted', 'contested'], replied: ['accepted', 'contested'] };
   const actions = (['fixed', 'declined', 'replied'] as const).filter(action => !allowedFixer[status]?.includes(action));
-  const verdicts = (['confirmed', 'rejected', 'accepted', 'contested'] as const)
-    .filter(verdict => !allowedReviewer[status]?.includes(verdict));
+  const verdicts = (['confirmed', 'rejected', 'accepted', 'contested'] as const).filter(verdict => !allowedReviewer[status]?.includes(verdict));
   for (const action of actions) checkInvalidState(status, state => act(state, action));
   for (const verdict of verdicts) checkInvalidState(status, state => judge(state, verdict));
 }
@@ -72,21 +72,16 @@ describe('review finding state', () => {
   test('ignores invalid states, unknown IDs, omitted and handed-off findings without changing them', () => {
     const states: FindingState[] = ['open', 'fixed', 'declined', 'contested', 'replied', 'closed', 'disputed'];
     for (const status of states) {
-      const state = stateWithFinding();
-      const finding = state.findings[0];
-      if (!finding) throw new Error('missing finding');
-      finding.state = status;
+      const state = stateWithFinding(); const finding = state.findings[0];
+      if (!finding) throw new Error('missing finding'); finding.state = status;
       applyActions(state, [{ id: 'unknown', action: 'fixed', note: '' }]);
       applyVerdicts(state, [{ id: 'unknown', verdict: 'accepted', reason: '' }]);
-      expect(finding.state).toBe(status);
-      finding.handed_off = true;
+      expect(finding.state).toBe(status); finding.handed_off = true;
       act(state, 'fixed'); judge(state, 'confirmed');
       expect(finding.state).toBe(status);
-      expect(state.ignored).toHaveLength(4);
-      expect(renderResult(state)).toContain('Ignored unknown');
+      expect(state.ignored).toHaveLength(4); expect(renderResult(state)).toContain('Ignored unknown');
     }
-    const state = stateWithFinding(); judge(state, 'confirmed'); act(state, 'replied');
-    expect(state.findings[0]?.state).toBe('open');
+    const state = stateWithFinding(); judge(state, 'confirmed'); act(state, 'replied'); expect(state.findings[0]?.state).toBe('open');
     applyActions(state, []); expect(state.findings[0]?.state).toBe('open');
     expect(state.ignored).toHaveLength(2);
   });
@@ -98,13 +93,10 @@ describe('review finding state', () => {
     const state = stateWithFinding();
     applyActions(state, [{ id: 'unknown', action: 'fixed', note: 'unknown attempt' }]);
     judge(state, 'confirmed');
-    const first = state.findings[0];
-    if (!first) throw new Error('missing finding');
-    first.handed_off = true;
-    act(state, 'declined');
+    const first = state.findings[0]; if (!first) throw new Error('missing finding');
+    first.handed_off = true; act(state, 'declined');
     const result = renderResult(state);
-    cycle(state, 1); addFindings(state, [defect()]);
-    cycle(state, 2);
+    cycle(state, 1); addFindings(state, [defect()]); cycle(state, 2);
     applyVerdicts(state, [{ id: 'REVIEW-2', verdict: 'accepted', reason: 'earlier cycle' }]);
     expect(state.ignored.map(entry => [entry.actor, entry.action, entry.note, entry.reason])).toEqual([
       ['fixer', 'fixed', 'unknown attempt', 'unknown finding ID'],
@@ -126,12 +118,10 @@ describe('review finding state', () => {
       act(state, 'replied'); expect(state.findings[0]?.state).toBe('replied');
       judge(state, verdict);
       expect(state.findings[0]?.state).toBe(verdict === 'accepted' ? 'closed' : 'disputed');
-      expect(settled(state)).toBe(true);
-      expect(activeFindings(state)).toHaveLength(0);
+      expect(settled(state)).toBe(true); expect(activeFindings(state)).toHaveLength(0);
       act(state, 'fixed'); expect(state.ignored).toHaveLength(1);
     }
-    const state = stateWithFinding();
-    act(state, 'declined'); judge(state, 'contested');
+    const state = stateWithFinding(); act(state, 'declined'); judge(state, 'contested');
     act(state, 'fixed'); judge(state, 'rejected');
     act(state, 'declined'); judge(state, 'contested');
     expect(currentCycle(state).turn).toBe(3);
@@ -427,6 +417,27 @@ test.each(['Other', 'note', 'plain text', 'custom option'])('feedback review reo
   expect(review.findings).toContain('REVIEW-1 [fixed');
 });
 
+test('a review round answer starts the feedback review before the late commit it names', () => {
+  const [before, late, answer, other] = [box.head(), box.commitFix('late fix\n'), join(artifacts, 'review-answers-round-1.json'), 'b'.repeat(40)];
+  mkdirSync(join(artifacts, 'review'), { recursive: true }); writeFileSync(join(artifacts, 'review/pages.json'), JSON.stringify([{ round: 1, file: 'review-page-round-1.html', head: late }]));
+  writeFileSync(join(artifacts, 'review-page-round-1.html'), `<script type="application/json" id="page-data">${JSON.stringify({ orange: [{ source: ['DECIDE-2', late, other], questions: [{ prompt: 'Shared' }, { source: other, prompt: 'Own' }] }] })}</script>`);
+  writeFileSync(answer, JSON.stringify({ round: 1, answers: [{ item: 'DECIDE-2', option: 'review-round' }, { item: other, option: 'keep' }] })); const fix = box.commitFix('feedback fix\n');
+  const review = run('prepare-review', { mode: 'feedback', place: 'feedback', start: late, change_dir: 'openspec/changes/demo', round: 2, answers_file: answer });
+  expect([review.start, review.revisions]).toEqual([before, `${late}\n${fix}`]);
+  expect(pendingReviewRound(artifacts)).toEqual(['DECIDE-2', late]); const later = join(artifacts, 'review-answers-round-2.json');
+  writeFileSync(later, JSON.stringify({ round: 2, answers: [{ item: late, option: 'keep' }] })); expect(pendingReviewRound(artifacts)).toEqual([]); rmSync(later); markReviewRoundDone(artifacts);
+  expect([pendingReviewRound(artifacts), reviewedCommits(artifacts)]).toEqual([[], [late]]);
+});
+
+test('late commits gain a review round option and yellow items that recommend work move to orange', () => {
+  const ask = (...codes: string[]) => ({ prompt: codes.join(' '), options: codes.map(id => ({ id, label: id })) }); const { orange, yellow } = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('keep', 'fix')] }, { type: 'Late commit, Agent decision', questions: [ask('a', 'b', 'c', 'd'), ask('retest', 'leave')] }],
+    yellow: [{ type: 'Risk', questions: [ask('accept', 'try')] }, { type: 'Risk', questions: [ask('fix', 'accept')] }] });
+  const ids = (items: typeof orange) => items.map(item => item.questions?.map(question => question.options.map(option => option.id).join(' ')));
+  expect([ids(orange), ids(yellow)]).toEqual([[['keep fix review-round'], ['a b c d', 'review-round keep', 'retest leave'], ['fix accept']], [['accept try']]]);
+  const off = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('review-round', 'keep'), ask('a', 'review-round', 'b')] }], yellow: [{ type: 'Late commit', questions: [ask('accept', 'leave')] }] }, false);
+  expect([ids(off.orange), ids(off.yellow)]).toEqual([[['keep leave', 'a b']], [['accept leave']]]);
+});
+
 test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
   expect(missingAnswers([{ required: true, option: '', other: '' }, { required: true, option: 'other', other: '  ' },
     { required: true, option: 'other', other: 'choice' }, { required: false, option: '', other: '' }])).toBe(2);
@@ -440,13 +451,50 @@ test('question defaults start blank for required tiers and restore saved answers
 });
 
 test('collects choice values, notes and nonblank screenshot comments with the acceptance round', () => {
-  const row = { item: 'CHECK-1', question: 1, option: 'other', other: 'Try again', note: 'More context' };
-  const input = { round: 2, head: 'reviewed', rows: [{ ...row, required: true }],
+  const row = { item: 'CHECK-1', question: 1, option: 'other', other: 'Try again', note: 'More context' }; const options = [{ id: 'check', label: 'Check it', detail: 'Checked live' }]; const chosen = { ...row, option: 'check', label: 'Check it', detail: 'Checked live' };
+  const input = { round: 2, head: 'reviewed', rows: [{ ...row, required: true, options }, { ...row, option: 'check', required: true, options }],
     screenshots: [{ file: 'one.png', round: 1 }, { file: 'two.png', round: 3 }],
     comments: new Map([['one.png', ''], ['two.png', 'Alignment']]) };
   expect(collectReview({ ...input, action: 'feedback' })).toEqual({
-    action: 'feedback', round: 2, head: 'reviewed', answers: [row],
+    action: 'feedback', round: 2, head: 'reviewed', answers: [row, chosen],
     screenshotComments: [{ file: 'two.png', round: 3, comment: 'Alignment' }], commandComments: [],
   });
   expect(collectReview({ ...input, action: 'merge' })).toEqual({ action: 'merge', round: 2, head: 'reviewed' });
+  const summary = { item: 'note', question: 0, option: '', other: '', note: 'Sort the size table' };
+  expect(collectReview({ ...input, action: 'feedback', note: 'Sort the size table' })).toMatchObject({ answers: [row, chosen, summary] });
+  expect(collectReview({ ...input, action: 'feedback', note: '  ' })).toMatchObject({ answers: [row, chosen] });
+});
+
+test('change size totals combine both languages and all change columns', () => {
+  expect(sizeTotals([{ files: 3, added: 5, modified: 3, removed: 2 }, { files: 1, added: 7, modified: 1, removed: 6 }]))
+    .toEqual({ files: 4, added: 12, modified: 4, removed: 8 });
+});
+
+test('the reader check renders page items, flags unclear ones and rewrites only their wording', () => {
+  const question = { prompt: 'Keep the floor?', source: 'DISPUTE-1', options: [{ id: 'keep', label: 'Keep', detail: 'As built' }, { id: 'follow-up', label: 'Follow-up', detail: '' }] };
+  const item = { type: 'Dispute', title: 'Checker floor', detail: 'The floor is low.', source: ['DISPUTE-1'], links: [{ label: 'What was disputed', target: 'log:DISPUTE-1' }], questions: [question] };
+  const ranking = { red: [], orange: [item], yellow: [{ ...item, type: 'Agent decision', title: 'Clear item', source: ['DECIDE-2'] }], evidence: '' };
+  const page = readerItems(ranking);
+  expect(page).toContain('## Item 1\n\n### Checker floor');
+  expect(page).toContain('## Item 2\n\n### Clear item');
+  expect(page).toContain('- Keep: As built\n- Follow-up\n\nLinks on GitHub: What was disputed');
+  expect(page).not.toMatch(/DISPUTE-1|log:|Dispute|Agent decision/);
+  const answer = { asks: 'Whether to keep it', options: [{ label: 'Keep', does: 'Keeps it' }, { label: 'Follow-up', does: 'Later' }], if_wrong: 'Bad things' };
+  const flags = flagItems(ranking, { items: [{ number: 1, ...answer, options: [], if_wrong: ' ', unclear: ['floor'] }, { number: 2, ...answer, unclear: [] }, { number: 9, ...answer, unclear: ['x'] }] });
+  expect(flags).toEqual([{ number: 1, title: 'Checker floor', unclear: ['floor'], missing: ['what each option would do', 'what happens if the choice is wrong'] }]);
+  expect([flagItems(ranking, { items: [{ number: 1, ...answer, unclear: [] }] }).map(flag => flag.number), flagItems(ranking, {})]).toEqual([[2], []]);
+  expect(readerNotes(flags)).toBe('Item 1: Checker floor\n- Could not understand: "floor"\n- Could not tell what each option would do\n- Could not tell what happens if the choice is wrong');
+  const wording = { prompt: 'Keep the minimum?', options: [{ id: 'keep', label: 'Keep it', detail: 'Plain' }, { id: 'follow-up', label: 'Later', detail: 'After merge' }] };
+  const next = applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['Why it was argued'] }, { number: 2, title: 'Not flagged', detail: 'x', questions: [wording] }], [1]);
+  expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });
+  expect(applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['a', 'b'] }], [1]).orange[0].links).toEqual(item.links);
+  expect(next.yellow[0].title).toBe('Clear item');
+  const reordered = { ...wording, options: [...wording.options].reverse() };
+  expect(applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [reordered] }], [1]).orange[0]).toEqual(item);
+  const both = [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording] }, { number: 2, title: 'Breaks the check', detail: 'x', questions: [wording] }];
+  const kept = passingRewrite(ranking, both, [1, 2], candidate => candidate.yellow[0].title !== 'Breaks the check');
+  expect([kept.orange[0].title, kept.yellow[0].title, passingRewrite(ranking, both, [1, 2], () => false)]).toEqual(['Plain title', 'Clear item', ranking]);
+  const edit = { ...item, questions: [{ ...question, options: [{ id: 'spec-edit', label: 'Apply', detail: 'Change X to Y.' }, question.options[1]] }] };
+  const reworded = { prompt: 'P', options: [{ id: 'spec-edit', label: 'Apply it', detail: 'Reworded' }, { id: 'follow-up', label: 'Later', detail: '' }] };
+  expect(applyRewrite({ ...ranking, orange: [edit] }, [{ number: 1, title: 'T', detail: 'D', questions: [reworded] }], [1]).orange[0].questions?.[0].options[0]).toEqual({ id: 'spec-edit', label: 'Apply it', detail: 'Change X to Y.' });
 });

@@ -4,12 +4,12 @@ import { disputeQuestion } from '../.archon/workflows/codagent/.shared/lib/revie
 import { expect, test } from 'bun:test';
 import { renameSync, mkdirSync } from 'node:fs';
 import { rankingForPublication } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
-import { feedbackScope, refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { feedbackScope, markReviewRoundDone, refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
 import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 import { runInNewContext } from 'node:vm';
-import { collectReview, sendReview, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { collectReview, sendReview } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 
@@ -53,11 +53,6 @@ test.each(['round-12', 'no wait', '409', 'file', 'offline', 'offline after GET']
   expect(mock.calls()).toBe(expectedCalls[scenario] ?? 1);
 });
 
-test('change size totals combine both languages and all change columns', () => {
-  expect(sizeTotals([{ files: 3, added: 5, modified: 3, removed: 2 }, { files: 1, added: 7, modified: 1, removed: 6 }]))
-    .toEqual({ files: 4, added: 12, modified: 4, removed: 8 });
-});
-
 class Element {
   id = '';
   className = '';
@@ -66,9 +61,11 @@ class Element {
   href = '';
   scrollLeft = 0;
   scrollTop = 0;
+  clientWidth = 0; style: Record<string, string> = {}; disabled = false;
   onclick?: () => void;
   showModal() {}
   focus() {}
+  scrollIntoView() {}
   hidden = false;
   children: Element[] = [];
   dataset: Record<string, string> = {};
@@ -96,7 +93,7 @@ class Element {
   replaceChildren(...children: Element[]) { this.children = children; }
   setAttribute() {}
   addEventListener(event: string, handler: () => void) { this.listeners.set(event, handler); }
-  querySelector() { return undefined; }
+  querySelector() { return undefined; } querySelectorAll(tag: string) { return this.byTag(tag); }
   createTHead() { return this.appendChild(new Element('thead')); }
   createTBody() { return this.appendChild(new Element('tbody')); }
   insertRow() { return this.appendChild(new Element('tr')); }
@@ -116,17 +113,17 @@ function render(data: unknown, stored: unknown = null) {
   querySelector('#sent-answers').textContent = JSON.stringify(stored);
   const html = pageHtml(data);
   const script = html.split('<script>').at(-1)?.split('</script>')[0] ?? '';
-  runInNewContext(script, { URL, location: { href: 'file:///review.html' },
+  runInNewContext(script, { URL, location: { href: 'file:///review.html' }, window: { addEventListener() {}, removeEventListener() {} },
     document: { querySelector, createElement: (tag: string) => new Element(tag), body: querySelector('body') } });
   return querySelector;
 }
 
-test('dynamic review markup lays out concerns and toggles the screenshot viewer from its scroll origin', () => {
+test('dynamic review markup lays out concerns, zooms the screenshot viewer and sorts the size table', () => {
   const data = { title: 'Review title', round: 2, run: 'run-1', head: 'head', codes: {},
     summary: 'Summary', recap: [{ note: 'Round update' }], decisions: '## DECIDE-1: Choice\n- Rationale: Reason',
-    disputes: '', keyEvidence: [], wait: false, orange: [], yellow: [],
+    disputes: '', keyEvidence: [], wait: true, orange: [], yellow: [],
     screenshots: [{ href: 'one.png', file: 'one.png', round: 0, title: 'Start', shows: 'Before' }, { href: 'two.png', file: 'two.png', round: 2, title: 'Retest', shows: 'After' }],
-    size: [{ language: 'Go', files: 1, added: 2, modified: 3, removed: 4 }],
+    size: [{ language: 'Go', files: 1, added: 2, modified: 3, removed: 4 }, { language: 'TypeScript', files: 2, added: 9, modified: 0, removed: 1 }],
     red: [{ type: 'Failure', title: 'Item title', source: ['CHECK-1'], detail: 'Details',
       questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }] }] };
   const querySelector = render(data);
@@ -142,25 +139,24 @@ test('dynamic review markup lays out concerns and toggles the screenshot viewer 
   expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 3', 'Acceptance round 1']);
   expect(gallery?.find('thumb-label')?.textContent).toBe('Retest');
   gallery?.byTag('button')[0].onclick?.();
-  const stage = querySelector('body').find('viewer-stage') as Element;
-  const toggle = querySelector('body').find('viewer-info')?.byTag('button')[0];
-  toggle?.onclick?.();
-  expect([stage.classList.contains('full-size'), toggle?.textContent]).toEqual([true, 'Fit to view']);
-  const navigation = querySelector('body').find('viewer-bar')?.byTag('button') ?? [];
+  const body = querySelector('body');
+  const stage = body.find('viewer-stage') as Element;
+  stage.clientWidth = 1024;
+  const press = (label: string) => body.find('viewer-bar')?.byTag('button').find(control => control.textContent === label)?.onclick?.();
+  const view = () => [stage.children[0].style.width, body.find('viewer-zoom')?.textContent, stage.classList.contains('zoomed')];
+  stage.children[0].listeners.get('load')?.();
+  expect(view()).toEqual(['1000px', '100%', false]);
+  press('+'); expect(view()).toEqual(['1500px', '150%', true]);
   for (const [label, title] of [['Previous', 'Start'], ['Next', 'Retest']]) {
-    stage.scrollLeft = 300;
-    stage.scrollTop = 150;
-    navigation.find(control => control.textContent === label)?.onclick?.();
-    expect(querySelector('body').find('viewer-info')?.byTag('h3')[0].textContent).toBe(title);
-    expect([stage.classList.contains('full-size'), stage.scrollLeft, stage.scrollTop]).toEqual([true, 0, 0]);
+    [stage.scrollLeft, stage.scrollTop] = [300, 150]; press(label);
+    expect([body.find('viewer-info')?.byTag('h3')[0].textContent, stage.scrollLeft, stage.scrollTop]).toEqual([title, 0, 0]);
   }
-  stage.scrollLeft = 300;
-  stage.scrollTop = 150;
-  toggle?.onclick?.();
-  expect([stage.classList.contains('full-size'), toggle?.textContent, stage.scrollLeft, stage.scrollTop]).toEqual([false, 'Open full size', 0, 0]);
+  press('Fit'); expect(view()).toEqual(['1000px', '100%', false]);
   expect(main.find('fields')).toBeUndefined();
-  expect(main.find('total')?.children.map(child => child.textContent)).toEqual(['Total', '1', '2', '3', '4']);
-  expect(main.children[0].children.map(child => child.tag)).toEqual(['div', 'ul', 'div', 'div']);
+  expect(main.byTag('tr').slice(1).map(row => row.children[0].textContent)).toEqual(['TypeScript', 'Go', 'Total']);
+  expect(main.find('total')?.children.map(child => child.textContent)).toEqual(['Total', '3', '11', '3', '5']);
+  expect([main.children[0].children.map(child => child.tag), main.children[0].children[1].children[0].textContent]).toEqual([['div', 'div', 'div', 'div', 'div'], 'Since round 1']);
+  expect(main.find('summary-comment')?.byTag('textarea')).toHaveLength(1);
 });
 
 test('placing a dispute grouped with a late commit retains a separate Retest question', () => {
@@ -282,24 +278,24 @@ test('a moved but unsuccessful archive keeps the archived folder for feedback an
     expect(startRound(box.forgeTools([]), { dir, folder: changeFolder, text: '' })).toMatchObject({
       change_folder: archived, archive_needed: true, mode: 'feedback', round: 2,
     });
-  } finally {
-    box.dispose();
-  }
+  } finally { box.dispose(); }
 });
 
-test('a no-change response cannot dismiss a checklist failure that still needs work', () => {
+test('a no-change response cannot dismiss a checklist failure or a commit its review round has not read', () => {
   const box = createSandbox();
   try {
-    const input = rankingFixture(box);
-    box.write('artifacts/review-response-round-1.json', JSON.stringify([
-      { item: 'CHECK-1', status: 'no-change' }, { item: 'CHECK-2', status: 'no-change' },
-    ]));
+    const input = rankingFixture(box); const late = box.commitFix();
+    box.write('artifacts/review/pages.json', '[{"round":1,"file":"review-page-round-1.html"}]');
+    box.write('artifacts/review-page-round-1.html', '<script type="application/json" id="page-data">{}</script>');
+    box.write('artifacts/review-answers-round-1.json', JSON.stringify({ round: 1, answers: [{ item: late, option: 'review-round' }] }));
+    box.write('artifacts/review-answers-round-2.json', JSON.stringify({ action: 'merge', round: 2 }));
+    box.write('artifacts/review-response-round-1.json', JSON.stringify(['CHECK-1', 'CHECK-2', late].map(item => ({ item, status: 'no-change' }))));
     const result = inventory(input);
     expect(result.context.dismissed).toEqual([]);
-    expect(result.required.map(row => [row.tier, row.item.source[0]])).toEqual([['red', 'CHECK-1'], ['red', 'CHECK-2']]);
-  } finally {
-    box.dispose();
-  }
+    expect(result.required.map(row => [row.tier, row.item.source[0]])).toEqual([['red', 'CHECK-1'], ['red', 'CHECK-2'], ['orange', late]]);
+    box.write('artifacts/review/review-round-commits.json', JSON.stringify([late])); markReviewRoundDone(input.dir);
+    expect(inventory(input).later_commits).toEqual([]);
+  } finally { box.dispose(); }
 });
 
 test('invalid evidence manifests preserve usable entries and become a named review failure', () => {
@@ -404,7 +400,7 @@ test('promoted yellow late commits preserve journeys and gain a Retest choice', 
   expect(placed.orange[0].questions?.flatMap(question => question.options.map(option => option.id))).toContain('retest');
 });
 
-test('mixed evidence renders a safe, ordered page and mirrors command comments', () => {
+test('mixed evidence renders a safe, ordered page and mirrors command comments', async () => {
   const file = 'acceptance-commands/round-1/output.txt';
   const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
   const forgeBase = 'https://github.com/owner/repo';
@@ -421,18 +417,24 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
     red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
     screenshots: [{ file: 'screen.png', href: 'screen.png', title: 'Preview', shows: 'Shows export', round: 2 }] };
   const page = render(data);
-  const main = page('main');
-  expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
+  const main = page('main'); expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']); expect(main.find('summary-comment')).toBeDefined();
   expect(page('.meta-row').find('red')).toBeDefined();
   expect(page('#send-status').textContent).toContain('1 high concern');
   const grouped = { ...red, questions: [...red.questions, { ...red.questions[0], source: 'another-source' }] };
-  expect(render({ ...data, red: [grouped] })('#send-status').textContent).toContain('1 high concern');
+  const one = render({ ...data, red: [grouped] }); expect(one('#send-status').textContent).toContain('1 high concern');
+  one('#send-actions').find('send')?.onclick?.(); expect(one('#send-status').textContent).toBe('Answer the questions in concern 1 before sending.');
   expect(render({ ...data, red: [grouped, red] })('#send-status').textContent).toContain('2 high concerns');
+  const unanswered = render({ ...data, red: [grouped, red] }); unanswered('#send-actions').find('send')?.onclick?.();
+  const retry = render({ ...data, red: [] }); const button = retry('#send-actions').find('send'); button?.onclick?.(); await Bun.sleep(0);
+  expect([button?.disabled, retry('#send-status').textContent]).toEqual([false, 'Cannot send from here.']);
+  expect(unanswered('main').byTag('fieldset').map(field => [field.classList.contains('missing'), field.find('q-missing')?.hidden])).toEqual([[true, false], [true, false], [true, false], [false, true]]);
+  const sendStatus = unanswered('#send-status');
+  expect([sendStatus.className, sendStatus.textContent, sendStatus.byTag('a').map(anchor => anchor.href)])
+    .toEqual(['error', 'Answer the questions in concerns 1 and 2 before sending.', ['#red-1', '#red-2']]);
   page('#send-actions').find('merge')?.onclick?.();
   expect(page('body').find('confirm')?.textContent).toContain('1 high concern');
   const medium = render({ ...data, red: [], orange: [red] });
-  expect(medium('.meta-row').find('orange')).toBeDefined();
-  expect(medium('#send-status').textContent).toContain('1 medium concern');
+  expect(medium('.meta-row').find('orange')).toBeDefined(); expect(medium('#send-status').textContent).toContain('1 medium concern');
   expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href, `${href}0`]);
   expect(page('.masthead .meta').byTag('dd').map(value => value.textContent)).toContain(data.head);
   expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);

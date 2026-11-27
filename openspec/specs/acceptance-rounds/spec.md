@@ -331,3 +331,10 @@ In the acceptance rounds, a push that still fails after its repair, or that fail
 #### Scenario: Resumed after a failed acceptance push
 - **WHEN** a run that failed on the push after the acceptance rounds is resumed and the push now succeeds
 - **THEN** the run goes on without running the acceptance rounds again, and the page shows that acceptance stopped because the push failed
+
+### Requirement: Screenshots are captured at twice the pixel density
+The tester SHALL capture its screenshots at twice the pixel density, such as a device scale factor of 2.
+
+#### Scenario: Page captured
+- **WHEN** the tester captures a page in a window 1,200 pixels wide
+- **THEN** the screenshot is 2,400 pixels wide

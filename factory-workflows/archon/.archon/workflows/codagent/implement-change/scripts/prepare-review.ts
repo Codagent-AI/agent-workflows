@@ -2,16 +2,17 @@ import { artifactsDir, required } from '../../.shared/lib/check.ts';
 import { join } from 'node:path';
 import { readJson, readText } from '../../.shared/lib/run-files.ts';
 import { responsePath } from '../../.shared/lib/review-round.ts';
-import { feedbackScope } from '../../.shared/lib/review-revisions.ts';
+import { feedbackScope, reviewRoundStart } from '../../.shared/lib/review-revisions.ts';
 import { runCommand } from '../../.shared/lib/exec.ts';
 import { checkoutStart } from '../../.shared/lib/checkout.ts';
 import { git, head, readState, saveState, script } from '../../.shared/lib/review-files.ts';
 import { activeFindings, findingText, handedOff, reopenRequested, startCycle, type Place, type ReviewState } from '../../.shared/lib/review.ts';
 
 // The first range starts where the implementor checklist started, which Archon records as a checkout
-// observation; later ranges start at the last reviewed revision.
+// observation; later ranges start at the last reviewed revision. A feedback range starts at the reviewed
+// page's head, or earlier when the reviewer sent late commits to a review round.
 function startRevision(mode: string, dir: string, state: ReviewState): string {
-  if (mode === 'feedback') return process.env.INPUTS_START || state.last_reviewed;
+  if (mode === 'feedback') return reviewRoundStart(runCommand, dir, process.env.INPUTS_ANSWERS_FILE ?? '', process.env.INPUTS_START || state.last_reviewed);
   if (mode !== 'initial') return state.last_reviewed;
   const observed = checkoutStart(required(process.env.INPUTS_START, 'start'), dir, false);
   if ('failure' in observed) throw new Error(`prepare-review: ${observed.failure.problems}`);

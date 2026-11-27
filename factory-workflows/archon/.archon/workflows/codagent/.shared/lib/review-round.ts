@@ -10,6 +10,8 @@ export interface Choice {
   item: string;
   question: number;
   option: string;
+  label?: string;
+  detail?: string;
   other?: string;
   note?: string;
 }
