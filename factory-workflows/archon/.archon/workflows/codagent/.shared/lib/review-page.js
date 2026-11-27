@@ -341,11 +341,11 @@
     const missing = missingAnswers(rows.map(readRow));
     feedback.disabled = missing > 0;
     const pending = rows.filter(row => missingAnswers([readRow(row)]) > 0);
-    const counts = tierCounts(tier => new Set(pending.filter(row => row.tier === tier).map(row => row.item)).size);
+    const counts = tierCounts(tier => new Set(pending.filter(row => row.tier === tier).map(row => row.concern)).size);
     status.textContent = missing ? `Unanswered questions in ${counts}.` : '';
   }
 
-  function questionField(item, question, number, tier) {
+  function questionField(item, question, number, tier, concern) {
     const owned = new Set(item.questions.map(entry => entry.source).filter(Boolean));
     const itemCode = question.source ?? item.source.find(source => !owned.has(source)) ?? item.source[0];
     const field = node('fieldset', '', 'q');
@@ -386,7 +386,7 @@
     note.setAttribute('aria-label', 'Optional note');
     note.value = answer?.note ?? '';
     field.append(other, note);
-    rows.push({ field, item: itemCode, question: number, required: tier !== 'yellow', tier, other, note });
+    rows.push({ field, concern, item: itemCode, question: number, required: tier !== 'yellow', tier, other, note });
     field.addEventListener('input', updateStatus);
     return field;
   }
@@ -410,7 +410,7 @@
     body.append(prose(item.detail));
     if (item.evidence) body.append(commandEvidence(item.evidence));
     const ask = node('div', '', 'ask');
-    item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier)));
+    item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier, id)));
     body.append(ask);
     if (item.links?.length) {
       const links = node('div', '', 'links');

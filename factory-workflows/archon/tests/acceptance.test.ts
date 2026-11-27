@@ -1,9 +1,12 @@
+import { commitLogs, syncLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
+import { gitNetwork } from '../.archon/workflows/codagent/.shared/lib/git-network.ts';
+import { refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
 import { join } from 'node:path';
 import { stepFailures } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { endAcceptance, pushRecheck, unverifiedRows } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rmSync, symlinkSync } from 'node:fs';
+import { existsSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import {
   checkGate,
@@ -303,4 +306,47 @@ test('blocked CI wait repair pushes its commit before reporting the finalize blo
   expect(JSON.parse(box.read('evidence/finalize-results.json'))['mark-ready-after-final-repair']).toMatchObject({ terminal: true });
   box.git('remote', 'set-url', 'origin', box.path('missing.git'));
   expect(run().exitCode).toBe(1);
+});
+
+test('log sync keeps previous worktree entries after the initial log commit fails', () => {
+  const folder = 'openspec/changes/demo';
+  put('decision-log.md', '## First choice\nReason: First.\n');
+  const reply = (stdout = '', status = 0) => ({ status, stdout, stderr: '' });
+  expect(commitLogs((_cmd, args) => reply('', Number(args[0] === 'commit')), evidence, 'demo').ok).toBe(false);
+  expect(box.exists('evidence/review/log-state.json')).toBe(false);
+  box.write(`${folder}/decision-log.md`, `${box.read(`${folder}/decision-log.md`)}\n## DECIDE-3: Local choice\nReason: Keep it.\n`);
+  put('decision-log.md', '## First choice\nReason: First.\n\n## Later choice\nReason: Later.\n');
+  expect(syncLogs((_cmd, args) => reply('', Number(args[0] === 'show')), evidence, folder, 'demo').ok).toBe(true);
+  const text = box.read(`${folder}/decision-log.md`);
+  expect(text.match(/First choice/g)).toHaveLength(1);
+  expect(text).toContain('DECIDE-3: Local choice');
+  expect(text).toContain('DECIDE-4: Later choice');
+  expect(JSON.parse(box.read('evidence/review/log-state.json')).decision).toBe(2);
+});
+
+test('base refresh records failed fetch diagnostics and continues', () => {
+  put('pull-request.json', '{"base":"main"}');
+  refreshBase((_cmd, args) => ({
+    status: Number(args[0] === 'fetch'),
+    stdout: args[0] === 'remote' ? 'https://github.com/owner/repo' : '',
+    stderr: args[0] === 'fetch' ? 'ref unavailable' : '',
+  }), evidence);
+  expect(JSON.parse(box.read('evidence/review/base-refresh.json'))).toMatchObject({
+    ref: 'refs/remotes/origin/main', ok: false, problems: 'ref unavailable',
+  });
+});
+
+test('push classifies a hook from an isolated Trace2 file and removes it', () => {
+  let trace = '';
+  const result = gitNetwork((_cmd, _args, options) => {
+    trace = options?.env?.GIT_TRACE2_EVENT ?? '';
+    expect(trace.startsWith('/')).toBe(true);
+    writeFileSync(trace, [
+      JSON.stringify({ event: 'child_start', sid: 'parent', child_id: 0, hook_name: 'pre-push' }),
+      JSON.stringify({ event: 'child_exit', sid: 'parent', child_id: 0, code: 1 }),
+    ].join('\n'));
+    return { status: 1, stdout: '', stderr: 'Connection timed out' };
+  }, ['push'], () => { throw new Error('must not retry a failed hook'); });
+  expect(result).toEqual({ ok: false, person: false, problems: 'Connection timed out' });
+  expect(existsSync(trace)).toBe(false);
 });

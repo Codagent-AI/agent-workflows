@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { remoteOf } from './forge.ts';
 import { gitNetwork } from './git-network.ts';
-import { readJson } from './run-files.ts';
+import { readJson, writeJson } from './run-files.ts';
 
 export function commitParents(exec: Exec, sha: string): string[] {
   return gitOutput(exec, ['show', '-s', '--format=%P', sha]).split(' ').filter(Boolean);
@@ -22,7 +22,10 @@ function baseRef(exec: Exec, dir: string) {
 
 export function refreshBase(exec: Exec, dir: string, sleep?: import('./exec.ts').Sleep) {
   const branch = baseRef(exec, dir);
-  if (branch) gitNetwork(exec, ['fetch', branch.remote, `+refs/heads/${branch.base}:${branch.ref}`], sleep);
+  if (!branch) return;
+  const result = gitNetwork(exec, ['fetch', branch.remote, `+refs/heads/${branch.base}:${branch.ref}`], sleep);
+  writeJson(join(dir, 'review/base-refresh.json'), { ref: branch.ref, ...result });
+  if (!result.ok) process.stderr.write('Could not refresh the pull request base. The saved base may be stale. See review/base-refresh.json.\n');
 }
 
 export function baseRevisions(exec: Exec, dir: string): string[] {

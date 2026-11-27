@@ -64,36 +64,56 @@ export function commitLogs(exec: Exec, dir: string, name: string): CheckResult {
     writeText(path, numberLog(text, logs[kind]));
     return path;
   });
-  writeJson(logState(dir), Object.fromEntries(source.map(log => [log.kind, log.entries.length])));
   const indexed = exec('git', ['add', '--', ...paths]);
   const result = indexed.status ? fail(indexed.stderr) : commit(exec, paths, logMessage(name));
+  if (result.ok) writeJson(logState(dir), Object.fromEntries(source.map(log => [log.kind, log.entries.length])));
   return recordLogFailure(dir, result, 'The archive commit will include these logs.');
 }
 
 function syncFile(exec: Exec, path: string, added: string[], prefix: string) {
   const original = existsSync(path) ? readText(path) : undefined;
   const committed = output(exec, 'git', ['show', `HEAD:${path}`]) ?? '';
-  writeText(path, appendEntries(committed, added, prefix));
-  return { path, original };
+  const current = original ?? committed;
+  const key = (entry: string) => entry.replace(/^## (?:DECIDE|DISPUTE|D|DP)-\d+: /, '## ');
+  const seen = new Set(entries(current).map(key));
+  const missing = [...entries(committed), ...added].filter(entry => {
+    const id = key(entry);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  const text = missing.length > 0 ? appendEntries(current, missing, prefix) : current;
+  if (text.trim() === committed.trim()) return [];
+  writeText(path, text);
+  return [{ path, original, untracked: output(exec, 'git', ['ls-files', '--', path]) === '' }];
+}
+
+function restoreSync(exec: Exec, updates: ReturnType<typeof syncFile>) {
+  for (const { path, original, untracked } of updates) {
+    if (original === undefined) rmSync(path, { force: true });
+    else writeText(path, original);
+    if (untracked) exec('git', ['reset', '-q', '--', path]);
+  }
 }
 
 export function syncLogs(exec: Exec, dir: string, folder: string, name: string): CheckResult {
   const state = logState(dir);
   const prior = readJson<Partial<Record<LogKind, number>>>(state, {});
   const source = runLogs(dir);
+  if (source.every(log => log.entries.length <= (prior[log.kind] ?? 0))) return pass();
   const updates = source.flatMap(log => {
     const added = log.entries.slice(prior[log.kind] ?? 0);
-    return added.length > 0 ? [syncFile(exec, join(folder, filename(log.kind)), added, logs[log.kind])] : [];
+    return added.length > 0 ? syncFile(exec, join(folder, filename(log.kind)), added, logs[log.kind]) : [];
   });
-  if (updates.length === 0) return pass();
-  const result = commit(exec, updates.map(update => update.path), logMessage(name));
+  const untracked = updates.filter(update => update.untracked).map(update => update.path);
+  const staged = untracked.length > 0 ? exec('git', ['add', '--intent-to-add', '--', ...untracked]) : null;
+  const paths = updates.map(update => update.path);
+  let result = pass();
+  if (staged?.status) result = fail(staged.stderr);
+  else if (paths.length > 0) result = commit(exec, paths, logMessage(name));
   if (result.ok) {
     writeJson(state, Object.fromEntries(source.map(log => [log.kind, log.entries.length])));
     recordStep(dir, 'logs', { ...result, remaining: '' });
-  }
-  else for (const { path, original } of updates) {
-    if (original === undefined) rmSync(path, { force: true });
-    else writeText(path, original);
-  }
+  } else restoreSync(exec, updates);
   return recordLogFailure(dir, result, 'Commit the updated review logs.');
 }

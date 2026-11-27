@@ -64,13 +64,26 @@ function readCommand(folder: string, entry: CommandManifest, problems: ManifestP
   }
 }
 
+function distinctCommandEntries(entries: CommandEvidence[], manifest: string, problems: ManifestProblem[]): CommandEvidence[] {
+  const seen = new Set<string>();
+  return entries.filter(entry => {
+    if (seen.has(entry.file)) {
+      problems.push({ path: manifest, detail: `Duplicate command output ${basename(entry.file)}. Use a separate file for each entry.` });
+      return false;
+    }
+    seen.add(entry.file);
+    return true;
+  });
+}
+
 export function commands(dir: string, problems: ManifestProblem[] = []): CommandEvidence[] {
   return evidenceRounds(dir, 'acceptance-commands').flatMap(name => {
     const folder = join(dir, 'acceptance-commands', name);
     const manifest = join(folder, 'manifest.json');
     if (!existsSync(manifest)) return [];
-    return manifestEntries<CommandManifest>(manifest, ['title', 'shows', 'revision', 'command', 'excerpt', 'output'], problems)
+    const entries = manifestEntries<CommandManifest>(manifest, ['title', 'shows', 'revision', 'command', 'excerpt', 'output'], problems)
       .flatMap(entry => readCommand(folder, entry, problems));
+    return distinctCommandEntries(entries, manifest, problems);
   });
 }
 

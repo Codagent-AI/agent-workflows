@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, type Sleep, sleep as wait } from './exec.ts';
 
@@ -19,26 +22,42 @@ function personFailure(detail: string): string {
 }
 
 // Git reports the pre-push hook's exit in Trace2 even when its own output looks like a network error.
-function pushDiagnostic(stderr: string) {
-  const hooks = new Set<string>();
-  let failedHook = false;
-  const diagnostics = stderr.split('\n').filter(line => {
-    if (!line.startsWith('{"event":')) return true;
-    try {
-      const event = JSON.parse(line);
-      const child = `${event.sid}:${event.child_id}`;
-      if (event.event === 'child_start' && event.hook_name === 'pre-push') hooks.add(child);
-      if (event.event === 'child_exit' && hooks.delete(child) && event.code !== 0) failedHook = true;
-      return !event.sid;
-    } catch { return true; }
-  });
-  return { stderr: diagnostics.join('\n').trim(), failedHook: failedHook || hooks.size > 0 };
+function traceEvent(line: string): { event?: string; sid?: string; child_id?: number; hook_name?: string; code?: number } {
+  if (!line.startsWith('{"event":')) return {};
+  try { return JSON.parse(line); }
+  catch { return {}; } // A timed-out push can leave a partial final trace line.
 }
 
-function networkFailure(command: string, result: ReturnType<Exec>, exhausted: boolean): PushResult | undefined {
-  const diagnostic = command === 'push' ? pushDiagnostic(result.stderr) : { stderr: result.stderr.trim(), failedHook: false };
-  const detail = [result.stdout.trim(), diagnostic.stderr].filter(Boolean).join('\n');
-  if (diagnostic.failedHook) return { ...fail(detail || 'pre-push hook failed'), person: false };
+function hookFailed(trace: string) {
+  const hooks = new Set<string>();
+  for (const line of trace.split('\n')) {
+    const event = traceEvent(line);
+    const child = `${event.sid}:${event.child_id}`;
+    if (event.event === 'child_start' && event.hook_name === 'pre-push') hooks.add(child);
+    if (event.event === 'child_exit' && hooks.delete(child) && event.code !== 0) return true;
+  }
+  return hooks.size > 0;
+}
+
+function attempt(exec: Exec, args: string[]) {
+  const env = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+  if (args[0] !== 'push') return { result: exec('git', args, { timeout: 300_000, env }), failedHook: false };
+  const folder = mkdtempSync(join(tmpdir(), 'archon-git-push-'));
+  const trace = join(folder, 'trace.jsonl');
+  try {
+    const result = exec('git', args, { timeout: 300_000, env: { ...env, GIT_TRACE2_EVENT: trace } });
+    let failedHook = false;
+    if (result.status !== 0) {
+      try { failedHook = hookFailed(readFileSync(trace, 'utf8')); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
+    return { result, failedHook };
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+}
+
+function networkFailure(command: string, result: ReturnType<Exec>, exhausted: boolean, failedHook: boolean): PushResult | undefined {
+  const detail = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
+  if (failedHook) return { ...fail(detail || 'pre-push hook failed'), person: false };
   const person = personFailure(detail);
   if (person) return { ...fail(person), person: true };
   if (!transient.test(detail)) return { ...fail(detail || `git ${command} exited ${result.status}`), person: false };
@@ -47,11 +66,10 @@ function networkFailure(command: string, result: ReturnType<Exec>, exhausted: bo
 }
 
 export function gitNetwork(exec: Exec, args: string[], sleep: Sleep = wait): PushResult {
-  const env = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', ...(args[0] === 'push' && { GIT_TRACE2_EVENT: '2' }) };
   for (const delay of [...retryDelays, 0]) {
-    const result = exec('git', args, { timeout: 300_000, env });
+    const { result, failedHook } = attempt(exec, args);
     if (result.status === 0) return { ...pass(), person: false };
-    const failure = networkFailure(args[0], result, delay === 0);
+    const failure = networkFailure(args[0], result, delay === 0, failedHook);
     if (failure) return failure;
     sleep(delay);
   }

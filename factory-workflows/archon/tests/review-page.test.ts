@@ -428,6 +428,9 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
   expect(page('.meta-row').find('red')).toBeDefined();
   expect(page('#send-status').textContent).toContain('1 high concern');
+  const grouped = { ...red, questions: [...red.questions, { ...red.questions[0], source: 'another-source' }] };
+  expect(render({ ...data, red: [grouped] })('#send-status').textContent).toContain('1 high concern');
+  expect(render({ ...data, red: [grouped, red] })('#send-status').textContent).toContain('2 high concerns');
   page('#send-actions').find('merge')?.onclick?.();
   expect(page('body').find('confirm')?.textContent).toContain('1 high concern');
   const medium = render({ ...data, red: [], orange: [red] });
@@ -479,4 +482,19 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(empty('main').children.map(child => child.id)).toEqual(['summary', 'concerns']);
   expect(empty('main').find('empty')).toBeDefined();
   expect(empty('.meta-row').find('concerns-total')?.className).toBe('concerns-total');
+});
+test('fallback groups a checklist row with an uncommitted archive under its failure concern', () => {
+  const folder = 'openspec/changes/archive/2026-11-26-demo';
+  const archive = { type: 'Failure', title: 'Archive did not pass', detail: 'Repair the archive.', links: [], source: ['failure:archive'] };
+  const row = { type: 'Risk', title: 'Exports preserve options', detail: 'Acceptance did not verify this.',
+    links: [{ label: 'The checklist row', target: `${folder}/checklist.md#L3` }], source: ['CHECK-1'] };
+  const context = { media: [], commands: [], journeys: [], commits: [], dismissed: [],
+    links: { folder, base: 'https://github.com/owner/repo', head: 'abc', dir: 'run',
+      exec: () => ({ status: 1, stdout: '', stderr: '' }) } };
+  const required = [{ tier: 'red' as const, item: archive }, { tier: 'yellow' as const, item: row }];
+  const ranking = placeRanking(emptyRanking(), required, context);
+  expect(ranking.red).toHaveLength(1);
+  expect(ranking.red[0].source).toEqual(['failure:archive', 'CHECK-1']);
+  expect(ranking.red[0].detail).toContain(row.title);
+  expect(ranking.red[0].links).toEqual([]);
 });

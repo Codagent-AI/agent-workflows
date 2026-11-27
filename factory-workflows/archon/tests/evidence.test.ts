@@ -1,4 +1,4 @@
-import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
+import { commands, reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { humanChecks } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -365,4 +365,14 @@ test('command manifests validate whole lines, normalize excerpts, and reach rank
   expect(evidence.map((value: { round: number }) => value.round)).toEqual([2, 1, 1]);
   expect(JSON.parse(box.read('artifacts/review/media-problems.json'))).toHaveLength(6);
   expect(reviewMedia(box.path('empty'))).toMatchObject({ commands: [], shots: [], problems: [] });
+});
+
+test('duplicate command outputs keep the first valid entry and report the colliding ID', () => {
+  const folder = 'artifacts/acceptance-commands/round-0';
+  const entry = { title: 'Original', shows: 'Export', revision: 'abc', command: 'test', excerpt: 'first', output: 'run.txt' };
+  box.write(`${folder}/run.txt`, 'first\nsecond\n');
+  box.write(`${folder}/manifest.json`, JSON.stringify([entry, { ...entry, title: 'Duplicate', excerpt: 'second' }]));
+  const problems: Parameters<typeof commands>[1] = [];
+  expect(commands(box.path('artifacts'), problems).map(command => command.excerpt)).toEqual(['first']);
+  expect(problems.map(problem => problem.detail)).toEqual([expect.stringContaining('Duplicate command output run.txt')]);
 });

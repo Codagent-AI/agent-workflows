@@ -261,6 +261,15 @@ function placeCandidates(placed: Ranking, ranking: Ranking, required: RequiredIt
   }
 }
 
+function attachUnavailableSources(placed: Ranking, required: RequiredItem[], context: RankingContext): void {
+  if (!(context.links && required.some(row => row.item.source.includes('failure:archive')))) return;
+  for (const { tier, item } of entries(placed)) {
+    if (item.source.some(isStepFailure) || item.links.length > 0 || item.type.includes('Late commit')) continue;
+    placed[tier] = placed[tier].filter(entry => entry !== item);
+    mergeFailureConcerns(placed, { ...item, detail: `${item.title}\n\n${item.detail}`, source: ['failure:archive', ...item.source] });
+  }
+}
+
 export function placeRanking(ranking: Ranking, required: RequiredItem[], context = emptyContext): Ranking {
   const picks = Array.isArray(ranking?.keyEvidence) ? ranking.keyEvidence : [];
   const placed: Ranking = { red: [], orange: [], yellow: [],
@@ -268,8 +277,10 @@ export function placeRanking(ranking: Ranking, required: RequiredItem[], context
     keyEvidence: picks.filter(pick => validPick(pick, context)).slice(0, 5) };
   placeCandidates(placed, ranking, required, context);
   for (const expected of required) {
-    insertRequired(placed, { ...expected, item: repairedItem(expected.item, context) }, context);
+    const links = expected.item.links.filter(link => !context.links || 'href' in resolveTarget(link.target, context.links));
+    insertRequired(placed, { ...expected, item: repairedItem({ ...expected.item, links }, context) }, context);
   }
+  attachUnavailableSources(placed, required, context);
   bindDisputeQuestions(placed, required, true);
   const checked = checkRanking(placed, required, context, true);
   if (!checked.ok) throw new Error(`deterministic ranking failed: ${checked.problems}`);
