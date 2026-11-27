@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "workflow": "define-openspec-change",
+  "change_name": "replace-call-agent-with-acpx",
+  "change_dir": "openspec/changes/replace-call-agent-with-acpx",
+  "status": "complete",
+  "current_step": null,
+  "steps": {
+    "proposal": {
+      "started_at": "2026-11-27T18:34:25.145Z",
+      "completed_at": "2026-11-27T20:48:31.266Z"
+    },
+    "specs": {
+      "started_at": "2026-11-27T20:48:31.266Z",
+      "completed_at": "2026-11-27T21:23:25.663Z"
+    },
+    "design": {
+      "started_at": "2026-11-27T21:23:25.663Z",
+      "completed_at": "2026-11-27T23:03:15.571Z"
+    },
+    "test-plan": {
+      "started_at": "2026-11-27T23:03:15.571Z",
+      "completed_at": "2026-11-27T23:07:52.759Z"
+    },
+    "approach-review": {
+      "started_at": "2026-11-27T23:07:52.759Z",
+      "completed_at": "2026-11-27T23:26:41.935Z"
+    }
+  },
+  "starts": [
+    {
+      "at": "2026-11-27T18:34:25.145Z",
+      "lead": "claude",
+      "mode": "new",
+      "step": "proposal"
+    }
+  ],
+  "calls": [
+    {
+      "call_id": "call-cd786639",
+      "step": "proposal",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-27T18:44:30.641Z",
+      "ended_at": "2026-11-27T18:47:22.796Z"
+    },
+    {
+      "call_id": "call-8ad92b9b",
+      "step": "approach-review",
+      "cli": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "status": "succeeded",
+      "working_tree": "unchanged",
+      "started_at": "2026-11-27T23:09:07.740Z",
+      "ended_at": "2026-11-27T23:13:30.483Z"
+    }
+  ],
+  "created_at": "2026-11-27T18:34:25.145Z",
+  "updated_at": "2026-11-27T23:26:41.935Z",
+  "completed_at": "2026-11-27T23:26:41.935Z"
+}
