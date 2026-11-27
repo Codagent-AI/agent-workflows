@@ -229,3 +229,33 @@ Gap: `logItems` reads the restored change-folder logs, so decisions and disputes
 - **Rationale** — The tester reported missing `repeat` on all four entries. The prior prompt described “repeat instructions” without specifying that key. The manifest now on disk has all four expected string fields in every entry, so it cannot identify the spelling that led to the original rejection. See `acceptance-round-0-manifest-inspection.log`. The canonical and incomplete manifest paths passed in `acceptance-round-0-unit.log`. The existing publish-to-Retest integration case now asserts that the selected journey's scenario and repeat steps survive publication and feedback. This step did not run that integration case.
 - **What breaks if wrong** — If a live tester still writes a different key, the media reader drops those records and the ranker cannot attach them to a Retest question. A page with no Late commit that affects a recorded journey will have no Retest option under the current spec.
 - **Decision pending from the user** — Decide whether to extend the approved behavior to display every scenario and its repeat steps on the page and offer individual Retest outside a Late commit item. The acceptance finding requests that broader flow, while the approved spec and mockup define an item-level Retest.
+
+## DECIDE-21: Preserve committed log identities during synchronization
+
+- **Step** — Fix pull request review findings in finalize.
+- **Question** — How should synchronization handle a committed entry missing from the worktree copy?
+- **Requirement** — New entries receive numbers after the highest existing ID, and review links and responses refer to entries by ID.
+- **Decision** — Restore missing committed entries with their original codes and numbering. Assign new IDs above the combined log's maximum only to new entries. Keep the worktree version of entries whose code is already present.
+- **Alternatives** — Rebuild the entire log from HEAD, or feed restored entries through new-entry numbering.
+- **Rationale** — Restoring by code preserves existing links and keeps any worktree settlement or edit on a surviving entry. The regression restored DECIDE-1 and assigned DECIDE-3 to the new entry. See `fix-pr-targeted.log`.
+- **What breaks if wrong** — Renumbering a restored decision breaks saved links and can re-open a decision previously settled under its original code.
+
+## DECIDE-22: Exclude documentation citations from the named-test minimum
+
+- **Step** — Fix pull request review findings in finalize.
+- **Question** — How should the checker distinguish test paths from documentation cited as evidence?
+- **Requirement** — The checker permits yellow for an existing named test when finalize passed with checks. The ranker separately judges whether a passing CI suite ran it.
+- **Decision** — Exclude documentation extensions before matching test paths and checking whether they are committed. Keep the existing test path conventions for other formats.
+- **Alternatives** — Exclude only test-plan.md, or limit test paths to an explicit list of implementation languages.
+- **Rationale** — A format check covers plans and prose under test directories while preserving paths used by different test runners. The committed Markdown test plan stayed red, and Bun, Python and Go test paths remained eligible. See `fix-pr-targeted.log`.
+- **What breaks if wrong** — A documentation extension used by an executable literate test loses the lighter checker minimum. A prose format outside the filter could still pass the name check, so the ranker's CI judgment remains necessary.
+
+## DECIDE-23: Validate shared questions on grouped concerns
+
+- **Step** — Fix pull request review findings in finalize.
+- **Question** — What question must remain for a source grouped with a dedicated spec-change dispute?
+- **Requirement** — A source with a dedicated question uses its own answer, and remaining sources share the remaining questions.
+- **Decision** — Reject dispute-only questions when another source needs a shared answer. Keep the existing rule that a valid source-less Retest question can serve that role when journeys exist.
+- **Alternatives** — Let the dispute-only ranking pass, or require an additional generic question even when Retest already provides a shared answer.
+- **Rationale** — Validation now matches fallback and the review page's binding. The grouped decision regression and the existing grouped Retest case passed in `fix-pr-targeted.log`. The check diagnostic reached the repair step in `fix-pr-ranking-fixture.log`.
+- **What breaks if wrong** — A grouped decision can remain open because the page has no question for its source, or the page can demand an extra answer before sending feedback.

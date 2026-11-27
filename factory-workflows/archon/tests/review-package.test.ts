@@ -436,14 +436,14 @@ test('INT-009 a cited file in passing finalize CI changes an unverified row floo
   box.write('tests/example.test.ts', 'export {};');
   box.write('src/test_smoke.py', 'pass');
   box.write('cmd/launch_test.go', 'package cmd');
-  box.git('add', 'tests', 'src', 'cmd');
+  box.write(`${folder}/test-plan.md`, '# Test plan\n'); box.git('add', 'tests', 'src', 'cmd', `${folder}/test-plan.md`);
   box.commit('named test');
-  box.write(`${folder}/checklist.md`, '| ID | Behavior | Evidence | Status |\n|---|---|---|---|\n| CHECK-1 | feature | tests/example.test.ts | not verified |\n| CHECK-2 | unknown | tests/standalone.test.ts | not verified |\n| CHECK-3 | Python | [smoke](src/test_smoke.py) | not verified |\n| CHECK-4 | Go | cmd/launch_test.go | not verified |\n');
+  box.write(`${folder}/checklist.md`, `| ID | Behavior | Evidence | Status |\n|---|---|---|---|\n| CHECK-1 | feature | tests/example.test.ts | not verified |\n| CHECK-2 | unknown | tests/standalone.test.ts | not verified |\n| CHECK-3 | Python | [smoke](src/test_smoke.py) | not verified |\n| CHECK-4 | Go | cmd/launch_test.go | not verified |\n| CHECK-5 | plan only | ${folder}/test-plan.md | not verified |\n`);
   steps();
   box.write('artifacts/ci/latest.json', JSON.stringify({ status: 'passed', headSha: box.head(), hadChecks: true, passedChecks: [{ name: 'Matrix checks (node 22)' }] }));
-  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['yellow', 'red', 'yellow', 'yellow']);
+  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['yellow', 'red', 'yellow', 'yellow', 'red']);
   steps({ finalize: failedStep });
-  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['red', 'red', 'red', 'red']);
+  expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['red', 'red', 'red', 'red', 'red']);
 });
 test('INT-007 Retest selects journeys from a red Late commit and ignores an unselected orange one', () => {
   steps();

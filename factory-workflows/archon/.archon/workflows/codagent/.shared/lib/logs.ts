@@ -28,10 +28,14 @@ function entries(text: string): string[] {
   return [...text.matchAll(/^## (?:[^\n]+)(?:\n[\s\S]*?)?(?=^## |$(?![\s\S]))/gm)].map(match => match[0].trimEnd());
 }
 
-function appendEntries(current: string, added: string[], prefix: string): string {
+function numberNewEntries(current: string, added: string[], prefix: string): string[] {
   let next = Math.max(0, ...[...current.matchAll(counter)].map(match => Number(match[1])));
-  const numbered = added.map(entry => entry.replace(/^## (?:(?:DECIDE|DISPUTE|D|DP)-\d+: )?/, () => `## ${prefix}-${++next}: `));
-  return `${[current.trim() === 'No entries.' ? '' : current.trimEnd(), ...numbered].filter(Boolean).join('\n\n')}\n`;
+  return added.map(entry => entry.replace(/^## (?:(?:DECIDE|DISPUTE|D|DP)-\d+: )?/, () => `## ${prefix}-${++next}: `));
+}
+
+function appendEntries(current: string, added: string[]): string {
+  if (added.length === 0) return current;
+  return `${[current.trim() === 'No entries.' ? '' : current.trimEnd(), ...added].filter(Boolean).join('\n\n')}\n`;
 }
 
 function commit(exec: Exec, paths: string[], message: string): CheckResult {
@@ -80,18 +84,19 @@ function syncFile(exec: Exec, path: string, added: { text: string; copiedId?: st
   const committed = output(exec, 'git', ['show', `HEAD:${path}`]) ?? '';
   const current = original ?? committed;
   const key = (entry: string) => entry.replace(/^## (?:DECIDE|DISPUTE|D|DP)-\d+: /, '## ');
-  const currentEntries = entries(current);
-  const ids = new Set(currentEntries.map(entryIdentity));
-  const seen = new Set(currentEntries.map(key));
-  const missingCommitted = entries(committed).filter(entry => !ids.has(entryIdentity(entry)));
+  const currentIds = new Set(entries(current).map(entryIdentity));
+  const restored = appendEntries(current, entries(committed).filter(entry => !currentIds.has(entryIdentity(entry))));
+  const restoredEntries = entries(restored);
+  const ids = new Set(restoredEntries.map(entryIdentity));
+  const seen = new Set(restoredEntries.map(key));
   const newEntries = added.filter(entry => !(entry.copiedId && ids.has(entry.copiedId))).map(entry => entry.text);
-  const missing = [...missingCommitted, ...newEntries].filter(entry => {
+  const missing = newEntries.filter(entry => {
     const id = key(entry);
     if (seen.has(id)) return false;
     seen.add(id);
     return true;
   });
-  const text = missing.length > 0 ? appendEntries(current, missing, prefix) : current;
+  const text = appendEntries(restored, numberNewEntries(restored, missing, prefix));
   if (text.trim() === committed.trim()) return [];
   writeText(path, text);
   return [{ path, original, untracked: output(exec, 'git', ['ls-files', '--', path]) === '' }];

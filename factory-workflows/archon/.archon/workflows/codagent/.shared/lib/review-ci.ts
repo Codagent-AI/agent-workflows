@@ -2,6 +2,7 @@ import type { CiResult } from './ci.ts';
 import { type Exec, output } from './exec.ts';
 
 function isTestPath(path: string): boolean {
+  if (/\.(?:md|markdown|mdx|rst|adoc|txt)$/i.test(path)) return false;
   return /(?:^|\/)(?:tests?|__tests__)\//i.test(path) || /(?:^|\/)(?:test[_-]|spec[_-])|[._-](?:test|spec)\.[\w]+$/i.test(path);
 }
 

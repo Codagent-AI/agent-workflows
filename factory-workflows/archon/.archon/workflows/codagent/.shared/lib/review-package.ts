@@ -87,10 +87,17 @@ function matchesDisputeChoices(question: Question | undefined, expected: Item): 
     option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)));
 }
 
+function hasSharedSource(item: Item, disputes: Item[]): boolean {
+  return item.source.some(code => disputes.every(dispute => !dispute.source.includes(code)));
+}
+
 function validDisputeQuestions(questions: Question[], disputes: Item[], item: Item): boolean {
   if (questions.length < disputes.length + Number(Boolean(item.journeys?.length))) return false;
+  const shared = questions.slice(disputes.length);
   return disputes.every((expected, index) => matchesDisputeChoices(questions[index], expected)) &&
-    (!item.journeys?.length || isRetestQuestion(questions.at(-1)));
+    (!item.journeys?.length || isRetestQuestion(shared.at(-1))) &&
+    (!hasSharedSource(item, disputes) || shared.some(question =>
+      !question.source && (isSharedQuestion(question) || isRetestQuestion(question))));
 }
 
 function choiceProblems(ranking: Ranking, required: RequiredItem[]): string[] {
@@ -113,14 +120,14 @@ function repairDisputeQuestions(item: Item, disputes: Item[]): Question[] {
     const index = unused.findIndex(question => matchesDisputeChoices(question, dispute));
     return index < 0 ? dispute.questions ?? [] : unused.splice(index, 1);
   });
-  const hasSharedSource = item.source.some(code => disputes.every(dispute => !dispute.source.includes(code)));
-  const shared = hasSharedSource ? unused.filter(question => !question.source && isSharedQuestion(question)) : [];
+  const needsShared = hasSharedSource(item, disputes);
+  const shared = needsShared ? unused.filter(question => !question.source && isSharedQuestion(question)) : [];
   const retest = item.journeys?.length ? [unused.find(isRetestQuestion) ?? {
     prompt: 'Retest the affected journeys?', options: [
       { id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Continue without retesting' },
     ],
   }] : [];
-  if (hasSharedSource && shared.length + retest.length === 0) shared.push(standardQuestion(item.type));
+  if (needsShared && shared.length + retest.length === 0) shared.push(standardQuestion(item.type));
   return [...own, ...shared, ...retest];
 }
 

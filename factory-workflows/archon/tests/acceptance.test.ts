@@ -1,4 +1,5 @@
-import { placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { disputeQuestion, standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 import { commitLogs, syncLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { gitNetwork } from '../.archon/workflows/codagent/.shared/lib/git-network.ts';
@@ -336,6 +337,38 @@ test('base refresh records failed fetch diagnostics and continues', () => {
   expect(JSON.parse(box.read('evidence/review/base-refresh.json'))).toMatchObject({
     ref: 'refs/remotes/origin/main', ok: false, problems: 'ref unavailable',
   });
+});
+
+test('log sync restores committed codes and numbers only new decisions', () => {
+  const folder = 'openspec/changes/demo';
+  const path = `${folder}/decision-log.md`;
+  const first = '## DECIDE-1: Export defaults\nReason: Keep the CLI predictable.';
+  const second = '## DECIDE-2: Share settings\nReason: Reuse the file.';
+  box.write(path, `${first}\n\n${second}\n`);
+  box.git('add', path);
+  box.commit('commit existing decisions');
+  box.write(path, `${second}\n`);
+  put('decision-log.md', '## Export defaults\nReason: Keep the CLI predictable.\n\n## New decision\nReason: Add coverage.\n');
+  expect(syncLogs(box.exec, evidence, folder, 'demo').ok).toBe(true);
+  const committed = box.git('show', `HEAD:${path}`);
+  expect(committed.match(/^## DECIDE-\d+: .*$/gm)).toEqual([
+    '## DECIDE-2: Share settings', '## DECIDE-1: Export defaults', '## DECIDE-3: New decision',
+  ]);
+  expect(committed).toContain(first);
+});
+
+test('a decision grouped with a spec-change dispute needs a shared question', () => {
+  const own = disputeQuestion('');
+  const dispute = { type: 'Dispute', title: 'Default export', detail: 'Change the spec.', specChange: true,
+    links: [{ label: 'Source', target: 'file.txt' }], source: ['DISPUTE-1'], questions: [own] };
+  const required = [{ tier: 'red' as const, item: dispute }];
+  const item = { ...dispute, source: ['DISPUTE-1', 'DECIDE-1'] };
+  const ranking = { ...emptyRanking(), red: [item] };
+  expect(checkRanking(ranking, required).ok).toBe(false);
+  const repaired = placeRanking(ranking, required);
+  expect(repaired.red[0].questions?.map(question => question.source)).toEqual(['DISPUTE-1', undefined]);
+  const shared = standardQuestion('Agent decision');
+  expect(checkRanking({ ...ranking, red: [{ ...item, questions: [own, shared] }] }, required).ok).toBe(true);
 });
 
 test('push classifies a hook from an isolated Trace2 file and removes it', () => {
