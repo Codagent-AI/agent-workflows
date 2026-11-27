@@ -13,6 +13,10 @@
 - **Comment** — coderabbitai on `factory-workflows/archon/tests/finalize.test.ts:460` asked to show log synchronization failures as review concerns and gate finalize's push on successful synchronization.
 - **Response** — The approved handoff records the failure as the `logs` step and continues. The defined set of red failure concerns excludes log synchronization. The prior audit and review confirmed that behavior in DECIDE-9 and DECIDE-18. The synchronization test still proves the failure is recorded, the files are restored and the entries remain eligible for retry. See `fix-pr-targeted.log`.
 
+Settled in review round 1
+
+The reviewer selected a separate follow-up after this change merges to show a red concern when saving review logs fails.
+
 ## DISPUTE-4: PR comment: Limit the mixed-evidence test callback to 50 lines
 
 - **Comment** — coderabbitai on `factory-workflows/archon/tests/review-page.test.ts:407` asked to split the callback to meet a 50-line function limit.

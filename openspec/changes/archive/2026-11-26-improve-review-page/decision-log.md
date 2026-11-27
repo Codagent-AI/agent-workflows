@@ -259,3 +259,15 @@ Gap: `logItems` reads the restored change-folder logs, so decisions and disputes
 - **Alternatives** — Let the dispute-only ranking pass, or require an additional generic question even when Retest already provides a shared answer.
 - **Rationale** — Validation now matches fallback and the review page's binding. The grouped decision regression and the existing grouped Retest case passed in `fix-pr-targeted.log`. The check diagnostic reached the repair step in `fix-pr-ranking-fixture.log`.
 - **What breaks if wrong** — A grouped decision can remain open because the page has no question for its source, or the page can demand an extra answer before sending feedback.
+
+## DECIDE-24: Defer the log-save failure concern to a follow-up
+
+Settled in review round 1
+
+- **Step** — Apply saved feedback in review round 2.
+- **Question** — Should a failed save of decisions and disputes show as a red concern on the review page?
+- **Requirement** — This change records log synchronization failures as the logs step and continues. Reviewers can settle a dispute by selecting a separate follow-up.
+- **Decision** — The reviewer selected a separate change after merge to show a red concern when saving review logs fails. This settles DISPUTE-3 for the current change.
+- **Alternatives** — Change the current workflow or drop the proposed concern.
+- **Rationale** — The selected option explicitly schedules the work after merge.
+- **What breaks if wrong** — Implementing the concern now would alter the approved behavior of this change. Losing the follow-up would leave the failure visible only in run diagnostics.
