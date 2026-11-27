@@ -261,11 +261,11 @@ test('the recheck lists only the rows still not verified',()=>{
   expect(unverifiedRows(box.path('change'))).toEqual({rows:'I-2, I-4'});
   expect(unverifiedRows(box.path('missing'))).toEqual({rows:''});
 });
-test('a recheck push that fails is recorded as an acceptance failure',()=>{
+test('a repairable recheck push reports its failure and a strict one stops without recording an acceptance failure',()=>{
   box.commitFix();const dir=box.path('evidence');
-  expect(pushRecheck(dir).ok).toBe(false);
-  const recorded=JSON.parse(box.read('evidence/step-results.json'));
-  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('recheck push:');expect(recorded.acceptance.remaining).toContain('lacks the recheck');
+  expect(pushRecheck(dir)).toMatchObject({ ok: false, problems: expect.stringContaining('checklist recheck push:') });
+  expect(() => pushRecheck(dir, true)).toThrow('checklist recheck push:');
+  expect(box.exists('evidence/step-results.json')).toBe(false);
 });
 test('a recheck push reaches the remote branch',()=>{
   const bare=box.addBareOrigin();box.git('push','-q','--set-upstream','origin','HEAD');const head=box.commitFix();

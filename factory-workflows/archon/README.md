@@ -114,7 +114,10 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `archive/state.json`, `archive/before.json`, `archive/specs-before.json`, `archive/local-specs.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
 | `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
 | `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
-| `review-attention.json`, `review-package.md` | package scripts | Checked ranking and generated PR description block. |
+| `acceptance-commands/round-<n>/manifest.json` and output files | tester | Per-round command evidence. The review page shows validated excerpts of up to 20 lines and keeps full output in the run. |
+| `review/evidence.json`, `review/media-problems.json` | package scripts | Accepted screenshots and commands available to the ranker, and any manifest errors. |
+| `review/required.json`, `review/log-state.json` | package scripts | Independently inventoried minimum tiers and counts of run-log entries copied to the committed logs. |
+| `review-attention.json`, `review-package.md` | package scripts | Checked red, orange and yellow ranking with labeled links and generated PR description block. |
 | `review/human-checks.json` | ranking preparation | Human-only test IDs and titles extracted from the test plan. |
 | `review-page-round-<n>.html`, `review-page.html` | publisher | Each numbered review page and the latest page. |
 | `review/pages.json`, `review/outcome.json` | review scripts | Page index and terminal merge or close outcome. |
@@ -161,6 +164,12 @@ A fresh reviewer ranks evidence, decisions and disputes. The script enforces red
 With the review wait on, the run publishes a page and retains its worktree until the reviewer answers. Feedback starts another round. Merge succeeds only at the reviewed head after archive and finalize passed. With the wait off, the run succeeds when acceptance, archive and finalize pass and the page is written. A page with failures says the run needs attention. Pre-page blockers or an unwritable page fail the run. After archive, an approved targeted spec edit goes into the main OpenSpec specs.
 
 Review pages use relative screenshot paths and can be opened from a copy of the artifacts. Sending from the page requires the Archon fork's page-enabled attention wait, an Archon server without web login or a configured web UI origin, and a running host to continue the answer. The Archon CLI and UI can answer the same wait. Install cloc on the host to show code counts by language.
+
+## Review page and push failures
+
+The page presents key evidence, all acceptance evidence by round, and High, Medium and Low concerns. Each open decision and dispute has a concern. Reviewers can comment on screenshots and command evidence. The page links to the committed logs and the PR description reports the run state.
+
+Workflow pushes fetch and merge the remote branch first. Transient failures retry with backoff, and a push that still fails prevents publication. When a push stops acceptance, a top-level push retries it so resume can proceed from there. The publisher checks the forge's PR head before writing a page.
 
 ## Tests
 

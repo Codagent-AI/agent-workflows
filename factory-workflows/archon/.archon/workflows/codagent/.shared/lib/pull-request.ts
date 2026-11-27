@@ -2,7 +2,7 @@
 // pushing to it, and publishing its description. Every forge read and write goes through
 // `archon forge` (forge.ts); git does the pushing.
 import { type CheckResult, fail, pass } from './check.ts';
-import { type Exec, type Sleep, output } from './exec.ts';
+import { type Exec, type Sleep, output, sleep as wait } from './exec.ts';
 import { type Forge, OPS, type PrView, type Repo, type Reply, problem, remoteOf, resolveRepo } from './forge.ts';
 import { status } from './worktree.ts';
 
@@ -110,24 +110,80 @@ export function restoreDraft(tools: Tools): CheckResult {
   return drafted.ok ? pass() : fail(drafted.problem);
 }
 
-/** Pushes the current branch after an acceptance fix, without force-pushing. */
-export function acceptancePush(exec: Exec, pushed = 'acceptance fixes'): CheckResult {
+type PushResult = CheckResult & { person: boolean };
+
+const transient = /ETIMEDOUT|timed? out|could not resolve host|connection reset|RPC failed|early EOF|remote end hung up unexpectedly|(?:returned error:|HTTP(?:\/\S+)?) 5\d\d|internal server error|bad gateway|service unavailable/i;
+const credentials = /authentication failed|could not read username|invalid username or password|terminal prompts disabled|permission denied \(publickey\)|returned error: 40[13]/i;
+const workflowScope = /refusing to allow[^\n]*workflow/i;
+const retryDelays = [10_000, 30_000, 90_000];
+
+function personFailure(detail: string): string {
+  if (workflowScope.test(detail)) {
+    return "GitHub refused the push because it changes .github/workflows and the token lacks the workflow scope. Push with a token that has it, then resume the run.";
+  }
+  if (credentials.test(detail)) {
+    return 'GitHub refused the push because the credentials are expired, invalid or lack access. Log in again, then resume the run.';
+  }
+  return '';
+}
+
+export function gitNetwork(exec: Exec, args: string[], sleep: Sleep = wait): PushResult {
+  for (const delay of [...retryDelays, 0]) {
+    const result = exec('git', args, { timeout: 300_000, env: { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } });
+    if (result.status === 0) return { ...pass(), person: false };
+    const detail = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
+    const person = personFailure(detail);
+    if (person) return { ...fail(person), person: true };
+    if (!transient.test(detail)) return { ...fail(detail || `git ${args[0]} exited ${result.status}`), person: false };
+    if (delay === 0) return { ...fail(`GitHub was unavailable after 3 retries: ${detail.split('\n').at(-1)}. Resume the run when GitHub is back.`), person: true };
+    sleep(delay);
+  }
+  throw new Error('Git retry loop exhausted without a result');
+}
+
+function mergeFetched(exec: Exec): CheckResult {
+  if (exec('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).status === 0) return pass();
+  const merged = exec('git', ['merge', '--no-edit', 'FETCH_HEAD']);
+  if (merged.status === 0) return pass();
+  const files = output(exec, 'git', ['diff', '--name-only', '--diff-filter=U']);
+  if (!files) return fail(merged.stderr.trim() || merged.stdout.trim());
+  const aborted = exec('git', ['merge', '--abort']);
+  return fail(`The branch moved on GitHub and merging it conflicts in:\n${files}${aborted.status === 0 ? '' : `\nMerge abort failed: ${aborted.stderr.trim()}`}`);
+}
+
+function branchTarget(exec: Exec, branch: string) {
+  const remote = output(exec, 'git', ['config', `branch.${branch}.remote`]);
+  const mergeRef = output(exec, 'git', ['config', `branch.${branch}.merge`]);
+  return remote && mergeRef
+    ? { remote, mergeRef, push: ['push', remote, `HEAD:${mergeRef}`], newUpstream: false }
+    : { remote: 'origin', mergeRef: branch, push: ['push', '--set-upstream', 'origin', branch], newUpstream: true };
+}
+
+function fetchAndMerge(exec: Exec, branch: ReturnType<typeof branchTarget>, sleep: Sleep): PushResult {
+  const fetched = gitNetwork(exec, ['fetch', branch.remote, branch.mergeRef], sleep);
+  if (fetched.ok) return { ...mergeFetched(exec), person: false };
+  const missing = branch.newUpstream && !fetched.person && fetched.problems.includes("couldn't find remote ref");
+  return missing ? { ...pass(), person: false } : fetched;
+}
+
+export function acceptancePush(exec: Exec, pushed = 'acceptance fixes', sleep: Sleep = wait): PushResult {
+  const unable = (reason: string) => ({ ...fail(`${pushed} push: ${reason}`), person: false });
   const branch = output(exec, 'git', ['branch', '--show-current']);
-  if (!branch) return fail(`${pushed} push: HEAD is detached; check out the change branch`);
+  if (!branch) return unable('HEAD is detached; check out the change branch');
   const changes = status(exec, ['--untracked-files=no']);
-  if (changes === undefined) return fail(`${pushed} push: could not inspect tracked changes`);
-  if (changes !== '') {
-    return fail([`${pushed} push: tracked changes are uncommitted; commit them before pushing`, changes]);
+  if (changes === undefined) return unable('could not inspect tracked changes');
+  if (changes) return unable(`tracked changes are uncommitted; commit them before pushing\n${changes}`);
+  const target = branchTarget(exec, branch);
+  const fetched = fetchAndMerge(exec, target, sleep);
+  const result = fetched.ok ? gitNetwork(exec, target.push, sleep) : fetched;
+  return result.ok || result.person ? result : unable(result.problems);
+}
+
+export function checkPush(result: PushResult, strict: boolean, reason = ''): CheckResult {
+  if (!result.ok && (strict || result.person)) {
+    throw new Error([result.problems, reason].filter(Boolean).join('\n'));
   }
-  const remote = output(exec, 'git', ['config', `branch.${branch}.remote`]) ?? '';
-  const mergeRef = output(exec, 'git', ['config', `branch.${branch}.merge`]) ?? '';
-  const args =
-    remote && mergeRef ? ['push', remote, `HEAD:${mergeRef}`] : ['push', '--set-upstream', 'origin', branch];
-  const response = exec('git', args);
-  if (response.status !== 0) {
-    return fail([`${pushed} push: git ${args.join(' ')} failed:`, response.stdout.trim(), response.stderr.trim()]);
-  }
-  return pass();
+  return { ok: result.ok, problems: result.problems };
 }
 
 export const BODY_START = '<!-- codagent:generated-body:start -->';

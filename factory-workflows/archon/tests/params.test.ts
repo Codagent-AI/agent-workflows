@@ -316,7 +316,17 @@ describe('merged workflow contracts', () => {
       expect(members.length).toBeGreaterThan(1);
       for (const member of members) expect([member.id, member.output_format]).toEqual([member.id, node(start).output_format]);
     }
-    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(27);
+    expect(nodes.filter(entry => entry.model && root(entry).id === 'implementor-checklist')).toHaveLength(28);
+  });
+
+  test('post-round push gates both finish routes and feedback log sync precedes the finalize push', () => {
+    for (const id of ['end-after-acceptance', 'review-rounds']) {
+      expect(node(id).depends_on).toEqual(['push-recheck', 'recheck-push-recheck']);
+    }
+    expect(node('sync-logs').depends_on).toContain('record-archive');
+    expect(node('finalize-push').depends_on).toContain('sync-logs');
+    expect(node('rank-review').output_format).toEqual(node('repair-ranking').output_format);
+    expect(node('rank-review').output_format).toMatchObject({ required: ['red', 'orange', 'yellow', 'evidence', 'keyEvidence'] });
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {

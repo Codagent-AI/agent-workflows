@@ -1,87 +1,122 @@
 // Inventory comes from source files and git, independently of the ranking agent.
-import { existsSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { tableBlocks, rawCells, isSeparatorRow } from './checklist.ts';
 import { readText, readJson, type StepResult } from './run-files.ts';
 import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
-import { commitParents, reviewRevisions } from './review-revisions.ts';
+import { baseRevisions, commitParents, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
-export const TIERS = ['red', 'orange', 'yellow', 'white'] as const;
+import type { LinkContext, TargetLink } from './review-links.ts';
+import { type PageEntry, readPages } from './review-pages.ts';
+import { citesCiTest, ciTestScopes } from './review-ci.ts';
+import type { CiResult } from './ci.ts';
+export const TIERS = ['red', 'orange', 'yellow'] as const;
 export type Tier = typeof TIERS[number];
-export interface Item { type: string; title: string; detail: string; link: string; source: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
-export interface Ranking { red: Item[]; orange: Item[]; yellow: Item[]; white: Item[]; evidence: string; keyEvidence?: KeyEvidence[]; }
+export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
+export interface Ranking { red: Item[]; orange: Item[]; yellow: Item[]; evidence: string; keyEvidence?: KeyEvidence[]; }
 export interface RequiredItem { tier: Tier; item: Item; }
-export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { shots: string[]; journeys: string[]; commits: string[]; dismissed: string[] }; }
+export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[] }; }
 export interface InventoryInput { exec: Exec; dir: string; changeFolder: string; }
-export const emptyRanking = (): Ranking => ({ red: [], orange: [], yellow: [], white: [], evidence: '' });
-function citesTestFile(exec: Exec, text: string): boolean {
-  const paths = text.match(/[\w./-]+\.[\w]+/g) ?? [];
-  return paths.some(path => isTestPath(path) && output(exec, 'git', ['cat-file', '-t', `HEAD:${path.replace(/^\.\//, '')}`]) === 'blob');
-}
-function isTestPath(path: string): boolean {
-  return /(?:^|\/)(?:tests?|__tests__)\//i.test(path) || /(?:^|\/)(?:test[_-]|spec[_-])|[._-](?:test|spec)\.[\w]+$/i.test(path);
-}
-
+export const emptyRanking = (): Ranking => ({ red: [], orange: [], yellow: [], evidence: '' });
 export function humanChecks(folder: string) {
   const plan = readText(join(folder, 'test-plan.md'));
   const section = /^## Human-Only Testing[^\S\n]*\n([\s\S]*?)(?=^## (?!#)|(?![\s\S]))/mi.exec(plan)?.[1] ?? '';
   return [...section.matchAll(/^### ((?:HUMAN|HT)-\d+):\s*(.+)$/gm)].map(([, code, title]) => ({ code, title }));
 }
 function checklistItems(input: InventoryInput): RequiredItem[] {
-  const folder = input.changeFolder;
-  const table = tableBlocks(readText(join(folder, 'checklist.md'))).find(block => rawCells(block.header).includes('Status'));
+  const path = `${input.changeFolder}/checklist.md`;
+  const text = readText(path);
+  const table = tableBlocks(text).find(block => rawCells(block.header).includes('Status'));
   if (!table) throw new Error('checklist with Status column is missing');
-  const header = rawCells(table.header);
+  const columns = rawCells(table.header);
+  const finalize = readJson<Partial<CiResult>>(join(input.dir, 'ci/latest.json'), {});
+  const steps = readJson<Record<string, StepResult>>(join(input.dir, 'step-results.json'), {});
+  const ciScopes = steps.finalize?.ok ? ciTestScopes(input.exec, finalize) : [];
   return table.rows.filter(row => !isSeparatorRow(row)).flatMap(row => {
-    const cells = rawCells(row); const status = cells[header.indexOf('Status')];
+    const cells = rawCells(row);
+    const cell = (name: string) => cells[columns.indexOf(name)];
+    const status = cell('Status');
     if (status === 'verified') return [];
-    const id = cells[header.indexOf('ID')];
-    const finalize = readJson<{ hadChecks?: boolean; had_checks?: boolean }>(join(input.dir, 'ci/latest.json'), {});
-    const steps = readJson<Record<string, StepResult>>(join(input.dir, 'step-results.json'), {});
-    const ciEvidence = status === 'not verified' && steps.finalize?.ok && (finalize.hadChecks || finalize.had_checks) &&
-      citesTestFile(input.exec, cells.join(' '));
-    return [{ tier: ciEvidence ? 'yellow' as const : 'red' as const, item: { type: status === 'failed' ? 'Failure' : 'Risk', title: `${id}: ${status}`, detail: `${cells[header.indexOf('Behavior')]} — ${cells[header.indexOf('Evidence')]}`, link: `${folder}/checklist.md:${readText(join(folder, 'checklist.md')).split('\n').indexOf(row) + 1}`, source: [id] } }];
+    const failed = status === 'failed';
+    const ciEvidence = status === 'not verified' && citesCiTest(input.exec, cells.join(' '), ciScopes);
+    const line = text.split('\n').indexOf(row) + 1;
+    return [{ tier: ciEvidence ? 'yellow' as const : 'red' as const, item: {
+      type: failed ? 'Failure' : 'Risk', title: cell('Behavior'),
+      detail: failed ? 'This failed in acceptance.' : 'Acceptance did not verify this.',
+      links: [{ label: 'The checklist row', target: `${path}#L${line}` }], source: [cell('ID')],
+    } }];
   });
 }
-function disputeItems(folder: string): RequiredItem[] {
-  const text = readText(join(folder, 'dispute-log.md'));
-  return [...text.matchAll(/^## ((?:DP|DISPUTE)-\d+): (.*)\n([\s\S]*?)(?=^## |$(?![\s\S]))/gm)].flatMap(match => {
-    if (/^Settled in review round /mi.test(match[3])) return [];
-    const specChange = /\bspec-change\b/i.test(match[3]);
-    if (match[2].startsWith('PR comment') && !specChange) return [];
-    const questions = specChange ? [disputeQuestion(/^[- ]*(?:Spec edit|Edit): (.+)$/mi.exec(match[3])?.[1] ?? '')] : undefined;
-    return [{ tier: specChange ? 'red' as const : 'orange' as const, item: { type: 'Dispute', specChange, questions, title: `${match[1]}: ${match[2]}`, detail: match[3].trim(), link: `${folder}/dispute-log.md:${text.slice(0, match.index).split('\n').length}`, source: [match[1]] } }];
+
+function logTier(kind: string, title: string, specChange: boolean): Tier {
+  if (specChange) return 'red';
+  if (kind === 'decision' || title.startsWith('PR comment')) return 'yellow';
+  return 'orange';
+}
+
+function logItem(kind: 'decision' | 'dispute', code: string, title: string, body: string): RequiredItem {
+  const decision = kind === 'decision';
+  const specChange = !decision && /\bspec-change\b/i.test(body);
+  const edit = /^[- ]*(?:Spec edit|Edit): (.+)$/mi.exec(body)?.[1] ?? '';
+  return { tier: logTier(kind, title, specChange), item: {
+    type: decision ? 'Agent decision' : 'Dispute', specChange, title,
+    questions: specChange ? [disputeQuestion(edit)] : undefined,
+    detail: decision ? 'An agent decided this on its own. It is still open.' : 'This dispute is still open.',
+    links: [{ label: decision ? 'How the agent decided' : 'What was disputed', target: `log:${code}` }], source: [code],
+  } };
+}
+
+function logItems(folder: string, kind: 'decision' | 'dispute'): RequiredItem[] {
+  const text = readText(join(folder, `${kind}-log.md`));
+  const pattern = kind === 'decision' ? /^(?:DECIDE|D)-\d+$/ : /^(?:DISPUTE|DP)-\d+$/;
+  const blocks = text.matchAll(/^## ([\w-]+): (.*)(?:\n([\s\S]*?))?(?=^## |$(?![\s\S]))/gm);
+  return [...blocks].flatMap(([, code, title, body = '']) => {
+    if (!pattern.test(code) || /^\s*(?:[-*] )?Settled in review round /mi.test(body)) return [];
+    return [logItem(kind, code, title, body)];
   });
 }
-function acceptancePushResult(dir: string, result: StepResult): StepResult {
-  if (!result.problems.startsWith('Acceptance push failed:')) return result;
-  const finalize = readJson<Record<string, { ok: boolean }>>(join(dir, 'finalize-results.json'), {});
-  const pushed = finalize['finalize-push']?.ok === true;
-  const detail = pushed ? "Finalize subsequently pushed the round's committed fixes to the pull request; acceptance still did not converge." : "The pull request lacks the round's fix unless finalize pushes it.";
-  return { ...result, problems: result.problems.replace(/ The PR lacks.*$/, ''), remaining: `${result.remaining}\n${detail}` };
+
+const failures: Record<string, [string, string]> = {
+  acceptance: ['Acceptance did not converge', 'Review what remains untested before merging.'],
+  archive: ['The archive did not pass', 'Repair the archive before merging.'],
+  finalize: ['Finalize did not pass', 'Resolve the final checks before merging.'],
+  retest: ['The retest did not pass', 'Review the behavior the retest could not verify.'],
+  'merge-base': ['Merging in the base branch needs a person', 'Merge the current base before proceeding.'],
+  'address-feedback': ['Addressing the feedback was blocked', 'Review which feedback still needs action.'],
+  'check-response': ['The response to the feedback failed its check', 'Correct the rejected responses.'],
+  description: ['The pull request description was not updated', 'Retry updating the pull request description.'],
+  'review-media': ['Some acceptance evidence could not be shown', 'Review the remaining evidence for those behaviors.'],
+  logs: ['The review logs could not be committed', 'Review the log entries that are missing from the branch.'],
+};
+
+function acceptanceFailureLine(dir: string, result: StepResult, title: string): string {
+  const index = readText(join(dir, 'acceptance-round-number.txt')).trim();
+  const round = result.round ?? (/^\d+$/.test(index) ? Number(index) + 1 : 0);
+  if (result.push) return `Acceptance stopped${round ? ` after round ${round}` : ''} because the push failed.`;
+  return round ? `${title} after ${round} rounds.` : `${title}.`;
 }
-export function failedItems(dir: string, mediaProblems = reviewMedia(dir).problems): Item[] {
-  const results = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
-  if (readText(join(dir, 'acceptance-preparation-status.txt')).trim() === 'ACCEPTANCE_FAILED' && !results.acceptance) {
-    results.acceptance = { ok: false, problems: 'Acceptance did not converge.', remaining: readText(join(dir, 'acceptance-handoff.md')) };
+
+function failureLine(dir: string, step: string, result: StepResult, title: string): string {
+  if (step === 'acceptance') return acceptanceFailureLine(dir, result, title);
+  if (step === 'finalize') {
+    const checks = result.failedChecks?.join(', ');
+    if (checks) return `Finalize did not pass. The following checks must pass before merging: ${checks}.`;
   }
-  const failures = ['acceptance', 'archive', 'finalize', 'retest', 'merge-base', 'address-feedback', 'check-response', 'push-round', 'description'].flatMap(step => {
-    const recorded = results[step];
-    const result = step === 'acceptance' && recorded ? acceptancePushResult(dir, recorded) : recorded;
-    return result && !result.ok ? [failureItem(step, result, join(dir, 'step-results.json'))] : [];
-  });
-  const firstProblem = mediaProblems[0];
-  if (firstProblem) failures.push(failureItem('review-media', {
-    ok: false, problems: mediaProblems.map(problem => `${problem.path}: ${problem.detail}`).join('\n'),
-    remaining: 'Repair the reported evidence manifests before relying on the missing screenshots or journeys.',
-  }, firstProblem.path));
-  return failures;
+  return `${title}.`;
 }
-function failureItem(step: string, result: StepResult, link: string): Item {
-  const blocked = ['archive', 'finalize'].includes(step) ? 'Merge is unavailable. ' : '';
-  return { type: 'Failure', title: `${step} failed`, detail: `${result.problems}\n${blocked}${result.remaining}`,
-    link, source: [`failure:${step}`], questions: [standardQuestion('Failure')] };
+
+export function stepFailures(dir: string, mediaProblems = reviewMedia(dir).problems): Item[] {
+  const results = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
+  const failed = { ok: false, problems: '', remaining: '' };
+  if (readText(join(dir, 'acceptance-preparation-status.txt')).trim() === 'ACCEPTANCE_FAILED') results.acceptance ??= failed;
+  if (mediaProblems.length > 0) results['review-media'] = failed;
+  return Object.entries(failures).flatMap(([step, [title, detail]]) => {
+    const result = results[step];
+    if (!result || result.ok) return [];
+    return [{ type: 'Failure', title, detail, failLine: failureLine(dir, step, result, title),
+      links: [], source: [`failure:${step}`], questions: [standardQuestion('Failure')] }];
+  });
 }
 
 export function acceptedHead(input: InventoryInput): string {
@@ -106,33 +141,69 @@ function lateCommit(exec: Exec, sha: string): Item[] {
     if (files === undefined) throw new Error(`could not inspect ${sha}`);
     if (files.split('\n').filter(Boolean).every(file => file.startsWith('openspec/'))) return [];
     const size = output(exec, 'git', ['show', ...flags, '--format=', '--shortstat', sha]) ?? '';
-    return [{ type: 'Late commit', title: sha, detail: `${size}\nTests: none named.`, link: sha, source: [sha] }];
+    return [{ type: 'Late commit', title: output(exec, 'git', ['show', '-s', '--format=%s', sha]) || 'Changes after acceptance', detail: `${size}\nTests: none named.`, links: [{ label: 'Commit after acceptance', target: `commit:${sha}` }], source: [sha] }];
 }
+function sharedSources(dir: string, page: PageEntry): Map<string, string[]> {
+  const html = readText(join(dir, page.file));
+  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(html)?.[1];
+  const data = JSON.parse(block ?? '{}') as Ranking;
+  const shared = new Map<string, string[]>();
+  for (const item of TIERS.flatMap(tier => data[tier] ?? [])) {
+    if (!item.questions?.some(question => !question.source)) continue;
+    const own = new Set(item.questions?.map(question => question.source).filter(Boolean));
+    const sources = item.source.filter(source => !own.has(source));
+    for (const source of sources) shared.set(source, sources);
+  }
+  return shared;
+}
+
+type ResponseStatus = { item: string; status: string };
+
+function responseRoundFiles(dir: string) {
+  return readdirSync(dir).flatMap(file => {
+    const match = /^review-response-round-(\d+)\.json$/.exec(file);
+    return match ? [{ file, round: Number(match[1]) }] : [];
+  }).sort((a, b) => a.round - b.round);
+}
+
+function roundStatuses(entries: ResponseStatus[], shared: Map<string, string[]>) {
+  const inherited = entries.flatMap(({ item, status }) => (shared.get(item) ?? []).map(source => [source, status]));
+  return [...inherited, ...entries.map(({ item, status }) => [item, status])];
+}
+
 export function responseStatuses(dir: string): Map<string, string> {
-  const responses = readdirSync(dir).filter(file => /^review-response-round-\d+\.json$/.test(file))
-    .sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
   const statuses = new Map<string, string>();
-  for (const file of responses) {
-    const entries = readJson<{ item: string; status: string }[]>(join(dir, file), []);
-    for (const { item, status } of entries) statuses.set(item, status);
+  const pages = readPages(dir);
+  for (const { round, file } of responseRoundFiles(dir)) {
+    const entries = readJson<ResponseStatus[]>(join(dir, file), []);
+    const page = pages.find(entry => entry.round === round);
+    const shared = page ? sharedSources(dir, page) : new Map<string, string[]>();
+    for (const [item, status] of roundStatuses(entries, shared)) statuses.set(item, status);
   }
   return statuses;
 }
+
+function dismissedSource(source: string, status: string): boolean {
+  if (['no-change', 'unchanged', 'settled'].includes(status)) return true;
+  return status === 'fixed' && /^(?:D|DECIDE|DP|DISPUTE)-\d+$/.test(source);
+}
+
 export function inventory(input: InventoryInput): Inventory {
+  const { exec, dir, changeFolder } = input;
   const head = acceptedHead(input);
   const commits = laterCommits(input, head);
-  const statuses = responseStatuses(input.dir);
-  const media = reviewMedia(input.dir);
+  const statuses = responseStatuses(dir);
+  const media = reviewMedia(dir);
   const checklist = checklistItems(input);
-  const failedRows = new Set(checklist.filter(row => row.item.type === 'Failure').map(row => row.item.source[0]));
-  const dismissed = [...statuses].filter(([id, status]) =>
-    !failedRows.has(id) && (status === 'no-change' || status === 'settled')).map(([id]) => id);
-  const plan = join(input.changeFolder, 'test-plan.md');
-  const legacy = existsSync(plan) ? readText(plan).match(/\bAT-\d+\b/g) ?? [] : [];
-  const required = [...checklist, ...disputeItems(input.changeFolder),
-    ...commits.map(item => ({ tier: 'orange' as const, item })), ...failedItems(input.dir, media.problems).map(item => ({ tier: 'red' as const, item }))];
+  const failedRows = new Set(checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]));
+  const dismissed = [...statuses].filter(([id, status]) => !(failedRows.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id);
+  const legacy = readText(join(changeFolder, 'test-plan.md')).match(/\bAT-\d+\b/g) ?? [];
+  const required = [...checklist, ...logItems(changeFolder, 'decision'), ...logItems(changeFolder, 'dispute'),
+    ...commits.map(item => ({ tier: 'orange' as const, item })), ...stepFailures(dir, media.problems).map(item => ({ tier: 'red' as const, item }))];
+  const commands = media.commands.map(command => command.file);
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),
-    context: { dismissed, shots: media.shots.map(shot => shot.file),
+    context: { dismissed, media: [...media.shots.map(shot => shot.file), ...commands], commands,
+      links: { exec, dir, folder: changeFolder, base: '', head: output(exec, 'git', ['rev-parse', 'HEAD']) ?? '', bases: baseRevisions(exec, dir) },
       journeys: [...media.journeys.map(journey => journey.code), ...legacy], commits: commits.map(item => item.source[0]) } };
 }

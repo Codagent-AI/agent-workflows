@@ -6,12 +6,23 @@ import { dirname, join } from 'node:path';
 
 import { ARTIFACTS } from '../../.shared/lib/artifacts.ts';
 import { artifactsDir, required, runCheck } from '../../.shared/lib/check.ts';
-import { sleep } from '../../.shared/lib/exec.ts';
+import { runCommand, sleep } from '../../.shared/lib/exec.ts';
 import { defaultTools } from '../../.shared/lib/forge.ts';
 import { readJson } from '../../.shared/lib/run-files.ts';
-import { checkDraftPr } from '../../.shared/lib/pull-request.ts';
+import { acceptancePush, checkDraftPr } from '../../.shared/lib/pull-request.ts';
 
-runCheck(() => {
+import { endAcceptance } from '../../.shared/lib/finish-run.ts';
+
+function pushRepair(): boolean {
+  if (process.env.INPUTS_PUSH !== 'true' || process.env.INPUTS_BLOCKED === 'true') return true;
+  const pushed = acceptancePush(runCommand, 'acceptance PR repair');
+  if (pushed.ok) return true;
+  endAcceptance(artifactsDir(), pushed.problems, true);
+  process.stdout.write(`${JSON.stringify({ ok: false, problems: pushed.problems, pr_url: '' })}\n`);
+  return false;
+}
+
+if (pushRepair()) runCheck(() => {
   const attempts = Number(required(process.env.INPUTS_ATTEMPTS, 'attempts'));
   const intervalSeconds = Number(required(process.env.INPUTS_INTERVAL_SECONDS, 'interval_seconds'));
   const { prUrl, pr, ...result } = checkDraftPr(defaultTools(), sleep, attempts, intervalSeconds);

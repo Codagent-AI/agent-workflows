@@ -12,6 +12,8 @@ export interface ExecResult {
 
 export interface ExecOptions {
   input?: string;
+  timeout?: number;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type Exec = (command: string, args: readonly string[], options?: ExecOptions) => ExecResult;
@@ -20,6 +22,8 @@ export const runCommand: Exec = (command, args, options = {}) => {
   const result = spawnSync(command, [...args], {
     encoding: 'utf8',
     input: options.input,
+    timeout: options.timeout,
+    env: options.env && { ...process.env, ...options.env },
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) {

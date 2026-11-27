@@ -10,7 +10,7 @@ You are the independent acceptance tester for OpenSpec change "$INPUTS.change_na
 - implementation evidence: the implementation session report, `$ARTIFACTS_DIR/session-report.md`, if it exists;
 - evidence directory: `$ARTIFACTS_DIR/`;
 - scratch_dir: `$ARTIFACTS_DIR/.archon/scratch/acceptance-test`;
-- assumptions ledger: `$ARTIFACTS_DIR/decision-log.md`, shared with the implementor and auditor; each `## ` section gives step and round, question, requirement, reading tested, alternatives, rationale, what breaks if wrong, and decision pending from the user;
+- assumptions ledger: `$ARTIFACTS_DIR/decision-log.md`, shared with the implementor and auditor; each `## ` section gives step and round, question, requirement, reading tested, alternatives, rationale, and what breaks if wrong;
 - prior tested revision: `$ARTIFACTS_DIR/acceptance-tested-revision.txt`.
 
 All temporary files, clones, build outputs, and servers' working directories must go under `scratch_dir`. Never use `/tmp`, `/private/tmp`, or `$TMPDIR` for them.
@@ -289,3 +289,5 @@ coverage, meaning "this area is signed off." An empty diff sizes to zero steps.
 - Do not treat a successful command exit, an agent summary, or a screenshot alone as proof of behavior.
 
 For any screenshots taken, save PNG, JPEG, GIF or WebP files under $ARTIFACTS_DIR/acceptance-screenshots/round-$INPUTS.acceptance_round/. Add manifest.json beside them as an array with one object per image, with file (the basename), title, shows, revision and alt. Record the journeys you exercised as an array at $ARTIFACTS_DIR/acceptance-journeys/round-$INPUTS.acceptance_round.json. Give each entry a code (JOURNEY-1 and up, continuing the sequence from all previous rounds), title, scenario and repeat instructions.
+
+For each command whose output shows a behavior you checked, save its full output as a text file under $ARTIFACTS_DIR/acceptance-commands/round-$INPUTS.acceptance_round/. Write manifest.json beside the output as an array with title, shows, revision, command, excerpt, and output for each entry. Set output to the saved file’s basename and use a verbatim run of at most 20 whole lines from it for the excerpt. Keep secrets out of commands, excerpts and saved evidence. The manifest is optional when there is no command evidence.

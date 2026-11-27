@@ -698,6 +698,7 @@ nodes:
     script: check-draft-pr
     runtime: bun
     with:
+      push: false
       attempts: 3
       interval_seconds: 3
       strict: false
@@ -737,6 +738,7 @@ nodes:
     script: check-draft-pr
     runtime: bun
     with:
+      push: false
       attempts: 3
       interval_seconds: 3
       strict: true
@@ -997,11 +999,19 @@ nodes:
             strict: false
             blocked: false
             reason: ""
-          output_format: *check
+          timeout: 2700000
+          output_format: &acceptance-push-result
+            type: object
+            properties:
+              ok: { type: boolean }
+              problems: { type: string }
+              person: { type: boolean }
+            required: [ok, problems, person]
+            additionalProperties: false
 
         - id: repair-acceptance-push
           depends_on: [acceptance-push]
-          when: "$acceptance-push.output.ok == 'false'"
+          when: "$acceptance-push.output.ok == 'false' && $acceptance-push.output.person != 'true'"
           model: ['@implementor', large]
           context: { resume: acceptance-fix }
           command: repair-push
@@ -1020,7 +1030,8 @@ nodes:
             on_failure: report
             blocked: $repair-acceptance-push.output.blocked
             reason: $repair-acceptance-push.output.reason
-          output_format: *check
+          timeout: 2700000
+          output_format: *acceptance-push-result
 
         # The push does not change the pull request's draft state; a refusal by the forge
         # fails the run, since no agent can resolve it.
@@ -1041,6 +1052,7 @@ nodes:
           script: check-draft-pr
           runtime: bun
           with:
+            push: false
             attempts: 10
             interval_seconds: 3
             strict: false
@@ -1063,7 +1075,9 @@ nodes:
           depends_on: [repair-acceptance-pr]
           script: check-draft-pr
           runtime: bun
+          timeout: 2700000
           with:
+            push: true
             attempts: 10
             interval_seconds: 3
             strict: true
@@ -1089,7 +1103,7 @@ nodes:
       additionalProperties: false
 
   # Before the stop point, so a run that stops after acceptance has it too: the implementor
-  # reruns the checks of the rows still not verified. Finalize pushes it in a finished run.
+  # reruns the checks of the rows still not verified and the workflow pushes its commit.
   - id: "list-unverified"
     depends_on: ["write-acceptance-status"]
     script: "finish"
@@ -1106,18 +1120,36 @@ nodes:
     with: {"change_name":"$INPUTS.change_name","change_dir":"$validate-inputs.output.change_dir","rows":"$list-unverified.output.rows"}
     output_format: *implementor-result
 
-  - id: "push-recheck"
-    depends_on: ["recheck-unverified"]
-    when: "$validate-inputs.output.finish == 'false'"
-    script: "finish"
-    runtime: "bun"
-    with: {"change_name":"$INPUTS.change_name","change_folder":"$validate-inputs.output.change_dir","blocked":false,"reason":"","result":"","previous":"","status":"","step":"push-recheck","previous_blocked":false,"op":"push-recheck"}
-    output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
+  - id: push-recheck
+    depends_on: [list-unverified, recheck-unverified]
+    trigger_rule: none_failed_min_one_success
+    script: finish
+    runtime: bun
+    timeout: 2700000
+    with: {"op":"push-recheck","strict":false}
+    output_format: *check
 
-  # Finish always records failures and continues to the review package. With stop_after:
+  - id: repair-push-recheck
+    depends_on: [push-recheck]
+    when: "$push-recheck.output.ok == 'false'"
+    model: ["@implementor","large"]
+    context: {"resume":"session-report"}
+    command: repair-push
+    with: {"change_name":"$INPUTS.change_name","pushed":"the checklist recheck","problems":"$push-recheck.output.problems"}
+    output_format: *implementor-result
+
+  - id: recheck-push-recheck
+    depends_on: [repair-push-recheck]
+    script: finish
+    runtime: bun
+    timeout: 2700000
+    with: {"op":"push-recheck","strict":true,"reason":"$repair-push-recheck.output.reason"}
+    output_format: *check
+
+  # Finish records reportable failures and continues to the review package. With stop_after:
   # acceptance it is skipped, and with it every step through the ranking.
   - id: review-rounds
-    depends_on: [list-unverified, recheck-unverified]
+    depends_on: [push-recheck, recheck-push-recheck]
     trigger_rule: none_failed_min_one_success
     when: "$validate-inputs.output.finish == 'true'"
     loop_group:
@@ -1295,6 +1327,7 @@ nodes:
         when: "$start-round.output.work == 'true'"
         script: finish
         runtime: bun
+        timeout: 2700000
         with: {"op":"push-round"}
         output_format: *check
 
@@ -1310,11 +1343,12 @@ nodes:
 
       - id: recheck-push-round
         depends_on: ["repair-push-round"]
-        trigger_rule: none_failed_min_one_success
+        trigger_rule: all_success
         when: "$start-round.output.work == 'true'"
         script: finish
         runtime: bun
-        with: {"op":"push-round","blocked":"$repair-push-round.output.blocked","reason":"$repair-push-round.output.reason"}
+        timeout: 2700000
+        with: {"strict":true,"op":"push-round","blocked":"$repair-push-round.output.blocked","reason":"$repair-push-round.output.reason"}
         output_format: *check
 
       - id: prepare-retest
@@ -1375,7 +1409,7 @@ nodes:
         output_format: *check
 
       - id: "commit-logs"
-        when: "$start-round.output.mode == 'first'"
+        when: "$start-round.output.mode == 'first' && $start-round.output.archive_needed == 'true'"
         depends_on: [start-round]
         trigger_rule: none_failed_min_one_success
         script: "finish"
@@ -1456,12 +1490,20 @@ nodes:
         with: {"change_name":"$INPUTS.change_name","change_folder":"$start-round.output.change_folder","blocked":{"from":"$repair-archive-commit.output.blocked","if_skipped":false},"reason":{"from":"$repair-archive-commit.output.reason","if_skipped":"Archive delta repair blocked; see archive report and decision log."},"result":"","previous":"","status":"","step":"record-archive","previous_blocked":{"from":"$repair-archive-delta.output.blocked","if_skipped":false},"op":"record-archive","archive_needed":"$start-round.output.archive_needed"}
         output_format: {"type":"object","properties":{"change_folder":{"type":"string"}},"required":["change_folder"],"additionalProperties":false}
 
+      - id: sync-logs
+        depends_on: [record-archive]
+        when: "$start-round.output.work == 'true'"
+        script: finish
+        runtime: bun
+        with: {"op":"sync-logs","change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder"}
+        output_format: *check
+
       - id: "finalize-push"
-        depends_on: ["record-archive"]
+        depends_on: [record-archive, sync-logs]
         trigger_rule: none_failed_min_one_success
         script: "finish"
         runtime: "bun"
-        timeout: 1200000
+        timeout: 2700000
         with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1481,8 +1523,8 @@ nodes:
         trigger_rule: none_failed_min_one_success
         script: "finish"
         runtime: "bun"
-        timeout: 1200000
-        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-finalize-push.output.blocked","reason":"$repair-finalize-push.output.reason","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
+        timeout: 2700000
+        with: {"strict":true,"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-finalize-push.output.blocked","reason":"$repair-finalize-push.output.reason","result":"the logs and the archive","previous":"","status":"","step":"finalize-push","previous_blocked":false,"op":"finalize-push"}
         when: "$start-round.output.publish == 'true' && $finalize-push.output.ok == 'false'"
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1529,8 +1571,8 @@ nodes:
               trigger_rule: "all_success"
               script: "finish"
               runtime: "bun"
-              timeout: 1200000
-              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-repair","previous_blocked":false,"op":"mark-ready"}
+              timeout: 2700000
+              with: {"push":true,"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-ci-wait.output.blocked","reason":"$repair-ci-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-repair","previous_blocked":false,"op":"mark-ready"}
               when: "$wait-finalize-ci.output.status == 'error'"
               output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1569,7 +1611,7 @@ nodes:
               depends_on: ["fix-pr"]
               script: "finish"
               runtime: "bun"
-              timeout: 1200000
+              timeout: 2700000
               with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$fix-pr.output.blocked","reason":"$fix-pr.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
               output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1580,7 +1622,7 @@ nodes:
               context: {"resume":"session-report"}
               command: "repair-push"
               with: {"change_name":"$INPUTS.change_name","change_dir":"$record-archive.output.change_folder","pushed":"the CI fixes","problems":"$push-ci-fix.output.problems"}
-              when: "$fix-pr.output.blocked == 'false' && $push-ci-fix.output.ok == 'false'"
+              when: "$push-ci-fix.output.ok == 'false'"
 
               output_format: *implementor-result
 
@@ -1589,8 +1631,8 @@ nodes:
               trigger_rule: "all_success"
               script: "finish"
               runtime: "bun"
-              timeout: 1200000
-              with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-push-ci-fix.output.blocked","reason":"$repair-push-ci-fix.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
+              timeout: 2700000
+              with: {"strict":true,"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-push-ci-fix.output.blocked","reason":"$repair-push-ci-fix.output.reason","result":"the CI fixes","previous":"","status":"","step":"push-ci-fix","previous_blocked":false,"op":"finalize-push"}
               when: "$push-ci-fix.output.ok == 'false'"
               output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1628,8 +1670,8 @@ nodes:
         trigger_rule: none_failed_min_one_success
         script: "finish"
         runtime: "bun"
-        timeout: 1200000
-        with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-final-repair","previous_blocked":false,"op":"mark-ready"}
+        timeout: 2700000
+        with: {"push":true,"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":"$repair-final-wait.output.blocked","reason":"$repair-final-wait.output.reason","result":"","previous":"","status":"","step":"mark-ready-after-final-repair","previous_blocked":false,"op":"mark-ready"}
         when: "$start-round.output.publish == 'true' && $final-ci.output.status == 'error'"
         output_format: {"type":"object","properties":{"ok":{"type":"boolean"},"problems":{"type":"string"}},"required":["ok","problems"],"additionalProperties":false}
 
@@ -1659,7 +1701,7 @@ nodes:
         trigger_rule: none_failed_min_one_success
         script: "finish"
         runtime: "bun"
-        timeout: 1200000
+        timeout: 1440000
         with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":false,"reason":"","result":"","previous":"","status":"","step":"prepare-ranking","previous_blocked":false,"op":"prepare-ranking"}
         output_format: {"type":"object","properties":{"accepted_head":{"type":"string"},"later_commits":{"type":"string"}},"required":["accepted_head","later_commits"],"additionalProperties":false}
 
@@ -1674,7 +1716,7 @@ nodes:
         with: {"change_folder":"$record-archive.output.change_folder","accepted_head":"$prepare-ranking.output.accepted_head","later_commits":"$prepare-ranking.output.later_commits","answers_file":"$start-round.output.answers_file","review_round":"$start-round.output.round"}
 
         output_format: &ranking
-          {"type":"object","properties":{"red":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"orange":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"yellow":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"white":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"link":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}}},"required":["type","title","detail","link","source","questions","journeys"],"additionalProperties":false}},"evidence":{"type":"string"},"keyEvidence":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"title":{"type":"string"},"shows":{"type":"string"}},"required":["file","title","shows"],"additionalProperties":false}}},"required":["red","orange","yellow","white","evidence","keyEvidence"],"additionalProperties":false}
+          {"type":"object","properties":{"red":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}},"links":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"target":{"type":"string"}},"required":["label","target"],"additionalProperties":false}},"evidence":{"type":"string"}},"required":["type","title","detail","source","questions","journeys","links","evidence"],"additionalProperties":false}},"orange":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}},"links":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"target":{"type":"string"}},"required":["label","target"],"additionalProperties":false}},"evidence":{"type":"string"}},"required":["type","title","detail","source","questions","journeys","links","evidence"],"additionalProperties":false}},"yellow":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"title":{"type":"string"},"detail":{"type":"string"},"source":{"type":"array","items":{"type":"string"}},"questions":{"type":"array","items":{"type":"object","properties":{"prompt":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"detail":{"type":"string"}},"required":["id","label","detail"],"additionalProperties":false}}},"required":["prompt","options"],"additionalProperties":false}},"journeys":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"title":{"type":"string"},"commit":{"type":"string"}},"required":["code","title","commit"],"additionalProperties":false}},"links":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"target":{"type":"string"}},"required":["label","target"],"additionalProperties":false}},"evidence":{"type":"string"}},"required":["type","title","detail","source","questions","journeys","links","evidence"],"additionalProperties":false}},"evidence":{"type":"string"},"keyEvidence":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"title":{"type":"string"},"shows":{"type":"string"}},"required":["file","title","shows"],"additionalProperties":false}}},"required":["red","orange","yellow","evidence","keyEvidence"],"additionalProperties":false}
 
       - id: "check-ranking"
         when: "$start-round.output.publish == 'true'"
@@ -1737,7 +1779,7 @@ nodes:
           pages: [$publish-review-package.output.page, review-page.html]
 
   - id: "end-after-acceptance"
-    depends_on: ["list-unverified","recheck-unverified","push-recheck"]
+    depends_on: [push-recheck, recheck-push-recheck]
     trigger_rule: "none_failed_min_one_success"
     script: "finish"
     runtime: "bun"
