@@ -250,7 +250,7 @@ The pull request SHALL stay a draft through the acceptance rounds, and finalize 
 - **THEN** finalize fails, and the run goes on to write the review package
 
 ### Requirement: Each round's publish rewrites the generated description
-Each round's publish SHALL rewrite the generated block of the pull request description with the implementor's change summary, the page's state line, and a list of every round's review page, oldest first, each new round added at the end. The change summary SHALL describe the change and its commits and SHALL NOT report test or validation results, which later steps make stale.
+Each round's publish SHALL rewrite the generated block of the pull request description with the implementor's change summary, the run's state line, and a list of every round's review page, oldest first, each new round added at the end. The change summary SHALL describe the change and its commits and SHALL NOT report test or validation results, which later steps make stale.
 
 #### Scenario: Package is written
 - **WHEN** round 2's page is written
