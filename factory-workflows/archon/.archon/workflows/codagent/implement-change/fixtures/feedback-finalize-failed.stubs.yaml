@@ -46,6 +46,7 @@ record-finalize: {"ok":false,"problems":"fixture failure"}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
 rank-review: {"red":[],"orange":[],"yellow":[],"evidence":"passed","keyEvidence":[]}
 check-ranking: {"ok":true,"problems":""}
+prepare-reader: {"ready":false,"items":"","proposal":""}
 start-round: {"round":2,"mode":"feedback","reason":"","change_folder":"openspec/changes/archive/2026-11-16-valid-change","archive_needed":false,"retest":false,"journeys":"[]","answers_file":"fixture-saved-answers.json","review_head":"2222222222222222222222222222222222222222","work":true,"publish":true}
 publish-review-package: {"succeeded":false,"page":"review-page-round-2.html","message":"Review round 2: fixture"}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}

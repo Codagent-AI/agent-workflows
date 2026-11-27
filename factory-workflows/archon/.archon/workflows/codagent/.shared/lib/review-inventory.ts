@@ -5,7 +5,7 @@ import { type Exec, output } from './exec.ts';
 import { tableBlocks, rawCells, isSeparatorRow } from './checklist.ts';
 import { readText, readJson, type StepResult } from './run-files.ts';
 import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
-import { baseRevisions, commitParents, reviewRevisions } from './review-revisions.ts';
+import { baseRevisions, commitParents, pendingReviewRound, reviewedCommits, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
 import { type PageEntry, readPages } from './review-pages.ts';
@@ -129,8 +129,8 @@ export function acceptedHead(input: InventoryInput): string {
 }
 export function laterCommits(input: InventoryInput, start: string): Item[] {
   const revisions = reviewRevisions(input.exec, input.dir, start, 'HEAD');
-  const retested = readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []);
-  return revisions.filter(sha => !retested.includes(sha)).flatMap(sha => lateCommit(input.exec, sha));
+  const done = new Set([...readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []), ...reviewedCommits(input.dir)]);
+  return revisions.filter(sha => !done.has(sha)).flatMap(sha => lateCommit(input.exec, sha));
 }
 function lateCommit(exec: Exec, sha: string): Item[] {
     const parents = commitParents(exec, sha);
@@ -207,8 +207,9 @@ export function inventory(input: InventoryInput): Inventory {
   const statuses = responseStatuses(dir);
   const media = reviewMedia(dir);
   const checklist = checklistItems(input);
-  const failedRows = new Set(checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]));
-  const dismissed = [...statuses].filter(([id, status]) => !(failedRows.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id);
+  // Failed rows, step failures and commits still waiting for their review round stay whatever the response says.
+  const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
+  const dismissed = [...statuses].filter(([id, status]) => !(kept.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id);
   const legacy = readText(join(changeFolder, 'test-plan.md')).match(/\bAT-\d+\b/g) ?? [];
   const required = [...checklist, ...logItems(changeFolder, 'decision'), ...logItems(changeFolder, 'dispute'),
     ...commits.map(item => ({ tier: 'orange' as const, item })), ...stepFailures(dir, media.problems).map(item => ({ tier: 'red' as const, item }))];

@@ -23,6 +23,13 @@ export const pagesPath = (dir: string) => join(dir, 'review/pages.json');
 export const readPages = (dir: string) => readJson<PageEntry[]>(pagesPath(dir), []);
 export const prefix = (round: number) => `Review round ${round}:`;
 
+/** The source codes of each item a published page shows, in page order. */
+export function pageSources(dir: string, page: PageEntry): string[][] {
+  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(readText(join(dir, page.file)))?.[1];
+  const data = JSON.parse(block ?? '{}') as Record<string, { source?: string[] }[] | undefined>;
+  return ['red', 'orange', 'yellow'].flatMap(tier => (data[tier] ?? []).map(item => item.source ?? []));
+}
+
 function pageEntry(page: PageEntry): string {
   const label = `Review round ${page.round}`;
   const where = page.archonUrl
