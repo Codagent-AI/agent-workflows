@@ -1,4 +1,4 @@
-import { codeLinks } from '../.archon/workflows/codagent/.shared/lib/review-links.ts';
+import { commands, reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { humanChecks } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -325,12 +325,63 @@ describe('checkEvidence (check-evidence.sh)', () => {
   });
 });
 
-test('code links use the test plan heading and the defining journey artifact', () => {
+test('the ranking inventory extracts only checks in the human-only section', () => {
   const folder = 'openspec/changes/test';
   box.write(`${folder}/test-plan.md`, '## Human-Only Testing\n### HUMAN-2: Inspect the layout\n## End-to-End Tests\n### E2E-1: Submit\n');
-  box.write('artifacts/acceptance-journeys/round-2.json', '[{"code":"JOURNEY-3","title":"Retry","scenario":"Failed save","repeat":"Retry the save"}]');
-  const known = codeLinks({ base: 'https://github.com/owner/repo', head: box.head(), dir: box.path('artifacts'), folder, exec: box.exec }, []);
-  expect(known['E2E-1'].title).toBe('Submit');
-  expect(known['JOURNEY-3']).toEqual({ title: 'Retry', href: 'acceptance-journeys/round-2.json' });
   expect(humanChecks(folder)).toEqual([{ code: 'HUMAN-2', title: 'Inspect the layout' }]);
+});
+
+test('command manifests validate whole lines, normalize excerpts, and reach ranking preparation', () => {
+
+  const start = box.head();
+  const input = { start, dir: box.path('artifacts'), changeFolder: 'openspec/changes/demo' };
+  box.write('artifacts/pull-request.json', JSON.stringify({ head_revision: start }));
+  box.write(`${input.changeFolder}/checklist.md`, '| ID | Behavior | Status |\n|---|---|---|\n| C-1 | Export | verified |\n');
+  const base = 'artifacts/acceptance-commands/round-1';
+  const entry = { title: 'Check export', shows: 'Rejects input', revision: input.start, command: 'tool verify', excerpt: '  invalid\n  detail', output: 'ok.txt' };
+  box.write(`${base}/ok.txt`, '\u001b[31m  invalid\u001b[0m\r\n  detail\r\nfull only\r\n');
+  const twenty = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+  box.write(`${base}/long.txt`, `${twenty}\nline 20\n`);
+  const bad = [{ ...entry, excerpt: 'invalid' }, { ...entry, output: 'missing.txt' },
+    { ...entry, output: 'long.txt', excerpt: `${twenty}\nline 20` }, { output: 'bad.txt' }, { ...entry, excerpt: '' }];
+  box.write(`${base}/manifest.json`, JSON.stringify([entry, { ...entry, output: 'long.txt', excerpt: twenty }, ...bad]));
+  box.write('artifacts/acceptance-screenshots/round-2/screen.png', 'example');
+  box.write('artifacts/acceptance-screenshots/round-2/manifest.json', JSON.stringify([
+    { file: 'screen.png', title: 'Screen', shows: 'Shows export', revision: input.start, alt: 'Export' }, null,
+  ]));
+  const media = reviewMedia(input.dir);
+  expect(media.commands.map(command => command.excerpt)).toEqual([entry.excerpt, twenty]);
+  expect(media.commands[0]).toMatchObject({ file: 'acceptance-commands/round-1/ok.txt', round: 1 });
+  expect(media.problems).toHaveLength(6);
+  expect(media.problems.map(problem => problem.path)).toEqual(expect.arrayContaining([
+    box.path(`${base}/missing.txt`), box.path(`${base}/long.txt`), box.path(`${base}/manifest.json`),
+  ]));
+  const script = '../.archon/workflows/codagent/implement-change/scripts/finish.ts';
+  const result = Bun.spawnSync([process.execPath, new URL(script, import.meta.url).pathname], { cwd: box.dir, env: {
+    ...process.env, ARTIFACTS_DIR: input.dir, INPUTS_OP: 'prepare-ranking', INPUTS_CHANGE_FOLDER: input.changeFolder,
+  } });
+  expect(result.exitCode).toBe(0);
+  const evidence = JSON.parse(box.read('artifacts/review/evidence.json'));
+  expect(evidence.map((value: { round: number }) => value.round)).toEqual([2, 1, 1]);
+  expect(JSON.parse(box.read('artifacts/review/media-problems.json'))).toHaveLength(6);
+  expect(reviewMedia(box.path('empty'))).toMatchObject({ commands: [], shots: [], problems: [] });
+});
+
+test('duplicate command outputs keep the first valid entry and report the colliding ID', () => {
+  const folder = 'artifacts/acceptance-commands/round-0';
+  const entry = { title: 'Original', shows: 'Export', revision: 'abc', command: 'test', excerpt: 'first', output: 'run.txt' };
+  box.write(`${folder}/run.txt`, 'first\nsecond\n');
+  box.write(`${folder}/manifest.json`, JSON.stringify([entry, { ...entry, title: 'Duplicate', excerpt: 'second' }]));
+  const problems: Parameters<typeof commands>[1] = [];
+  expect(commands(box.path('artifacts'), problems).map(command => command.excerpt)).toEqual(['first']);
+  expect(problems.map(problem => problem.detail)).toEqual([expect.stringContaining('Duplicate command output run.txt')]);
+});
+
+test('acceptance journey manifests keep scenario and multiline repeat steps and flag entries without repeat', () => {
+  const journey = { code: 'JOURNEY-1', title: 'Save settings', scenario: 'A reviewer changes a preference.', repeat: '1. Save.\n2. Reload and verify.' };
+  const path = 'acceptance-journeys/round-0.json';
+  box.write(`artifacts/${path}`, JSON.stringify([journey, { code: 'JOURNEY-2', title: 'Export settings', scenario: 'A reviewer exports settings.' }]));
+  const media = reviewMedia(box.path('artifacts'));
+  expect(media.journeys).toEqual([{ ...journey, artifact: path }]);
+  expect(media.problems).toEqual([{ path: box.path(`artifacts/${path}`), detail: expect.stringContaining('entry 2') }]);
 });

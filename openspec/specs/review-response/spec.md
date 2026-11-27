@@ -69,7 +69,7 @@ Each feedback round SHALL start by merging in the latest tip of the base branch,
 - **THEN** the round merges it in, without a force push
 
 ### Requirement: A feedback round addresses the feedback and publishes again
-After the merge, an implementor SHALL address each answer, note and screenshot comment on the branch. The round SHALL then run code review and the push, the archive steps when the archive had not passed, finalize, the ranking and the publish, write the next round's page, and wait again. There MUST be no limit on the number of feedback rounds. A round that changes no code SHALL still write a new page and wait.
+After the merge, an implementor SHALL address each answer, note, screenshot comment and command evidence comment on the branch. The round SHALL then run code review and the push, the archive steps when the archive had not passed, finalize, the ranking and the publish, write the next round's page, and wait again. The round's pushes SHALL follow the same rule as every push. There MUST be no limit on the number of feedback rounds. A round that changes no code SHALL still write a new page and wait.
 
 #### Scenario: Feedback addressed
 - **WHEN** the reviewer sends feedback
@@ -82,6 +82,14 @@ After the merge, an implementor SHALL address each answer, note and screenshot c
 #### Scenario: Nothing to change
 - **WHEN** a round's feedback needs no code change
 - **THEN** the round still writes a new page and waits
+
+#### Scenario: Comment on command evidence
+- **WHEN** the reviewer's feedback has a comment on a command evidence entry
+- **THEN** the implementor addresses it as it addresses a screenshot comment
+
+#### Scenario: Push still fails in a feedback round
+- **WHEN** the round's push still fails after its repair, or fails for a reason left to a person
+- **THEN** the run fails, no new page is written, and resuming the run starts the round again from the saved feedback and retries the push
 
 ### Requirement: The next page reflects the round
 The next page's summary SHALL say what the round did with the feedback. A failure the round fixed, a dispute the reviewer settled, and an item the reviewer answered that needed no further work MUST NOT appear on the next page as items. A settled dispute SHALL stay in the dispute log.
@@ -111,12 +119,12 @@ When commits follow the accepted head, including a feedback round's fixes and co
 - **THEN** the Late commit item lists no journeys and offers no "Retest"
 
 ### Requirement: Retest reruns the listed journeys
-Choosing Retest SHALL make the next round rerun the listed journeys in an acceptance round, and that round's screenshots SHALL join the page as a new acceptance round. When that acceptance round passes, the commits the page listed SHALL leave the Late commit item. Commits made in the same round SHALL stay on the next page's Late commit item.
+Choosing Retest SHALL make the next round rerun the listed journeys in an acceptance round, and that round's screenshots and command evidence SHALL join the page as a new acceptance round. When that acceptance round passes, the commits the page listed SHALL leave the Late commit item. Commits made in the same round SHALL stay on the next page's Late commit item.
 
 #### Scenario: Retest chosen
 - **WHEN** the reviewer chooses Retest and sends feedback
 - **THEN** the next round reruns the listed journeys in an acceptance round
-- **AND** the page after it shows that round's screenshots as a new acceptance round
+- **AND** the page after it shows that round's screenshots and command evidence as a new acceptance round
 
 #### Scenario: Retest passes
 - **WHEN** the retest's acceptance round passes

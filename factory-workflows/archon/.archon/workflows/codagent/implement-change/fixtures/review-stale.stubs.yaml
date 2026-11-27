@@ -38,6 +38,7 @@ check-completion: {"complete":true,"judge":false,"iteration":1,"start":"11111111
 check-completion-verdict: {"done":true,"verdict":"","remaining":"","iteration":1}
 start-round: {"round":2,"mode":"stale","reason":"","change_folder":"openspec/changes/archive/2026-11-16-valid-change","archive_needed":false,"retest":false,"journeys":"[]","answers_file":"","review_head":"2222222222222222222222222222222222222222","work":false,"publish":false}
 publish-review-package: {"succeeded":true,"page":"review-page-round-1.html","message":"Review round 1: fixture"}
+push-recheck: {"ok":true,"problems":""}
 fixture:
   expect: paused
   reached:

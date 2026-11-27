@@ -12,7 +12,7 @@ export function writeJson(file: string, value: unknown): void { writeText(file, 
 export function appendLine(file: string, value: unknown): void {
   mkdirSync(dirname(file), { recursive: true }); appendFileSync(file, `${JSON.stringify(value)}\n`);
 }
-export interface StepResult { round?: number; ok: boolean; problems: string; remaining: string; }
+export interface StepResult { round?: number; push?: boolean; failedChecks?: string[]; ok: boolean; problems: string; remaining: string; }
 export function recordStep(dir: string, step: string, result: StepResult): void {
   const file = join(dir, 'step-results.json');
   writeJson(file, { ...readJson<Record<string, StepResult>>(file, {}), [step]: result });

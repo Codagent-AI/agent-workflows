@@ -1,6 +1,15 @@
+import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { disputeQuestion, standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
+import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
+import { commitLogs, syncLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
+import { gitNetwork } from '../.archon/workflows/codagent/.shared/lib/git-network.ts';
+import { refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { join } from 'node:path';
+import { emptyRanking, inventory, stepFailures } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { endAcceptance, pushRecheck, unverifiedRows } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rmSync, symlinkSync } from 'node:fs';
+import { existsSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import {
   checkGate,
@@ -261,14 +270,198 @@ test('the recheck lists only the rows still not verified',()=>{
   expect(unverifiedRows(box.path('change'))).toEqual({rows:'I-2, I-4'});
   expect(unverifiedRows(box.path('missing'))).toEqual({rows:''});
 });
-test('a recheck push that fails is recorded as an acceptance failure',()=>{
+test('a repairable recheck push reports its failure and a strict one stops without recording an acceptance failure',()=>{
   box.commitFix();const dir=box.path('evidence');
-  expect(pushRecheck(dir).ok).toBe(false);
-  const recorded=JSON.parse(box.read('evidence/step-results.json'));
-  expect(recorded.acceptance.ok).toBe(false);expect(recorded.acceptance.problems).toContain('recheck push:');expect(recorded.acceptance.remaining).toContain('lacks the recheck');
+  expect(pushRecheck(dir)).toMatchObject({ ok: false, problems: expect.stringContaining('checklist recheck push:') });
+  expect(() => pushRecheck(dir, true)).toThrow('checklist recheck push:');
+  expect(box.exists('evidence/step-results.json')).toBe(false);
 });
 test('a recheck push reaches the remote branch',()=>{
   const bare=box.addBareOrigin();box.git('push','-q','--set-upstream','origin','HEAD');const head=box.commitFix();
   expect(pushRecheck(box.path('evidence')).ok).toBe(true);
   expect(box.gitIn(box.dir,'--git-dir',bare,'rev-parse',`refs/heads/${box.git('branch','--show-current')}`)).toBe(head);
+});
+
+test.each([true, false])('acceptance preserves its final round count after a failed retest (push stopped: %s)', push => {
+  put('acceptance-round-number.txt', '2');
+  if (push) endAcceptance(evidence, 'push refused', true);
+  finalize(box.exec, evidence, '3');
+  const line = push ? 'Acceptance stopped after round 3 because the push failed.' : 'Acceptance did not converge after 3 rounds.';
+  expect(JSON.parse(box.read('evidence/step-results.json')).acceptance.round).toBe(3);
+  expect(stepFailures(evidence)[0].failLine).toBe(line);
+  put('acceptance-round-number.txt', '3');
+  recordRetest(evidence, 2, false, 'retest failed');
+  expect(stepFailures(evidence)[0].failLine).toBe(line);
+});
+
+test('blocked CI wait repair pushes its commit before reporting the finalize blocker', () => {
+  const bare = box.addBareOrigin();
+  const head = box.commitFix('partially repaired');
+  const script = join(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts/finish.ts');
+  const run = () => Bun.spawnSync([process.execPath, script], { cwd: box.dir, env: {
+    ...process.env, ARTIFACTS_DIR: evidence, INPUTS_OP: 'mark-ready', INPUTS_PUSH: 'true', INPUTS_BLOCKED: 'true',
+    INPUTS_REASON: 'CI still needs access', INPUTS_STEP: 'mark-ready-after-final-repair',
+  } });
+  const blocked = run();
+  expect(blocked.exitCode).toBe(0);
+  expect(JSON.parse(blocked.stdout.toString())).toMatchObject({ ok: false, problems: expect.stringContaining('CI still needs access') });
+  expect(box.gitIn(bare, 'rev-parse', 'feature')).toBe(head);
+  expect(JSON.parse(box.read('evidence/finalize-results.json'))['mark-ready-after-final-repair']).toMatchObject({ terminal: true });
+  box.git('remote', 'set-url', 'origin', box.path('missing.git'));
+  expect(run().exitCode).toBe(1);
+});
+
+test('log sync keeps previous worktree entries after the initial log commit fails', () => {
+  const folder = 'openspec/changes/demo';
+  put('decision-log.md', '## First choice\nReason: First.\n');
+  const reply = (stdout = '', status = 0) => ({ status, stdout, stderr: '' });
+  expect(commitLogs((_cmd, args) => reply('', Number(args[0] === 'commit')), evidence, 'demo').ok).toBe(false);
+  expect(box.exists('evidence/review/log-state.json')).toBe(false);
+  box.write(`${folder}/decision-log.md`, `${box.read(`${folder}/decision-log.md`)}\n## DECIDE-3: Local choice\nReason: Keep it.\n`);
+  put('decision-log.md', '## First choice\nReason: First.\n\n## Later choice\nReason: Later.\n');
+  expect(syncLogs((_cmd, args) => reply('', Number(args[0] === 'show')), evidence, folder, 'demo').ok).toBe(true);
+  const text = box.read(`${folder}/decision-log.md`);
+  expect(text.match(/First choice/g)).toHaveLength(1);
+  expect(text).toContain('DECIDE-3: Local choice');
+  expect(text).toContain('DECIDE-4: Later choice');
+  expect(JSON.parse(box.read('evidence/review/log-state.json')).decision).toBe(2);
+});
+
+test('base refresh records failed fetch diagnostics and continues', () => {
+  put('pull-request.json', '{"base":"main"}');
+  refreshBase((_cmd, args) => ({
+    status: Number(args[0] === 'fetch'),
+    stdout: args[0] === 'remote' ? 'https://github.com/owner/repo' : '',
+    stderr: args[0] === 'fetch' ? 'ref unavailable' : '',
+  }), evidence);
+  expect(JSON.parse(box.read('evidence/review/base-refresh.json'))).toMatchObject({
+    ref: 'refs/remotes/origin/main', ok: false, problems: 'ref unavailable',
+  });
+});
+
+test('log sync restores committed codes and numbers only new decisions', () => {
+  const folder = 'openspec/changes/demo';
+  const path = `${folder}/decision-log.md`;
+  const first = '## DECIDE-1: Export defaults\nReason: Keep the CLI predictable.';
+  const second = '## DECIDE-2: Share settings\nReason: Reuse the file.';
+  box.write(path, `${first}\n\n${second}\n`);
+  box.git('add', path);
+  box.commit('commit existing decisions');
+  box.write(path, `${second}\n`);
+  put('decision-log.md', '## Export defaults\nReason: Keep the CLI predictable.\n\n## New decision\nReason: Add coverage.\n');
+  expect(syncLogs(box.exec, evidence, folder, 'demo').ok).toBe(true);
+  const committed = box.git('show', `HEAD:${path}`);
+  expect(committed.match(/^## DECIDE-\d+: .*$/gm)).toEqual([
+    '## DECIDE-2: Share settings', '## DECIDE-1: Export defaults', '## DECIDE-3: New decision',
+  ]);
+  expect(committed).toContain(first);
+});
+
+test.each([false, true])('log sync restores a committed duplicate without a commit (file removed: %s)', removed => {
+  const folder = 'openspec/changes/demo';
+  const path = `${folder}/decision-log.md`;
+  const first = '## DECIDE-1: Export defaults\nReason: Keep the CLI predictable.';
+  const committed = `${first}\n\n## DECIDE-2: Share settings\nReason: Reuse the file.\n`;
+  box.write(path, committed);
+  box.git('add', path);
+  box.commit('commit existing decisions');
+  const head = box.head();
+  if (removed) rmSync(box.path(path));
+  else box.write(path, `${first}\n`);
+  put('decision-log.md', '## Share settings\nReason: Reuse the file.\n');
+  expect(syncLogs(box.exec, evidence, folder, 'demo').ok).toBe(true);
+  expect(box.read(path)).toBe(committed);
+  expect(box.head()).toBe(head);
+  expect(box.git('status', '--porcelain', '--', path)).toBe('');
+  expect(JSON.parse(box.read('evidence/review/log-state.json')).decision).toBe(1);
+});
+
+test('a decision grouped with a spec-change dispute needs a shared question', () => {
+  const own = disputeQuestion('');
+  const dispute = { type: 'Dispute', title: 'Default export', detail: 'Change the spec.', specChange: true,
+    links: [{ label: 'Source', target: 'file.txt' }], source: ['DISPUTE-1'], questions: [own] };
+  const required = [{ tier: 'red' as const, item: dispute }];
+  const item = { ...dispute, source: ['DISPUTE-1', 'DECIDE-1'] };
+  const ranking = { ...emptyRanking(), red: [item] };
+  expect(checkRanking(ranking, required).ok).toBe(false);
+  const repaired = placeRanking(ranking, required);
+  expect(repaired.red[0].questions?.map(question => question.source)).toEqual(['DISPUTE-1', undefined]);
+  const shared = standardQuestion('Agent decision');
+  expect(checkRanking({ ...ranking, red: [{ ...item, questions: [own, shared] }] }, required).ok).toBe(true);
+});
+
+test('push classifies a hook from an isolated Trace2 file and removes it', () => {
+  let trace = '';
+  const result = gitNetwork((_cmd, _args, options) => {
+    trace = options?.env?.GIT_TRACE2_EVENT ?? '';
+    expect(trace.startsWith('/')).toBe(true);
+    writeFileSync(trace, [
+      JSON.stringify({ event: 'child_start', sid: 'parent', child_id: 0, hook_name: 'pre-push' }),
+      JSON.stringify({ event: 'child_exit', sid: 'parent', child_id: 0, code: 1 }),
+    ].join('\n'));
+    return { status: 1, stdout: '', stderr: 'Connection timed out' };
+  }, ['push'], () => { throw new Error('must not retry a failed hook'); });
+  expect(result).toEqual({ ok: false, person: false, problems: 'Connection timed out' });
+  expect(existsSync(trace)).toBe(false);
+});
+
+test('fixing an archive leaves unrelated unlinked decisions and disputes open', () => {
+  const folder = 'openspec/changes/archive/2026-11-26-demo';
+  box.write(`${folder}/checklist.md`, '| ID | Behavior | Status |\n|---|---|---|\n| C-1 | Export | verified |\n');
+  box.write(`${folder}/decision-log.md`, '## DECIDE-1: Choose a format\nReason: Readers.\n');
+  box.write(`${folder}/dispute-log.md`, '## DISPUTE-1: PR comment on spacing\nReason: Style.\n');
+  put('review/accepted-head.txt', 'abc');
+  put('step-results.json', '{"archive":{"ok":false,"remaining":"","problems":"commit failed"}}');
+  const exec = (_cmd: string, args: readonly string[]) => ({
+    status: Number(args[0] === 'show' || args[0] === 'cat-file'),
+    stdout: args[0] === 'rev-parse' ? 'abc' : '', stderr: '',
+  });
+  const input = { dir: evidence, changeFolder: folder, exec };
+  const { required, context } = inventory(input);
+  const placed = placeRanking(emptyRanking(), required, context);
+  expect(placed.red[0].unlinkedSources).toEqual(['DECIDE-1', 'DISPUTE-1']);
+  put('review/pages.json', '[{"round":1,"file":"page.html","status":"feedback sent"}]');
+  put('page.html', pageHtml(placed));
+  put('review-response-round-1.json', '[{"item":"failure:archive","status":"fixed"}]');
+  put('step-results.json', '{"archive":{"ok":true}}');
+  expect(inventory(input).required.flatMap(row => row.item.source)).toEqual(['DECIDE-1', 'DISPUTE-1']);
+});
+
+test('log retry keeps a copied entry settled after the archive commits it', () => {
+  const folder = 'openspec/changes/demo';
+  put('decision-log.md', '## Choose a format\nReason: Readers.\n');
+  const reply = (stdout = '', status = 0) => ({ status, stdout, stderr: '' });
+  expect(commitLogs((_cmd, args) => reply('', Number(args[0] === 'commit')), evidence, 'demo').ok).toBe(false);
+  const path = `${folder}/decision-log.md`;
+  const archived = box.read(path);
+  const settled = `${archived.replace('Choose a format', 'Choose a default format')}Settled in review round 1\n`;
+  box.write(path, settled);
+  put('decision-log.md', '## Choose a format\nReason: Readers.\n\n## Later choice\nReason: Export.\n');
+  const exec = (_cmd: string, args: readonly string[]) =>
+    reply(args[0] === 'show' && args[1].endsWith('decision-log.md') ? archived : '');
+  expect(syncLogs(exec, evidence, folder, 'demo').ok).toBe(true);
+  const text = box.read(path);
+  expect(text.match(/^## DECIDE-/gm)).toHaveLength(2);
+  expect(text).toContain(settled);
+  expect(text).toContain('DECIDE-2: Later choice');
+});
+
+test.each(['Authentication failed', 'Connection reset'])('ignores nested hook failures when the outer push reports %s', stderr => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const result = gitNetwork((_cmd, _args, options) => {
+    const trace = options?.env?.GIT_TRACE2_EVENT ?? '';
+    writeFileSync(trace, [
+      { event: 'version', sid: 'outer' },
+      { event: 'child_start', sid: 'outer', child_id: 0, hook_name: 'pre-push' },
+      { event: 'child_start', sid: 'outer/inner', child_id: 0, hook_name: 'pre-push' },
+      { event: 'child_exit', sid: 'outer/inner', child_id: 0, code: 1 },
+      { event: 'child_exit', sid: 'outer', child_id: 0, code: 0 },
+    ].map(event => JSON.stringify(event)).join('\n'));
+    attempts++;
+    return { status: 1, stdout: '', stderr };
+  }, ['push'], delay => delays.push(delay));
+  expect(result.person).toBe(true);
+  expect(attempts).toBe(stderr === 'Authentication failed' ? 1 : 4);
+  expect(delays).toEqual(stderr === 'Authentication failed' ? [] : [10_000, 30_000, 90_000]);
 });

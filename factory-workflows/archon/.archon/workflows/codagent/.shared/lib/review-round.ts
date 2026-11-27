@@ -20,6 +20,7 @@ export interface ReviewAnswer {
   head: string;
   answers?: Choice[];
   screenshotComments?: { file: string; round: number; comment: string }[];
+  commandComments?: { ref: string; round: number; comment: string }[];
   note?: string;
 }
 
@@ -38,7 +39,7 @@ type Mode = 'first' | 'feedback' | 'refused' | 'stale' | 'merged' | 'closed';
 export const outcomesPath = (dir: string) => join(dir, 'review/outcome.json');
 export const answersPath = (dir: string, round: number) => join(dir, `review-answers-round-${round}.json`);
 export const responsePath = (dir: string, round: number) => join(dir, `review-response-round-${round}.json`);
-export const roundFailures = ['merge-base', 'address-feedback', 'check-response', 'push-round', 'description'];
+export const roundFailures = ['merge-base', 'address-feedback', 'check-response', 'description', 'logs'];
 
 function pageAnswer(text: string): Partial<ReviewAnswer> | undefined {
   try {
@@ -65,7 +66,9 @@ export function parseAnswer(text: string, page: PageEntry): ReviewAnswer | undef
   if (answer.round !== current.round || answer.head !== current.head) return undefined;
   if (answer.action === 'merge') return { ...current, action: 'merge' };
   if (answer.action === 'feedback' && Array.isArray(answer.answers) && Array.isArray(answer.screenshotComments)) {
-    return { ...current, action: 'feedback', answers: answer.answers.filter(Boolean), screenshotComments: answer.screenshotComments.filter(Boolean) };
+    const commandComments = Array.isArray(answer.commandComments) ? answer.commandComments.filter(Boolean) : undefined;
+    return { ...current, action: 'feedback', answers: answer.answers.filter(Boolean),
+      screenshotComments: answer.screenshotComments.filter(Boolean), ...(commandComments && { commandComments }) };
   }
   return undefined;
 }
@@ -95,7 +98,7 @@ function roundOutput(input: RoundInput, round: number, mode: Mode, reason = '') 
   const journeys = mode === 'feedback' ? selectedJourneys(input.dir, round - 1) : [];
   const changeFolder = retainedChangeFolder(input.folder);
   return { round, mode, reason, work, publish: mode === 'first' || work, change_folder: changeFolder,
-    archive_needed: mode === 'first' || !archived, review_head: readPages(input.dir).at(-1)?.head ?? '',
+    archive_needed: !archived, review_head: readPages(input.dir).at(-1)?.head ?? '',
     retest: journeys.length > 0, journeys: JSON.stringify(journeys), answers_file: answers };
 }
 

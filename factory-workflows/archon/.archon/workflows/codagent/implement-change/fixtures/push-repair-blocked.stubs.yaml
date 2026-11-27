@@ -28,7 +28,7 @@ publish-draft-pr: {"ok":true,"problems":""}
 verify-draft-pr: {"ok":true,"problems":"","pr_url":"https://github.com/example/greeter/pull/7"}
 clear-retest-reason: "cleared"
 acceptance-fix: {"blocked":false,"reason":"","actions":[]}
-acceptance-push: {"ok":false,"problems":"acceptance push: git push failed"}
+acceptance-push: {"ok":false,"problems":"acceptance push: git push failed","person":false}
 repair-acceptance-push: {"blocked":true,"reason":"the remote history diverged","actions":[]}
 exec-code: true
 save-implementor-response: "saved"
@@ -45,20 +45,22 @@ ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":""}
 final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
 record-finalize: {"ok":true,"problems":""}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
-rank-review: {"red":[],"orange":[],"yellow":[],"white":[],"evidence":"passed","keyEvidence":[]}
+rank-review: {"red":[],"orange":[],"yellow":[],"evidence":"passed","keyEvidence":[]}
 check-ranking: {"ok":true,"problems":""}
 start-round: {"round":1,"mode":"first","reason":"","change_folder":"openspec/changes/valid-change","archive_needed":true,"retest":false,"journeys":"[]","answers_file":"","review_head":"","work":false,"publish":true}
 publish-review-package: {"succeeded":false,"page":"review-page-round-1.html","message":"Review round 1: fixture"}
 end-run: {"succeeded":false,"reason":""}
 write-acceptance-status: {"ready":false,"status":"ACCEPTANCE_FAILED","message":"blocked"}
-recheck-acceptance-push: {"ok":false,"problems":"push blocked"}
 end-ci-cycle: {"done":true,"fix":false,"cycle":1}
 fixture:
-  expect: completed
+  expect: failed
+  fail-node: push-recheck
   reached:
     - repair-acceptance-push
+    - recheck-acceptance-push
+    - write-acceptance-status
+    - list-unverified
   inputs:
     review_wait: "false"
     change_name: valid-change
     review_strategy: none
-  authored: failed

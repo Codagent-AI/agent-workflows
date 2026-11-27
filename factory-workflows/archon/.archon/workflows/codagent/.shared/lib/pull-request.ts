@@ -2,8 +2,9 @@
 // pushing to it, and publishing its description. Every forge read and write goes through
 // `archon forge` (forge.ts); git does the pushing.
 import { type CheckResult, fail, pass } from './check.ts';
-import { type Exec, type Sleep, output } from './exec.ts';
+import { type Exec, type Sleep, output, sleep as wait } from './exec.ts';
 import { type Forge, OPS, type PrView, type Repo, type Reply, problem, remoteOf, resolveRepo } from './forge.ts';
+import { gitNetwork, type PushResult } from './git-network.ts';
 import { status } from './worktree.ts';
 
 /** What the pack's scripts need to reach git and the forge. */
@@ -110,24 +111,49 @@ export function restoreDraft(tools: Tools): CheckResult {
   return drafted.ok ? pass() : fail(drafted.problem);
 }
 
-/** Pushes the current branch after an acceptance fix, without force-pushing. */
-export function acceptancePush(exec: Exec, pushed = 'acceptance fixes'): CheckResult {
+function mergeFetched(exec: Exec): CheckResult {
+  if (exec('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).status === 0) return pass();
+  const merged = exec('git', ['merge', '--no-edit', 'FETCH_HEAD']);
+  if (merged.status === 0) return pass();
+  const files = output(exec, 'git', ['diff', '--name-only', '--diff-filter=U']);
+  if (!files) return fail(merged.stderr.trim() || merged.stdout.trim());
+  const aborted = exec('git', ['merge', '--abort']);
+  return fail(`The branch moved on GitHub and merging it conflicts in:\n${files}${aborted.status === 0 ? '' : `\nMerge abort failed: ${aborted.stderr.trim()}`}`);
+}
+
+function branchTarget(exec: Exec, branch: string) {
+  const remote = output(exec, 'git', ['config', `branch.${branch}.remote`]);
+  const mergeRef = output(exec, 'git', ['config', `branch.${branch}.merge`]);
+  return remote && mergeRef
+    ? { remote, mergeRef, push: ['push', remote, `HEAD:${mergeRef}`], newUpstream: false }
+    : { remote: 'origin', mergeRef: branch, push: ['push', '--set-upstream', 'origin', branch], newUpstream: true };
+}
+
+function fetchAndMerge(exec: Exec, branch: ReturnType<typeof branchTarget>, sleep: Sleep): PushResult {
+  const fetched = gitNetwork(exec, ['fetch', branch.remote, branch.mergeRef], sleep);
+  if (fetched.ok) return { ...mergeFetched(exec), person: false };
+  const missing = branch.newUpstream && !fetched.person && fetched.problems.includes("couldn't find remote ref");
+  return missing ? { ...pass(), person: false } : fetched;
+}
+
+export function acceptancePush(exec: Exec, pushed = 'acceptance fixes', sleep: Sleep = wait): PushResult {
+  const unable = (reason: string) => ({ ...fail(`${pushed} push: ${reason}`), person: false });
   const branch = output(exec, 'git', ['branch', '--show-current']);
-  if (!branch) return fail(`${pushed} push: HEAD is detached; check out the change branch`);
+  if (!branch) return unable('HEAD is detached; check out the change branch');
   const changes = status(exec, ['--untracked-files=no']);
-  if (changes === undefined) return fail(`${pushed} push: could not inspect tracked changes`);
-  if (changes !== '') {
-    return fail([`${pushed} push: tracked changes are uncommitted; commit them before pushing`, changes]);
+  if (changes === undefined) return unable('could not inspect tracked changes');
+  if (changes) return unable(`tracked changes are uncommitted; commit them before pushing\n${changes}`);
+  const target = branchTarget(exec, branch);
+  const fetched = fetchAndMerge(exec, target, sleep);
+  const result = fetched.ok ? gitNetwork(exec, target.push, sleep) : fetched;
+  return result.ok || result.person ? result : unable(result.problems);
+}
+
+export function checkPush(result: PushResult, strict: boolean, reason = ''): CheckResult {
+  if (!result.ok && (strict || result.person)) {
+    throw new Error([result.problems, reason].filter(Boolean).join('\n'));
   }
-  const remote = output(exec, 'git', ['config', `branch.${branch}.remote`]) ?? '';
-  const mergeRef = output(exec, 'git', ['config', `branch.${branch}.merge`]) ?? '';
-  const args =
-    remote && mergeRef ? ['push', remote, `HEAD:${mergeRef}`] : ['push', '--set-upstream', 'origin', branch];
-  const response = exec('git', args);
-  if (response.status !== 0) {
-    return fail([`${pushed} push: git ${args.join(' ')} failed:`, response.stdout.trim(), response.stderr.trim()]);
-  }
-  return pass();
+  return { ok: result.ok, problems: result.problems };
 }
 
 export const BODY_START = '<!-- codagent:generated-body:start -->';

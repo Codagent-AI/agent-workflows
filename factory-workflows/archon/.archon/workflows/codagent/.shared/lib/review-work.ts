@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { type CheckResult, fail, pass } from './check.ts';
 import { type Exec, output } from './exec.ts';
 import { OPS, remoteOf } from './forge.ts';
-import { type Tools, acceptancePush } from './pull-request.ts';
+import type { Tools } from './pull-request.ts';
 import { readPages } from './review-pages.ts';
 import { readJson, readText, recordStep, writeJson, writeText } from './run-files.ts';
 import { answersPath, responsePath, selectedJourneys } from './review-round.ts';
@@ -61,7 +61,7 @@ export function finishMerge(exec: Exec, dir: string, blocked: boolean, reason: s
 }
 
 interface Response { item: string; status: string; note?: string; commit?: string; requestedFindings?: string[] }
-const responseStates = ['fixed', 'declined', 'no-change', 'settled', 'spec-change'];
+const responseStates = ['fixed', 'declined', 'no-change', 'unchanged', 'settled', 'spec-change'];
 
 function responseEntries(file: string): Response[] | undefined {
   try {
@@ -71,10 +71,18 @@ function responseEntries(file: string): Response[] | undefined {
     return undefined;
   }
 }
+function responseSources(dir: string) {
+  const page = readPages(dir).at(-1);
+  const html = page ? readText(join(dir, page.file)) : '';
+  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(html)?.[1];
+  const data = JSON.parse(block ?? '{}') as Record<string, { source: string[] }[]>;
+  return new Set(['note', ...['red', 'orange', 'yellow'].flatMap(tier => (data[tier] ?? []).flatMap(item => item.source))]);
+}
+
 export function checkResponse(dir: string, round: number, blocked: boolean, reason: string) {
   if (blocked) result(dir, 'address-feedback', fail(reason), 'Address the saved review feedback.');
   const file = responsePath(dir, round - 1);
-  const saved = readJson<{ action?: string; screenshotComments?: { file: string }[] }>(answersPath(dir, round - 1), {});
+  const saved = readJson<{ action?: string; screenshotComments?: { file: string }[]; commandComments?: { ref: string }[] }>(answersPath(dir, round - 1), {});
   if (!(existsSync(file) || blocked) && saved.action !== 'merge') {
     return result(dir, 'check-response', fail('Review response file is missing.'), 'Write the review response before publishing.');
   }
@@ -84,21 +92,13 @@ export function checkResponse(dir: string, round: number, blocked: boolean, reas
     writeJson(file, []);
     return result(dir, 'check-response', fail('Review response is not a JSON array.'), 'Rewrite the review response as an array.');
   }
-  const page = readPages(dir).at(-1);
-  const html = page ? readText(join(dir, page.file)) : '';
-  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(html)?.[1];
-  const data = JSON.parse(block ?? '{}') as Record<string, { source: string[] }[]>;
-  const known = new Set(['note', ...['red', 'orange', 'yellow'].flatMap(tier => (data[tier] ?? []).flatMap(item => item.source))]);
+  const known = responseSources(dir);
   for (const shot of saved.screenshotComments ?? []) known.add(shot.file);
+  for (const command of saved.commandComments ?? []) known.add(command.ref);
   const valid = entries.filter(entry => known.has(entry?.item) && responseStates.includes(entry.status));
   if (entries.length === valid.length) return pass();
   writeJson(file, valid);
   return result(dir, 'check-response', fail('Review response contains an unknown item or status.'), 'Correct the rejected review response entries.');
-}
-
-export function pushRound(exec: Exec, dir: string, blocked: boolean, reason: string) {
-  const check = blocked ? fail(reason) : acceptancePush(exec, 'review feedback');
-  return result(dir, 'push-round', check, 'Push the review round commits.');
 }
 
 export function recordRetest(dir: string, round: number, ready: boolean, reason: string) {

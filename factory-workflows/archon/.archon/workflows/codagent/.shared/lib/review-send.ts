@@ -35,7 +35,7 @@ export async function sendReview(input: {
 }
 
 export function missingAnswers(rows: { required: boolean; option: string; other: string }[]): number {
-  return rows.filter(row => row.required && (!row.option || (row.option === 'other' && !row.other.trim()))).length;
+  return rows.filter(row => (row.required && !row.option) || (row.option === 'other' && !row.other.trim())).length;
 }
 
 export function initialChoice(tier: string, recommended: string, answered: boolean, prior?: string): string {
@@ -46,15 +46,18 @@ export function initialChoice(tier: string, recommended: string, answered: boole
 export function collectReview(input: {
   action: 'feedback' | 'merge'; round: number; head: string;
   rows: { item: string; question: number; required: boolean; option: string; other: string; note: string }[];
-  screenshots: { file: string; round: number }[]; comments: ReadonlyMap<string, string>;
+  screenshots: { file: string; round: number }[]; commands?: { file: string; round: number }[]; comments: ReadonlyMap<string, string>;
 }) {
   const answer = { action: input.action, round: input.round, head: input.head };
   if (input.action === 'merge') return answer;
-  return { ...answer, answers: input.rows.map(({ required, ...choice }) => choice),
-    screenshotComments: input.screenshots.flatMap(({ file, round }) => {
+  const comments = (entries: { file: string; round: number }[]) =>
+    [...new Map(entries.map(entry => [entry.file, entry])).values()].flatMap(({ file, round }) => {
       const comment = input.comments.get(file);
       return comment?.trim() ? [{ file, round, comment }] : [];
-    }) };
+    });
+  return { ...answer, answers: input.rows.map(({ required, ...choice }) => choice),
+    screenshotComments: comments(input.screenshots),
+    commandComments: comments(input.commands ?? []).map(({ file, round, comment }) => ({ ref: file, round, comment })) };
 }
 
 export function sizeTotals(rows: { files: number; added: number; modified: number; removed: number }[]) {

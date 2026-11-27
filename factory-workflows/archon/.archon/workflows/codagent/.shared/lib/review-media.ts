@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { type Exec, output } from './exec.ts';
 
 export interface Screenshot {
@@ -26,6 +27,66 @@ function manifestEntries<T>(path: string, fields: (keyof T)[], problems: Manifes
   }
 }
 
+function evidenceRounds(dir: string, kind: string): string[] {
+  const root = join(dir, kind);
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && /^round-\d+$/.test(entry.name))
+    .map(entry => entry.name).sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
+}
+
+export interface CommandEvidence {
+  file: string; title: string; shows: string; revision: string; command: string; excerpt: string; round: number;
+}
+type CommandManifest = Omit<CommandEvidence, 'file' | 'round'> & { output: string };
+
+function plain(text: string): string {
+  return stripVTControlCharacters(text).replace(/\r\n?/g, '\n');
+}
+
+function matchingExcerpt(excerpt: string, fullOutput: string): boolean {
+  return excerpt.trim() !== '' && excerpt.split('\n').length <= 20 && `\n${plain(fullOutput)}\n`.includes(`\n${excerpt}\n`);
+}
+
+function readCommand(folder: string, entry: CommandManifest, problems: ManifestProblem[]): CommandEvidence[] {
+  const { output: filename, revision, title, shows, command } = entry;
+  const file = `${folder}/${filename}`;
+  const excerpt = plain(entry.excerpt).replace(/\n$/, '');
+  try {
+    if (!filename || basename(filename) !== filename || /[\\]/.test(filename)) throw new Error('output must be a file in the round folder');
+    if (!lstatSync(file).isFile()) throw new Error('output must be a regular file');
+    if (!matchingExcerpt(excerpt, readFileSync(file, 'utf8'))) throw new Error('excerpt must match up to 20 whole lines of the saved output');
+    const name = basename(folder);
+    return [{ file: `acceptance-commands/${name}/${filename}`, round: Number(name.slice(6)), revision, title, shows, command, excerpt }];
+  } catch (error) {
+    problems.push({ path: file, detail: String(error) });
+    return [];
+  }
+}
+
+function distinctCommandEntries(entries: CommandEvidence[], manifest: string, problems: ManifestProblem[]): CommandEvidence[] {
+  const seen = new Set<string>();
+  return entries.filter(entry => {
+    if (seen.has(entry.file)) {
+      problems.push({ path: manifest, detail: `Duplicate command output ${basename(entry.file)}. Use a separate file for each entry.` });
+      return false;
+    }
+    seen.add(entry.file);
+    return true;
+  });
+}
+
+export function commands(dir: string, problems: ManifestProblem[] = []): CommandEvidence[] {
+  return evidenceRounds(dir, 'acceptance-commands').flatMap(name => {
+    const folder = join(dir, 'acceptance-commands', name);
+    const manifest = join(folder, 'manifest.json');
+    if (!existsSync(manifest)) return [];
+    const entries = manifestEntries<CommandManifest>(manifest, ['title', 'shows', 'revision', 'command', 'excerpt', 'output'], problems)
+      .flatMap(entry => readCommand(folder, entry, problems));
+    return distinctCommandEntries(entries, manifest, problems);
+  });
+}
+
 const screenshotExtension = /^[^\\]+\.(png|jpe?g|gif|webp)$/i;
 
 function containsScreenshots(folder: string): boolean {
@@ -33,11 +94,8 @@ function containsScreenshots(folder: string): boolean {
 }
 
 export function screenshots(dir: string, problems: ManifestProblem[] = []): Screenshot[] {
-  const root = join(dir, 'acceptance-screenshots');
-  if (!existsSync(root)) return [];
-  const rounds = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory() && /^round-\d+$/.test(entry.name));
-  return rounds.map(entry => entry.name).sort((a, b) => Number(a.slice(6)) - Number(b.slice(6))).flatMap(name => {
-    const folder = join(root, name);
+  return evidenceRounds(dir, 'acceptance-screenshots').flatMap(name => {
+    const folder = join(dir, 'acceptance-screenshots', name);
     const manifest = join(folder, 'manifest.json');
     if (!(existsSync(manifest) || containsScreenshots(folder))) return [];
     const entries = manifestEntries<Omit<Screenshot, 'round'>>(manifest, ['file', 'title', 'shows', 'revision', 'alt'], problems);
@@ -57,7 +115,7 @@ export function journeys(dir: string, problems: ManifestProblem[] = []): (Journe
 
 export function reviewMedia(dir: string) {
   const problems: ManifestProblem[] = [];
-  return { shots: screenshots(dir, problems), journeys: journeys(dir, problems), problems };
+  return { shots: screenshots(dir, problems), commands: commands(dir, problems), journeys: journeys(dir, problems), problems };
 }
 
 interface ClocCount { nFiles?: number; code?: number }

@@ -49,9 +49,11 @@ export function recordFinalize(tools: Tools, dir: string): { ok: boolean; proble
   const result = readJson<CiResult | null>(join(dir, 'ci/latest.json'), null);
   const failures = readJson<Record<string, { ok: boolean; problems: string }>>(join(dir, 'finalize-results.json'), {});
   const problems = Object.values(failures).filter(item => !item.ok).map(item => item.problems);
-  problems.push(...finalizeProblems(result, output(tools.exec, 'git', ['rev-parse', 'HEAD']) ?? ''));
+  const head = output(tools.exec, 'git', ['rev-parse', 'HEAD']) ?? '';
+  problems.push(...finalizeProblems(result, head));
   const final = { ok: problems.length === 0, problems: problems.join('\n') };
-  recordStep(dir, 'finalize', { ...final, remaining: final.ok ? '' : 'Resolve the listed blockers before merging.' });
+  const failedChecks = result?.headSha === head && !result.headMoved ? result.failedChecks.map(check => check.name) : undefined;
+  recordStep(dir, 'finalize', { ...final, failedChecks, remaining: final.ok ? '' : 'Resolve the listed blockers before merging.' });
   return final;
 }
 export interface FinalizeCheck { ok: boolean; problems: string; terminal?: boolean; }

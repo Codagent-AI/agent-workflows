@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { output } from './exec.ts';
+import { output, sleep as pause } from './exec.ts';
 import { remoteOf } from './forge.ts';
 import { type Tools, lookupPr } from './pull-request.ts';
-import { failedItems, type Item, type Ranking } from './review-inventory.ts';
-import { codeLinks, sourceLink, urlPath } from './review-links.ts';
-import { changeSize, journeys, screenshots } from './review-media.ts';
+import { stepFailures, type Item, type Ranking } from './review-inventory.ts';
+import { forgeBase, type LinkContext, logUrl, resolveTarget, urlPath } from './review-links.ts';
+import { changeSize, journeys, reviewMedia } from './review-media.ts';
 import { description, embeddedJson, type PageEntry, pagesPath, prefix, readPages, sentBlock, updateDescription } from './review-pages.ts';
-import { withoutStepFailures } from './review-package.ts';
 import { standardQuestion } from './review-questions.ts';
 import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
@@ -26,7 +25,7 @@ export function pageHtml(data: unknown): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review page</title>
 <style>${asset('review-page.css')}</style>
-<header class="masthead"><div class="inner"><div id="round" class="eyebrow"></div><h1></h1><dl class="meta"></dl><p id="state" class="state"></p></div></header>
+<header class="masthead"><div class="inner"><div id="round" class="eyebrow"></div><h1></h1><div class="meta-row"><dl class="meta"></dl></div></div></header>
 <div class="inner shell"><nav class="rail" aria-label="Contents"><h2>Contents</h2><ol></ol></nav><main></main></div>
 <footer class="sendbar"><div class="inner sendbar-inner"><div id="send-status" class="send-status" role="status"></div><div id="send-actions" class="send-actions"></div></div></footer>
 <script type="application/json" id="page-data">${embeddedJson(data)}</script>
@@ -35,7 +34,7 @@ ${sentBlock(null)}
 </html>`;
 }
 
-function stateLine(failures: Item[], red: number, blocked: string[]): string {
+export function stateLine(failures: Item[], red: number, blocked: string[]): string {
   const state = failures.length > 0? 'Run needs attention.' : 'Run succeeded.';
   const reason = blocked.length > 0? ` Merge is hidden because ${blocked.join(' and ')} did not pass.` : '';
   return `${state}${reason} ${red} red ${red === 1 ? 'item needs' : 'items need'} your call.`;
@@ -46,7 +45,7 @@ function recap(dir: string, round: number, reason: string) {
   const responses = readJson<ResponseEntry[]>(join(dir, `review-response-round-${round - 1}.json`), []);
   const steps = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
   const results = [steps['merge-base'], steps.retest?.round === round ? steps.retest : undefined];
-  const notes = results.flatMap(result => result ? [result.ok ? result.remaining : result.problems] : []);
+  const notes = results.flatMap(result => result?.ok ? [result.remaining] : []);
   return [...responses, ...[reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))] as ResponseEntry[];
 }
 
@@ -58,19 +57,37 @@ export function currentPage(dir: string, reason = '') {
 
 export interface PackageSource { dir: string; folder: string; ranking: Ranking }
 
-export function publishPackage(tools: Tools, source: PackageSource, options: PublishOptions = { round: 1, wait: false, run: '', archonUrl: '' }) {
+function matchedHead(tools: Tools, head: string, sleep: typeof pause) {
+  for (let attempt = 0; ; attempt++) {
+    const found = lookupPr(tools);
+    if (!found.ok) throw new Error(found.problem);
+    const { repo, view } = found.value;
+    if (!view) throw new Error('no open pull request for review package');
+    if (head && view.pr.head_revision === head) return { repo, view };
+    if (attempt === 10) throw new Error(`The pull request's head on GitHub is ${view.pr.head_revision}, not the local head ${head}. Push the branch, then resume the run.`);
+    sleep(3000);
+  }
+}
+
+function redConcerns(ranking: Ranking, failures: Item[]): Item[] {
+  const red = ranking.red.map(item => {
+    const lines = failures.filter(failure => item.source.includes(failure.source[0])).map(failure => failure.failLine);
+    return lines.length > 0? { ...item, failLine: lines.join(' ') } : item;
+  });
+  const missing = failures.filter(failure => !red.some(item => item.source.includes(failure.source[0])));
+  return [...missing, ...red];
+}
+
+export function publishPackage(tools: Tools, source: PackageSource,
+  options: PublishOptions = { round: 1, wait: false, run: '', archonUrl: '' }, sleep = pause) {
   const { dir, folder, ranking } = source;
   if (options.stale) return { ...currentPage(dir, options.reason), succeeded: false };
-  const found = lookupPr(tools);
-  if (!found.ok) throw new Error(found.problem);
-  const { repo, view } = found.value;
-  if (!view) throw new Error('no open pull request for review package');
   const head = output(tools.exec, 'git', ['rev-parse', 'HEAD']) ?? '';
-  const base = `https://${repo.host}/${repo.path}`;
-  const links = { base, head, dir, folder, exec: tools.exec };
+  const { repo, view } = matchedHead(tools, head, sleep);
+  const links = { base: forgeBase(repo), head, dir, folder, exec: tools.exec };
   const blocked = blockedSteps(dir);
-  const failures = failedItems(dir);
-  const redCount = failures.length + ranking.red.flatMap(withoutStepFailures).length;
+  const failures = stepFailures(dir);
+  const redCount = redConcerns(ranking, failures).length;
   const entries = readPages(dir).filter(entry => entry.round < options.round);
   const newPage: PageEntry = { round: options.round, file: `review-page-round-${options.round}.html`, head,
     message: `${prefix(options.round)} Review the page and answer with feedback or merge.`,
@@ -98,33 +115,59 @@ function blockedSteps(dir: string) {
   const steps = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
   return ['archive', 'finalize'].filter(step => !steps[step]?.ok);
 }
-function renderPage(source: PackageSource, links: Parameters<typeof sourceLink>[1], newPage: PageEntry,
+function acceptanceRecaps(media: ReturnType<typeof reviewMedia>) {
+  const rounds = new Map<number, { journeys: string[]; evidence: string[] }>();
+  const add = (round: number, type: 'journeys' | 'evidence', text: string) => {
+    const found = rounds.get(round) ?? { journeys: [], evidence: [] };
+    found[type].push(text);
+    rounds.set(round, found);
+  };
+  for (const entry of [...media.shots, ...media.commands]) add(entry.round, 'evidence', entry.shows);
+  for (const journey of media.journeys) {
+    const round = /round-(\d+)\.json$/.exec(journey.artifact)?.[1];
+    if (round !== undefined) add(Number(round), 'journeys', journey.title);
+  }
+  return Object.fromEntries([...rounds].map(([round, detail]) => {
+    const text = detail.journeys.length > 0 ? `Exercised ${detail.journeys.join(', ')}.` : detail.evidence[0];
+    return [round, text];
+  }));
+}
+
+function renderPage(source: PackageSource, links: LinkContext, newPage: PageEntry,
   options: PublishOptions & { title: string; base: string; mergeAllowed: boolean }) {
-  const { dir, folder, ranking } = source;
+  const { dir, ranking } = source;
   const { head, exec } = links;
-  const shots = screenshots(dir).map(shot => ({ ...shot, href: urlPath(shot.file) }));
-  const picks = (ranking.keyEvidence ?? []).flatMap(pick => {
-    const shot = shots.find(candidate => candidate.file === pick.file);
-    return shot ? [{ ...shot, ...pick }] : [];
+  const media = reviewMedia(dir);
+  const screenshots = media.shots.map(shot => ({ ...shot, href: urlPath(shot.file), kind: 'screenshot' }));
+  const commands = media.commands.map(command => ({ ...command, kind: 'command' }));
+  const picks = (ranking.keyEvidence ?? []).slice(0, 5).flatMap(pick => {
+    const entry = [...screenshots, ...commands].find(candidate => candidate.file === pick.file);
+    return entry ? [{ ...entry, ...pick }] : [];
   });
-  const stepItems = failedItems(dir);
-  const red = [...stepItems, ...ranking.red.flatMap(withoutStepFailures)];
-  const visible = (items: Item[]) => items.map(item => ({ ...item, href: sourceLink(item.link, links),
-    questions: item.questions?.length ? item.questions : [standardQuestion(item.type)] }));
-  const orange = ranking.orange.flatMap(withoutStepFailures).sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
-  const yellow = ranking.yellow.flatMap(withoutStepFailures);
-  newPage.state = stateLine(stepItems, red.length, blockedSteps(dir));
+  const failures = stepFailures(dir, media.problems);
+  const red = redConcerns(ranking, failures);
+  const orange = [...ranking.orange].sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
+  const yellow = ranking.yellow;
+  const visible = (items: Item[]) => items.map(item => ({
+    ...item, links: item.links.flatMap(({ target, label }) => {
+      const resolved = resolveTarget(target, links);
+      return 'href' in resolved ? [{ label, href: resolved.href }] : [];
+    }),
+    evidence: commands.find(command => command.file === item.evidence),
+    questions: item.questions?.length ? item.questions : [standardQuestion(item.type)],
+  }));
+  newPage.state = stateLine(failures, red.length, blockedSteps(dir));
   const remote = remoteOf(exec);
   const size = changeSize(exec, `${remote.ok ? remote.value.name : 'origin'}/${options.base}`);
-  const codes = codeLinks(links, [...red, ...orange, ...yellow]);
-  const changes = recapLinks(links, options, codes);
-  const html = pageHtml({ title: options.title, repository: newPage.ref.repo.path, pullRequest: newPage.ref.number, round: options.round, head, run: options.run, state: newPage.state,
+  const html = pageHtml({ title: options.title, repository: newPage.ref.repo.path, pullRequest: newPage.ref.number,
+    pullRequestUrl: `${links.base}/pull/${newPage.ref.number}`, forgeBase: links.base,
+    round: options.round, head, run: options.run,
+    logs: { decisions: logUrl(links, 'decision'), disputes: logUrl(links, 'dispute') },
     acceptedHead: readText(join(dir, 'review/accepted-head.txt')).trim(), wait: options.wait, merge: options.mergeAllowed,
-    summary: readText(join(dir, 'pr-body.md')), recap: changes, size, screenshots: shots, keyEvidence: picks, codes,
-    red: visible(red), orange: visible(orange), yellow: visible(yellow),
-    decisions: readText(join(folder, 'decision-log.md')), disputes: readText(join(folder, 'dispute-log.md')) });
+    summary: readText(join(dir, 'pr-body.md')), recap: recapLinks(links, options), size, screenshots, commands, keyEvidence: picks, acceptanceRecaps: acceptanceRecaps(media),
+    red: visible(red), orange: visible(orange), yellow: visible(yellow) });
   saveJourneys(dir, options.round, [...red, ...orange, ...yellow]);
-  return { html, succeeded: stepItems.length === 0 };
+  return { html, succeeded: failures.length === 0 };
 }
 
 function saveJourneys(dir: string, round: number, items: Item[]): void {
@@ -136,23 +179,11 @@ function saveJourneys(dir: string, round: number, items: Item[]): void {
     chosen.map(item => ({ ...known.find(journey => journey.code === item.code), ...item })));
 }
 
-function recapLinks(links: Parameters<typeof sourceLink>[1], options: PublishOptions, codes: ReturnType<typeof codeLinks>) {
-  const previous = readPages(links.dir).at(-1);
-  const priorHtml = previous ? readText(join(links.dir, previous.file)) : '';
-  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(priorHtml)?.[1];
-  const data = JSON.parse(block ?? '{}') as Record<string, Item[]>;
-  const refs = new Map<string, { title: string; href: string }>();
-  for (const tier of ['red', 'orange', 'yellow']) {
-    for (const [index, item] of (data[tier] ?? []).entries()) {
-      for (const source of item.source) refs.set(source, { title: item.title, href: `${previous?.file}#${tier}-${index + 1}` });
-    }
-  }
+function recapLinks(links: LinkContext, options: PublishOptions) {
   return recap(links.dir, options.round, options.reason ?? '').map(entry => {
-    const ref = codes[entry.item] ?? refs.get(entry.item);
-    if (entry.commit) {
-      const subject = output(links.exec, 'git', ['show', '-s', '--format=%s', entry.commit]) || 'Review fix';
-      return { note: entry.note, label: `${entry.commit.slice(0, 12)} · ${subject}`, href: sourceLink(entry.commit, links) };
-    }
-    return { note: entry.note, label: ref ? `${entry.item} · ${ref.title}` : '', href: ref?.href };
+    const resolved = entry.commit ? resolveTarget(`commit:${entry.commit}`, links) : undefined;
+    if (!(resolved && ('href' in resolved))) return { note: entry.note };
+    const subject = output(links.exec, 'git', ['show', '-s', '--format=%s', entry.commit ?? '']) || 'Review fix';
+    return { note: entry.note, label: subject, href: resolved.href };
   });
 }

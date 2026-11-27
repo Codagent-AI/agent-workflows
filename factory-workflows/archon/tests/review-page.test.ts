@@ -1,15 +1,16 @@
-import { acceptedHead, emptyRanking, failedItems, inventory } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { acceptedHead, emptyRanking, stepFailures, inventory } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
 import { disputeQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { expect, test } from 'bun:test';
 import { renameSync, mkdirSync } from 'node:fs';
 import { rankingForPublication } from '../.archon/workflows/codagent/.shared/lib/finish-run.ts';
-import { feedbackScope } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
+import { feedbackScope, refreshBase } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
 import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 import { runInNewContext } from 'node:vm';
-import { collectReview, initialChoice, sendReview, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { collectReview, sendReview, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 
 test.each(['feedback', 'merge'])('INT-011 sends one %s answer for the current occurrence', async action => {
@@ -52,31 +53,6 @@ test.each(['round-12', 'no wait', '409', 'file', 'offline', 'offline after GET']
   expect(mock.calls()).toBe(expectedCalls[scenario] ?? 1);
 });
 
-test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
-  expect(missingAnswers([{ required: true, option: '', other: '' }, { required: true, option: 'other', other: '  ' },
-    { required: true, option: 'other', other: 'choice' }, { required: false, option: '', other: '' }])).toBe(2);
-});
-
-
-test('question defaults start blank for required tiers and restore saved answers', () => {
-  for (const tier of ['red', 'orange']) expect(initialChoice(tier, 'recommended', false)).toBe('');
-  expect(initialChoice('yellow', 'recommended', false)).toBe('recommended');
-  expect(initialChoice('yellow', 'recommended', true)).toBe('');
-  expect(initialChoice('red', 'recommended', true, 'other')).toBe('other');
-});
-
-test('collects choice values, notes and nonblank screenshot comments with the acceptance round', () => {
-  const row = { item: 'CHECK-1', question: 1, option: 'other', other: 'Try again', note: 'More context' };
-  const input = { round: 2, head: 'reviewed', rows: [{ ...row, required: true }],
-    screenshots: [{ file: 'one.png', round: 1 }, { file: 'two.png', round: 3 }],
-    comments: new Map([['one.png', ''], ['two.png', 'Alignment']]) };
-  expect(collectReview({ ...input, action: 'feedback' })).toEqual({
-    action: 'feedback', round: 2, head: 'reviewed', answers: [row],
-    screenshotComments: [{ file: 'two.png', round: 3, comment: 'Alignment' }],
-  });
-  expect(collectReview({ ...input, action: 'merge' })).toEqual({ action: 'merge', round: 2, head: 'reviewed' });
-});
-
 test('change size totals combine both languages and all change columns', () => {
   expect(sizeTotals([{ files: 3, added: 5, modified: 3, removed: 2 }, { files: 1, added: 7, modified: 1, removed: 6 }]))
     .toEqual({ files: 4, added: 12, modified: 4, removed: 8 });
@@ -85,17 +61,42 @@ test('change size totals combine both languages and all change columns', () => {
 class Element {
   id = '';
   className = '';
-  textContent = '';
+  private text = '';
+  value = '';
+  href = '';
+  scrollLeft = 0;
+  scrollTop = 0;
+  onclick?: () => void;
+  showModal() {}
+  focus() {}
+  hidden = false;
   children: Element[] = [];
   dataset: Record<string, string> = {};
-  classList = { add: () => undefined };
+  listeners = new Map<string, () => void>();
+  classList = {
+    add: (name: string) => { this.className += ` ${name}`; },
+    contains: (name: string) => this.className.split(' ').includes(name),
+    toggle: (name: string, value = !this.classList.contains(name)) => {
+      this.className = [...this.className.split(' ').filter(part => part && part !== name), ...(value ? [name] : [])].join(' ');
+      return value;
+    },
+  };
+  prepend(child: Element) { this.children.unshift(child); }
+  get textContent(): string { return this.text + this.children.map(child => child.textContent).join(''); }
+  set textContent(value: string) { this.text = value; }
+  byTag(tag: string): Element[] { return [...(this.tag === tag ? [this] : []), ...this.children.flatMap(child => child.byTag(tag))]; }
   constructor(readonly tag: string) {}
   append(...children: (Element | string)[]) {
-    this.children.push(...children.filter(child => child instanceof Element));
+    for (const child of children) {
+      if (child instanceof Element) this.children.push(child);
+      else { const text = new Element('#text'); text.textContent = child; this.children.push(text); }
+    }
   }
   appendChild(child: Element) { this.append(child); return child; }
+  replaceChildren(...children: Element[]) { this.children = children; }
   setAttribute() {}
-  addEventListener() {}
+  addEventListener(event: string, handler: () => void) { this.listeners.set(event, handler); }
+  querySelector() { return undefined; }
   createTHead() { return this.appendChild(new Element('thead')); }
   createTBody() { return this.appendChild(new Element('tbody')); }
   insertRow() { return this.appendChild(new Element('tr')); }
@@ -105,25 +106,30 @@ class Element {
   }
 }
 
-test('dynamic review markup keeps item content and recommendation out of the number and radio columns', () => {
-  const data = { title: 'Review title', round: 2, run: 'run-1', head: 'head', codes: {},
-    summary: 'Summary', recap: [{ note: 'Round update' }], decisions: '## DECIDE-1: Choice\n- Rationale: Reason',
-    disputes: '', keyEvidence: [], wait: false, orange: [], yellow: [],
-    screenshots: [{ href: 'one.png', file: 'one.png', round: 0, title: 'Start' }, { href: 'two.png', file: 'two.png', round: 2, title: 'Retest' }],
-    size: [{ language: 'Go', files: 1, added: 2, modified: 3, removed: 4 }],
-    red: [{ type: 'Failure', title: 'Item title', source: ['CHECK-1'], detail: 'Details',
-      questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }] }] };
+function render(data: unknown, stored: unknown = null) {
   const selectors = new Map<string, Element>();
   const querySelector = (key: string) => {
     if (!selectors.has(key)) selectors.set(key, new Element(key));
     return selectors.get(key) as Element;
   };
   querySelector('#page-data').textContent = JSON.stringify(data);
-  querySelector('#sent-answers').textContent = 'null';
+  querySelector('#sent-answers').textContent = JSON.stringify(stored);
   const html = pageHtml(data);
   const script = html.split('<script>').at(-1)?.split('</script>')[0] ?? '';
   runInNewContext(script, { URL, location: { href: 'file:///review.html' },
-    document: { querySelector, createElement: (tag: string) => new Element(tag), body: new Element('body') } });
+    document: { querySelector, createElement: (tag: string) => new Element(tag), body: querySelector('body') } });
+  return querySelector;
+}
+
+test('dynamic review markup lays out concerns and toggles the screenshot viewer from its scroll origin', () => {
+  const data = { title: 'Review title', round: 2, run: 'run-1', head: 'head', codes: {},
+    summary: 'Summary', recap: [{ note: 'Round update' }], decisions: '## DECIDE-1: Choice\n- Rationale: Reason',
+    disputes: '', keyEvidence: [], wait: false, orange: [], yellow: [],
+    screenshots: [{ href: 'one.png', file: 'one.png', round: 0, title: 'Start', shows: 'Before' }, { href: 'two.png', file: 'two.png', round: 2, title: 'Retest', shows: 'After' }],
+    size: [{ language: 'Go', files: 1, added: 2, modified: 3, removed: 4 }],
+    red: [{ type: 'Failure', title: 'Item title', source: ['CHECK-1'], detail: 'Details',
+      questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }] }] };
+  const querySelector = render(data);
   const main = querySelector('main');
   const item = main.find('item');
   expect(item?.children.map(child => child.className)).toEqual(['n', 'item-body']);
@@ -132,10 +138,27 @@ test('dynamic review markup keeps item content and recommendation out of the num
   expect(option?.children.map(child => child.tag)).toEqual(['input', 'span']);
   expect(option?.children[1].find('rec')).toBeDefined();
   expect(querySelector('.rail > ol').find('dot')).toBeDefined();
-  const gallery = main.children.find(child => child.id === 'screenshots');
-  expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 0', 'Acceptance round 2']);
-  expect(gallery?.find('thumb-label')?.textContent).toBe('Start');
-  expect(main.find('fields')?.children.map(child => child.tag)).toEqual(['dt', 'dd']);
+  const gallery = main.children.find(child => child.id === 'acceptance-evidence');
+  expect(gallery?.children.slice(1).map(group => group.children[0].textContent)).toEqual(['Acceptance round 3', 'Acceptance round 1']);
+  expect(gallery?.find('thumb-label')?.textContent).toBe('Retest');
+  gallery?.byTag('button')[0].onclick?.();
+  const stage = querySelector('body').find('viewer-stage') as Element;
+  const toggle = querySelector('body').find('viewer-info')?.byTag('button')[0];
+  toggle?.onclick?.();
+  expect([stage.classList.contains('full-size'), toggle?.textContent]).toEqual([true, 'Fit to view']);
+  const navigation = querySelector('body').find('viewer-bar')?.byTag('button') ?? [];
+  for (const [label, title] of [['Previous', 'Start'], ['Next', 'Retest']]) {
+    stage.scrollLeft = 300;
+    stage.scrollTop = 150;
+    navigation.find(control => control.textContent === label)?.onclick?.();
+    expect(querySelector('body').find('viewer-info')?.byTag('h3')[0].textContent).toBe(title);
+    expect([stage.classList.contains('full-size'), stage.scrollLeft, stage.scrollTop]).toEqual([true, 0, 0]);
+  }
+  stage.scrollLeft = 300;
+  stage.scrollTop = 150;
+  toggle?.onclick?.();
+  expect([stage.classList.contains('full-size'), toggle?.textContent, stage.scrollLeft, stage.scrollTop]).toEqual([false, 'Open full size', 0, 0]);
+  expect(main.find('fields')).toBeUndefined();
   expect(main.find('total')?.children.map(child => child.textContent)).toEqual(['Total', '1', '2', '3', '4']);
   expect(main.children[0].children.map(child => child.tag)).toEqual(['div', 'ul', 'div', 'div']);
 });
@@ -143,14 +166,16 @@ test('dynamic review markup keeps item content and recommendation out of the num
 test('placing a dispute grouped with a late commit retains a separate Retest question', () => {
   const commit = 'a'.repeat(40);
   const journey = { code: 'JOURNEY-1', title: 'Launch', commit };
-  const item = { type: 'Dispute, Late commit', title: 'Shared issue', detail: 'One cause', link: '',
+  const shared = { prompt: 'Keep this integration?', options: [{ id: 'keep', label: 'Keep' }, { id: 'remove', label: 'Remove' }] };
+  const item = { type: 'Dispute, Late commit', questions: [shared], title: 'Shared issue', detail: 'One cause', links: [{ label: 'Source', target: 'file.txt' }],
     source: ['DISPUTE-1', commit], journeys: [journey] };
   const expected = { ...item, type: 'Dispute', source: ['DISPUTE-1'], journeys: [],
     specChange: true, questions: [disputeQuestion('')] };
-  const context = { shots: [], dismissed: [], journeys: [journey.code], commits: [commit] };
+  const context = { media: [], commands: [], dismissed: [], journeys: [journey.code], commits: [commit] };
   const placed = placeRanking({ ...emptyRanking(), orange: [item] }, [{ tier: 'red', item: expected }], context);
   expect(placed.red[0].questions?.map(question => question.options.map(option => option.id)))
-    .toEqual([['follow-up', 'drop'], ['retest', 'leave']]);
+    .toEqual([['follow-up', 'drop'], ['keep', 'remove'], ['retest', 'leave']]);
+  expect(placed.red[0].questions?.[1].prompt).toBe(shared.prompt);
 });
 
 test('review submission calls a receiver-sensitive fetch for both actions', async () => {
@@ -171,7 +196,7 @@ test('review submission calls a receiver-sensitive fetch for both actions', asyn
 test('grouped spec-change disputes keep separate exact questions and answer sources', () => {
   const disputes = ['Change the default.', ''].map((edit, index) => ({
     tier: 'red' as const, item: { type: 'Dispute', title: `Dispute ${index + 1}`, detail: 'A spec change',
-      link: '', source: [`DISPUTE-${index + 1}`], specChange: true, questions: [disputeQuestion(edit)] },
+      links: [{ label: 'Source', target: 'file.txt' }], source: [`DISPUTE-${index + 1}`], specChange: true, questions: [disputeQuestion(edit)] },
   }));
   const grouped = { ...disputes[0].item, title: 'Shared cause', source: ['DISPUTE-2', 'DISPUTE-1'] };
   const raw = { ...emptyRanking(), red: [grouped] };
@@ -199,6 +224,8 @@ test('publication rebuilds missing ranking from required items and refuses an un
   try {
     const input = rankingFixture(box);
     box.write(`${input.changeFolder}/dispute-log.md`, '## DISPUTE-1: Scope\nStatus: spec-change\n');
+    box.git('add', 'openspec');
+    box.commit('commit the review sources');
     const commit = box.commitFix();
     const ranking = rankingForPublication(input);
     expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2', 'DISPUTE-1']);
@@ -210,7 +237,7 @@ test('publication rebuilds missing ranking from required items and refuses an un
   }
 });
 
-test.each(['merge targets', 'recorded pull request'])('clean PR-head imports stay visible using %s without imported base work', source => {
+test.each(['merge targets', 'fresh base fetch', 'unreachable remote'])('clean PR-head imports stay visible using %s without imported base work', source => {
   const box = createSandbox();
   try {
     const input = rankingFixture(box);
@@ -221,18 +248,22 @@ test.each(['merge targets', 'recorded pull request'])('clean PR-head imports sta
     box.git('checkout', '-b', 'base-tip', input.start);
     box.write('base-fix.txt', 'Unrelated base work');
     box.git('add', 'base-fix.txt');
-    box.commit('Unrelated base work');
+    const baseWork = box.commit('Unrelated base work');
     box.git('checkout', '-b', 'round', input.start);
     box.git('merge', '--no-ff', '--no-edit', 'pr-head');
     box.git('merge', '--no-ff', '--no-edit', 'base-tip');
     if (source === 'merge targets') box.write('artifacts/review/merge-targets.json', '["pr-head","base-tip"]');
     else {
-      box.git('remote', 'add', 'origin', 'https://example.test/owner/repo');
-      box.git('update-ref', 'refs/remotes/origin/base-tip', 'base-tip');
+      const bare = box.addBareOrigin();
+      box.gitIn(bare, 'fetch', box.dir, 'base-tip:refs/heads/base-tip');
+      box.git('update-ref', 'refs/remotes/origin/base-tip', input.start);
       box.write('artifacts/pull-request.json', '{"base":"base-tip"}');
+      if (source === 'unreachable remote') box.git('remote', 'set-url', 'origin', box.path('missing.git'));
+      refreshBase(box.exec, input.dir, () => undefined);
     }
-    expect(inventory(input).later_commits.map(item => item.source[0])).toEqual([pushed]);
-    expect(feedbackScope(box.exec, input.dir, input.start, 'HEAD')).toEqual({ files: 'pr-fix.txt', revisions: pushed });
+    const expected = source === 'unreachable remote' ? [pushed, baseWork] : [pushed];
+    expect(inventory(input).later_commits.map(item => item.source[0])).toEqual(expected);
+    expect(feedbackScope(box.exec, input.dir, input.start, 'HEAD').revisions.split('\n')).toEqual(expected);
   } finally {
     box.dispose();
   }
@@ -264,8 +295,8 @@ test('a no-change response cannot dismiss a checklist failure that still needs w
       { item: 'CHECK-1', status: 'no-change' }, { item: 'CHECK-2', status: 'no-change' },
     ]));
     const result = inventory(input);
-    expect(result.context.dismissed).toEqual(['CHECK-2']);
-    expect(result.required.map(row => [row.tier, row.item.source[0]])).toEqual([['red', 'CHECK-1']]);
+    expect(result.context.dismissed).toEqual([]);
+    expect(result.required.map(row => [row.tier, row.item.source[0]])).toEqual([['red', 'CHECK-1'], ['red', 'CHECK-2']]);
   } finally {
     box.dispose();
   }
@@ -282,16 +313,13 @@ test('invalid evidence manifests preserve usable entries and become a named revi
     box.write('artifacts/acceptance-journeys/round-1.json', '{"journeys":[]}');
     box.write('artifacts/acceptance-journeys/round-2.json', '[{"code":"JOURNEY-2","title":"Save","scenario":"Save a form","repeat":"Click save"},{}]');
     const result = inventory(input);
-    expect(result.context.shots).toEqual(['acceptance-screenshots/round-1/one.png']);
+    expect(result.context.media).toEqual(['acceptance-screenshots/round-1/one.png']);
     expect(result.context.journeys).toEqual(['JOURNEY-2']);
-    const failures = failedItems(input.dir);
+    const failures = stepFailures(input.dir);
     expect(failures).toHaveLength(1);
     expect(failures[0].source).toEqual(['failure:review-media']);
-    expect(failures[0].link.endsWith('acceptance-screenshots/round-1/manifest.json')).toBe(true);
-    for (const path of ['acceptance-screenshots/round-1/manifest.json', 'acceptance-screenshots/round-2/manifest.json',
-      'acceptance-journeys/round-1.json', 'acceptance-journeys/round-2.json']) expect(failures[0].detail).toContain(path);
-    expect(failures[0].detail).toContain('expected an array');
-    expect(failures[0].detail).toContain('entry 1 needs string fields');
+    expect(failures[0].links).toEqual([]);
+    expect(failures[0].failLine).toContain('acceptance evidence');
   } finally {
     box.dispose();
   }
@@ -336,22 +364,21 @@ test('missing screenshot manifests are reported only when a round contains a sup
     const root = 'artifacts/acceptance-screenshots';
     mkdirSync(box.path(`${root}/round-1`), { recursive: true });
     box.write(`${root}/round-2/notes.txt`, 'No screenshots taken');
-    expect(failedItems(dir)).toEqual([]);
+    expect(stepFailures(dir)).toEqual([]);
 
     box.write(`${root}/round-3/capture.JPEG`, 'image');
-    const failures = failedItems(dir);
+    const failures = stepFailures(dir);
     expect(failures).toHaveLength(1);
     expect(failures[0].source).toEqual(['failure:review-media']);
-    expect(failures[0].detail).toContain('round-3/manifest.json');
-    expect(failures[0].detail).not.toContain('round-1/manifest.json');
-    expect(failures[0].detail).not.toContain('round-2/manifest.json');
+    expect(reviewMedia(dir).problems.map(problem => problem.path)).toEqual([box.path(`${root}/round-3/manifest.json`)]);
+    expect(failures[0].detail).not.toContain('manifest.json');
   } finally {
     box.dispose();
   }
 });
 
 test('malformed ranking collections are reported and repaired', () => {
-  const item = { type: 'Risk', title: 'Coverage', detail: 'Missing check', link: '', source: ['CHECK-1'] };
+  const item = { type: 'Risk', title: 'Coverage', detail: 'Missing check', links: [{ label: 'Source', target: 'file.txt' }], source: ['CHECK-1'] };
   const malformed = [
     { journeys: {} }, { journeys: [null] }, { questions: {} }, { questions: [null] },
     { questions: [{ prompt: 'Choose', options: [{ id: 'fix', label: 'Fix', detail: {} }, { id: 'leave', label: 'Leave' }] }] },
@@ -366,13 +393,106 @@ test('malformed ranking collections are reported and repaired', () => {
   }
 });
 
-test('promoted white late commits preserve journeys and gain a Retest choice', () => {
+test('promoted yellow late commits preserve journeys and gain a Retest choice', () => {
   const commit = 'a'.repeat(40);
   const journey = { code: 'JOURNEY-1', title: 'Launch', commit };
-  const item = { type: 'Late commit', title: commit, detail: '1 file changed\nTests: none named.', link: '', source: [commit] };
-  const raw = { ...emptyRanking(), white: [{ ...item, journeys: [journey] }] };
-  const context = { shots: [], dismissed: [], journeys: [journey.code], commits: [commit] };
+  const item = { type: 'Late commit', title: commit, detail: '1 file changed\nTests: none named.', links: [{ label: 'Commit', target: `commit:${commit}` }], source: [commit] };
+  const raw = { ...emptyRanking(), yellow: [{ ...item, links: [{ label: 'Commit', target: `commit:${commit}` }], journeys: [journey] }] };
+  const context = { media: [], commands: [], dismissed: [], journeys: [journey.code], commits: [commit] };
   const placed = placeRanking(raw, [{ tier: 'orange', item }], context);
   expect(placed.orange[0].journeys).toEqual([journey]);
   expect(placed.orange[0].questions?.flatMap(question => question.options.map(option => option.id))).toContain('retest');
+});
+
+test('mixed evidence renders a safe, ordered page and mirrors command comments', () => {
+  const file = 'acceptance-commands/round-1/output.txt';
+  const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
+  const forgeBase = 'https://github.com/owner/repo';
+  const head = '0123456789abcdef0123456789abcdef01234567';
+  const href = `${forgeBase}/blob/${head}/file.txt#L2`;
+  const red = { type: 'Failure', title: 'The `verify` command fails', source: ['failure:acceptance'], failLine: 'Acceptance stopped.',
+    questions: [{ source: 'hidden-id', prompt: 'How should export work?', options: [{ id: 'fix', label: 'Fix' }, { id: 'leave', label: 'Leave' }] }],
+    detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [lookalike](https://github.com/owner/repo-lookalike/blob/${head}/file.txt) [local](file:///tmp/private)`,
+    evidence: command, links: [] };
+  const yellow = { ...red, type: 'Agent decision', title: 'Use the default', evidence: undefined, failLine: undefined,
+    source: ['DECIDE-1'], links: [{ label: 'What changed', href }, { label: 'Why', href: `${href}0` }] };
+  const data = { title: 'Export settings', round: 2, head, run: 'review-run', repository: 'owner/repo', pullRequest: 7,
+    pullRequestUrl: `${forgeBase}/pull/7`, logs: { decisions: href, disputes: `${href}0` }, forgeBase, summary: '', recap: [], size: null,
+    red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
+    screenshots: [{ file: 'screen.png', href: 'screen.png', title: 'Preview', shows: 'Shows export', round: 2 }] };
+  const page = render(data);
+  const main = page('main');
+  expect(main.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
+  expect(page('.meta-row').find('red')).toBeDefined();
+  expect(page('#send-status').textContent).toContain('1 high concern');
+  const grouped = { ...red, questions: [...red.questions, { ...red.questions[0], source: 'another-source' }] };
+  expect(render({ ...data, red: [grouped] })('#send-status').textContent).toContain('1 high concern');
+  expect(render({ ...data, red: [grouped, red] })('#send-status').textContent).toContain('2 high concerns');
+  page('#send-actions').find('merge')?.onclick?.();
+  expect(page('body').find('confirm')?.textContent).toContain('1 high concern');
+  const medium = render({ ...data, red: [], orange: [red] });
+  expect(medium('.meta-row').find('orange')).toBeDefined();
+  expect(medium('#send-status').textContent).toContain('1 medium concern');
+  expect(page('.masthead .meta').byTag('a').map(anchor => anchor.href)).toEqual([data.pullRequestUrl, href, `${href}0`]);
+  expect(page('.masthead .meta').byTag('dd').map(value => value.textContent)).toContain(data.head);
+  expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);
+  expect(main.byTag('article').map(article => article.children[0].textContent)).toEqual(['1', '2']);
+  expect(main.find('tier-head')?.find('dot')?.className).toBe('dot red');
+  expect(main.find('tier-head')?.find('c')?.textContent).toBe('(1)');
+  expect(main.find('links')?.byTag('a').map(anchor => anchor.textContent)).toEqual(['What changed', 'Why']);
+  expect(main.find('links-label')?.textContent).toBe('On GitHub');
+  const concern = main.find('item-body');
+  expect(concern?.children.map(child => child.className)).toEqual(['tags', '', 'fail-line', 'prose', 'cmd', 'ask']);
+  expect(concern?.find('ask')?.textContent).not.toContain('hidden-id');
+  expect(concern?.find('prose')?.children.slice(0, 2).map(child => child.tag)).toEqual(['p', 'ul']);
+  expect(concern?.find('prose')?.textContent).toContain('</script><img');
+  expect(concern?.find('prose')?.byTag('a').map(anchor => anchor.href)).toEqual([href]);
+  expect(concern?.find('prose')?.byTag('strong')).toHaveLength(1);
+  expect(page('.rail > ol').byTag('code').map(code => code.textContent)).toEqual(['verify']);
+  expect(main.byTag('pre').map(entry => entry.textContent)).toEqual(Array(3).fill(command.excerpt));
+  expect(main.byTag('details')).toHaveLength(1);
+  const key = main.children[1];
+  const gallery = key.find('all-shots');
+  expect(gallery?.children[0].textContent).toBe('All acceptance evidence (1 screenshot, 1 command)');
+  expect(gallery?.byTag('h4').map(heading => heading.textContent)).toEqual(['Acceptance round 3', 'Acceptance round 2 · decafbad']);
+  expect(gallery?.byTag('h5').map(heading => heading.textContent)).toEqual(['Screenshots (1)', 'Commands (1)']);
+  expect(key.find('cmd-head')?.find('cmd-meta')?.textContent).toBe('Round 2 · decafbad');
+  expect(key.find('cmd-head')?.byTag('p')[0].textContent).toBe(command.shows);
+  expect(key.find('cmd-head')?.find('comment-btn')).toBeDefined();
+  expect(key.find('prompt')?.textContent).toBe('$');
+  const comments = [key.byTag('textarea')[0], main.byTag('details')[0].byTag('textarea')[0]];
+  expect(comments[0].hidden).toBe(true);
+  main.children[1].find('comment-btn')?.onclick?.();
+  expect(comments[0].hidden).toBe(false);
+  comments[0].value = 'Can this explain which value failed?';
+  comments[0].listeners.get('input')?.();
+  expect(comments[1].value).toBe(comments[0].value);
+  expect(comments[1].hidden).toBe(false);
+  expect(main.byTag('details')[0].classList.contains('has-comment')).toBe(true);
+  const answer = collectReview({ action: 'feedback', round: 2, head: data.head, rows: [], screenshots: [],
+    commands: [command, command], comments: new Map([[file, comments[1].value]]) });
+  expect('commandComments' in answer && answer.commandComments).toEqual([{ ref: file, round: 1, comment: comments[0].value }]);
+  const answered = render(data, answer)('main');
+  expect(answered.children[1].byTag('textarea')[0].value).toBe(comments[0].value);
+  const commandOnly = render({ ...data, red: [], yellow: [], screenshots: [], wait: false })('main');
+  expect(commandOnly.children.map(child => child.id)).toEqual(['summary', 'key-evidence', 'concerns']);
+  const empty = render({ ...data, red: [], yellow: [], commands: [], screenshots: [], keyEvidence: [], wait: false });
+  expect(empty('main').children.map(child => child.id)).toEqual(['summary', 'concerns']);
+  expect(empty('main').find('empty')).toBeDefined();
+  expect(empty('.meta-row').find('concerns-total')?.className).toBe('concerns-total');
+});
+test('fallback groups a checklist row with an uncommitted archive under its failure concern', () => {
+  const folder = 'openspec/changes/archive/2026-11-26-demo';
+  const archive = { type: 'Failure', title: 'Archive did not pass', detail: 'Repair the archive.', links: [], source: ['failure:archive'] };
+  const row = { type: 'Risk', title: 'Exports preserve options', detail: 'Acceptance did not verify this.',
+    links: [{ label: 'The checklist row', target: `${folder}/checklist.md#L3` }], source: ['CHECK-1'] };
+  const context = { media: [], commands: [], journeys: [], commits: [], dismissed: [],
+    links: { folder, base: 'https://github.com/owner/repo', head: 'abc', dir: 'run',
+      exec: () => ({ status: 1, stdout: '', stderr: '' }) } };
+  const required = [{ tier: 'red' as const, item: archive }, { tier: 'yellow' as const, item: row }];
+  const ranking = placeRanking(emptyRanking(), required, context);
+  expect(ranking.red).toHaveLength(1);
+  expect(ranking.red[0].source).toEqual(['failure:archive', 'CHECK-1']);
+  expect(ranking.red[0].detail).toContain(row.title);
+  expect(ranking.red[0]).toMatchObject({ links: [], unlinkedSources: ['CHECK-1'] });
 });

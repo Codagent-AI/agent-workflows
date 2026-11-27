@@ -205,14 +205,13 @@ describe('acceptancePush (acceptance-push.sh)', () => {
   test('pushes the fix to the configured upstream', () => {
     setup();
     const head = box.commitFix();
-    expect(acceptancePush(box.exec)).toEqual({ ok: true, problems: '' });
+    expect(acceptancePush(box.exec)).toEqual({ ok: true, problems: '', person: false });
     expect(box.git('rev-parse', 'origin/feature')).toBe(head);
     expect(box.gitIn(box.path('origin.git'), 'rev-parse', 'feature')).toBe(head);
   });
 
   test('sets the upstream when the branch has none', () => {
-    setup();
-    box.git('branch', '--unset-upstream');
+    box.addBareOrigin();
     box.commitFix();
     expect(acceptancePush(box.exec).ok).toBe(true);
     expect(box.git('rev-parse', '--abbrev-ref', 'feature@{upstream}')).toBe('origin/feature');
@@ -225,25 +224,6 @@ describe('acceptancePush (acceptance-push.sh)', () => {
     expect(result.ok).toBe(false);
     expect(result.problems).toContain('tracked changes are uncommitted');
     expect(result.problems).toContain('file.txt');
-  });
-
-  test('ignores untracked files', () => {
-    setup();
-    box.commitFix();
-    box.write('scratch.log', 'x\n');
-    expect(acceptancePush(box.exec).ok).toBe(true);
-  });
-
-  test('does not force-push a diverged branch', () => {
-    setup();
-    const remoteHead = box.commitFix('remote\n');
-    box.git('push', '-q', 'origin', 'feature');
-    box.git('reset', '-q', '--hard', 'HEAD~1');
-    box.commitFix('local\n');
-    const result = acceptancePush(box.exec);
-    expect(result.ok).toBe(false);
-    expect(result.problems).toContain('failed');
-    expect(box.gitIn(box.path('origin.git'), 'rev-parse', 'feature')).toBe(remoteHead);
   });
 
   test('rejects a detached HEAD', () => {

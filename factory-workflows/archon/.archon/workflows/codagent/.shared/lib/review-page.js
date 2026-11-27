@@ -7,6 +7,9 @@
   const actions = document.querySelector('#send-actions');
   const rows = [];
   const comments = new Map((stored?.screenshotComments ?? []).map(comment => [comment.file, comment.comment]));
+  const commands = data.commands ?? [];
+  const tierNames = { red: 'High', orange: 'Medium', yellow: 'Low' };
+  for (const entry of stored?.commandComments ?? []) comments.set(entry.ref, entry.comment);
   let sending = false;
   const openComments = new Set();
   let sent = Boolean(stored);
@@ -30,18 +33,27 @@
     return anchor;
   }
 
-  function inline(parent, text, codes = data.codes) {
-    const tokens = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)|\b((?:CHECK|DECIDE|JOURNEY|INTEG|E2E|HUMAN|ACCEPT|REVIEW|DISPUTE|AT|HT|INT|DP|D|I)-\d+|R\d+)\b/g;
+  function githubLink(href) {
+    if (!data.forgeBase) return false;
+    try {
+      const target = new URL(href);
+      const base = new URL(data.forgeBase);
+      if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname + '/')) return false;
+      const path = target.pathname.slice(base.pathname.length);
+      return path === '/pull/' + data.pullRequest || path.startsWith('/blob/' + data.head + '/') ||
+        /^\/commit\/[a-f0-9]{7,64}$/i.test(path);
+    } catch { return false; }
+  }
+
+  function inline(parent, text) {
+    const tokens = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)/g;
     let start = 0;
     for (const match of text.matchAll(tokens)) {
       parent.append(text.slice(start, match.index));
-      const [, code, bold, label, href, id] = match;
-      const ref = Object.hasOwn(codes, id ?? code) ? codes[id ?? code] : undefined;
-      if (ref) parent.append(link(`${id ?? code} · ${ref.title}`, ref.href));
-      else if (code) parent.append(node('code', code));
+      const [, code, bold, label, href] = match;
+      if (code) parent.append(node('code', code));
       else if (bold) inline(parent.appendChild(node('strong')), bold);
-      else if (label) parent.append(link(label, href));
-      else parent.append(match[0]);
+      else parent.append(githubLink(href) ? link(label, href) : label);
       start = match.index + match[0].length;
     }
     parent.append(text.slice(start));
@@ -50,25 +62,30 @@
 
   const story = text => inline(node('p', '', 'story'), text);
 
+  const listLine = line => /^\s*[-*] /.test(line);
   function prose(text) {
     const block = node('div', '', 'prose');
     for (const paragraph of text.trim().split(/\n\s*\n/).filter(Boolean)) {
       const lines = paragraph.split('\n');
       const heading = /^#{1,6}\s+(.+)$/.exec(lines[0]);
-      if (heading) {
-        block.append(inline(node('h3'), heading[1]));
-        if (lines.length > 1) block.append(story(lines.slice(1).join('\n')));
-      } else if (lines.every(line => /^\s*[-*] /.test(line))) {
+      if (heading) block.append(inline(node('h3'), lines.shift().replace(/^#+\s+/, '')));
+      const runs = [];
+      for (const line of lines) {
+        const last = runs.at(-1);
+        if (last && listLine(last[0]) === listLine(line)) last.push(line);
+        else runs.push([line]);
+      }
+      for (const lines of runs) {
+        if (!listLine(lines[0])) { block.append(story(lines.join('\n'))); continue; }
         const list = node('ul');
         for (const line of lines) list.append(inline(node('li'), line.replace(/^\s*[-*] /, '')));
         block.append(list);
-      } else block.append(story(paragraph));
+      }
     }
     return block;
   }
 
-  const toc = new Map();
-  function section(id, title) {
+  function section(id, title, inContents = true) {
     const block = node('section');
     block.id = id;
     const heading = node('div', '', 'section-head');
@@ -76,14 +93,15 @@
     block.append(heading);
     panels.append(block);
     const sectionLink = node('li');
-    sectionLink.append(link(title, `#${id}`));
-    contents.append(sectionLink);
-    toc.set(id, sectionLink);
-    return block;
+    if (inContents) {
+      sectionLink.append(link(title, '#' + id));
+      contents.append(sectionLink);
+    }
+    return { block, sectionLink };
   }
 
   function renderSummary() {
-    const block = section('summary', 'Summary');
+    const { block } = section('summary', 'Summary');
     if (data.recap.length) {
       const recap = node('ul');
       for (const entry of data.recap) {
@@ -148,7 +166,12 @@
     const info = node('div', '', 'viewer-info');
     const title = node('h3');
     const detail = node('div');
-    const fullSize = link('Open full size', shot.href);
+    const fullSize = button('Open full size', 'comment-btn', () => {
+      const expanded = stage.classList.toggle('full-size');
+      stage.scrollLeft = 0;
+      stage.scrollTop = 0;
+      fullSize.textContent = expanded ? 'Fit to view' : 'Open full size';
+    });
     const comment = node('textarea', '', 'note');
     comment.setAttribute('aria-label', 'Screenshot comment');
     comment.disabled = sent || sending;
@@ -157,11 +180,12 @@
     function refresh() {
       const current = shots[index];
       image.src = current.href;
+      stage.scrollLeft = 0;
+      stage.scrollTop = 0;
       image.alt = current.alt;
-      fullSize.href = current.href;
       title.textContent = current.title;
       detail.replaceChildren(story(current.shows));
-      position.textContent = `Acceptance round ${current.round} · ${index + 1} of ${shots.length}`;
+      position.textContent = `Acceptance round ${current.round + 1} · ${index + 1} of ${shots.length}`;
       previous.disabled = index === 0;
       next.disabled = index === shots.length - 1;
       comment.value = comments.get(current.file) ?? '';
@@ -190,45 +214,125 @@
     return control;
   }
 
-  function renderScreenshots() {
-    if (data.keyEvidence.length) {
-      const key = section('key-evidence', 'Key evidence');
-      const list = node('div', '', 'key-shots');
-      for (const shot of data.keyEvidence) {
-        const figure = node('figure', '', 'shot');
-        const caption = node('figcaption');
-        const cap = node('div', '', 'cap');
-        cap.append(node('b', shot.title), story(shot.shows));
-        caption.append(cap);
-        if (data.wait && !sent) caption.append(button('Comment', 'comment-btn', () => showShot(shot, true)));
-        const note = node('p', '', 'shot-note');
-        note.dataset.showText = 'true';
-        markComment(shot, note);
-        caption.append(note);
-        figure.append(shotButton(shot, 'shot-open'), caption);
-        list.append(figure);
+  function primaryShot(shot) {
+    const figure = node('figure', '', 'shot');
+    const caption = node('figcaption');
+    const cap = node('div', '', 'cap');
+    cap.append(node('b', shot.title), story(shot.shows));
+    caption.append(cap);
+    if (data.wait && !sent) caption.append(button('Comment', 'comment-btn', () => showShot(shot, true)));
+    const note = node('p', '', 'shot-note');
+    note.dataset.showText = 'true';
+    markComment(shot, note);
+    caption.append(note);
+    figure.append(shotButton(shot, 'shot-open'), caption);
+    return figure;
+  }
+
+  function commandComment(entry, card) {
+    const footer = node('div', '', 'cmd-foot');
+    const field = node('textarea', '', 'note');
+    let editing = false;
+    const edit = button('Comment', 'comment-btn', () => {
+      editing = true;
+      refresh();
+      field.focus();
+    });
+    field.setAttribute('aria-label', 'Command evidence comment');
+    field.placeholder = 'Comment on command evidence';
+    field.disabled = sent || sending || !data.wait;
+    const refresh = () => {
+      const current = comments.get(entry.file) ?? '';
+      if (field.value !== current) field.value = current;
+      field.hidden = !current && !editing;
+      edit.hidden = editing || !data.wait || sent;
+      footer.hidden = field.hidden && (!card.classList.contains('cmd-row') || edit.hidden);
+      card.classList.toggle('has-comment', Boolean(current.trim()));
+    };
+    if (!commentMarks.has(entry.file)) commentMarks.set(entry.file, []);
+    commentMarks.get(entry.file).push(refresh);
+    openComments.add(field);
+    field.addEventListener('input', () => {
+      comments.set(entry.file, field.value);
+      for (const update of commentMarks.get(entry.file)) update();
+    });
+    footer.append(field);
+    refresh();
+    return { footer, edit };
+  }
+
+  function commandEvidence(entry, collapsible = false) {
+    const card = node(collapsible ? 'details' : 'figure', '', collapsible ? 'cmd-row' : 'cmd');
+    const header = node(collapsible ? 'summary' : 'figcaption', '', collapsible ? '' : 'cmd-head');
+    const cap = node(collapsible ? 'span' : 'div', '', 'cap');
+    if (!collapsible) cap.append(node('span', `Round ${entry.round + 1}${revisionLabel([entry])}`, 'cmd-meta'));
+    cap.append(node('b', entry.title), inline(node(collapsible ? 'span' : 'p'), entry.shows));
+    const { footer, edit } = commandComment(entry, card);
+    header.append(cap);
+    if (collapsible) footer.prepend(edit);
+    else header.append(edit);
+    const command = node('div', '', 'cmd-line');
+    command.append(node('span', '$', 'prompt'), node('code', entry.command));
+    card.append(header, command, node('pre', entry.excerpt, 'excerpt'), footer);
+    return card;
+  }
+
+  function thumbnails(shots) {
+    const list = node('ul', '', 'thumbs');
+    for (const shot of shots) {
+      const thumb = shotButton(shot, 'thumb');
+      const mark = node('span', 'Commented', 'thumb-mark');
+      markComment(shot, mark);
+      thumb.append(node('span', shot.title, 'thumb-label'), mark);
+      const entry = node('li');
+      entry.append(thumb);
+      list.append(entry);
+    }
+    return list;
+  }
+
+  function revisionLabel(entries) {
+    const revisions = [...new Set(entries.map(entry => entry.revision?.slice(0, 8)).filter(Boolean))];
+    return revisions.length ? ` · ${revisions.join(', ')}` : '';
+  }
+
+  function evidenceRound(round) {
+    const shots = data.screenshots.filter(shot => shot.round === round);
+    const entries = commands.filter(entry => entry.round === round);
+    const group = node('div', '', 'round');
+    group.append(node('h4', `Acceptance round ${round + 1}${revisionLabel([...entries, ...shots])}`));
+    const recap = data.acceptanceRecaps?.[round];
+    if (recap) group.append(story(recap));
+    if (entries.length) {
+      const list = node('ul', '', 'cmds');
+      for (const entry of entries) {
+        const row = node('li');
+        row.append(commandEvidence(entry, true));
+        list.append(row);
       }
+      group.append(node('h5', `Commands (${entries.length})`), list);
+    }
+    if (shots.length) group.append(node('h5', `Screenshots (${shots.length})`), thumbnails(shots));
+    return group;
+  }
+
+  function renderEvidence() {
+    let key;
+    if (data.keyEvidence.length) {
+      key = section('key-evidence', 'Key evidence').block;
+      const list = node('div', '', 'key-shots');
+      for (const entry of data.keyEvidence) list.append(entry.kind === 'command' ? commandEvidence(entry) : primaryShot(entry));
       key.append(list);
     }
-    if (!data.screenshots.length) return;
-    const gallery = section('screenshots', 'Acceptance screenshots');
-    const groups = Map.groupBy(data.screenshots, shot => shot.round);
-    for (const [round, shots] of groups) {
-      const group = node('div', '', 'round');
-      group.append(node('h4', `Acceptance round ${round}`));
-      const thumbs = node('ul', '', 'thumbs');
-      for (const shot of shots) {
-        const thumb = shotButton(shot, 'thumb');
-        const mark = node('span', 'Commented', 'thumb-mark');
-        markComment(shot, mark);
-        thumb.append(node('span', shot.title, 'thumb-label'), mark);
-        const entry = node('li');
-        entry.append(thumb);
-        thumbs.append(entry);
-      }
-      group.append(thumbs);
-      gallery.append(group);
-    }
+    const rounds = [...new Set([...data.screenshots, ...commands].map(entry => entry.round))].sort((a, b) => b - a);
+    if (!rounds.length) return;
+    const gallery = node('div', '', 'all-shots');
+    gallery.id = 'acceptance-evidence';
+    const shotCount = data.screenshots.length;
+    const title = `All acceptance evidence (${shotCount} screenshot${shotCount === 1 ? '' : 's'}, ${commands.length} command${commands.length === 1 ? '' : 's'})`;
+    gallery.append(node(key ? 'h3' : 'h2', title));
+    for (const round of rounds) gallery.append(evidenceRound(round));
+    (key ?? panels).append(gallery);
   }
 
   function readRow(row) {
@@ -240,11 +344,14 @@
     if (!feedback || sent || sending) return;
     const missing = missingAnswers(rows.map(readRow));
     feedback.disabled = missing > 0;
-    status.textContent = missing ? `${missing} unanswered ${missing === 1 ? 'question' : 'questions'} left.` : '';
+    const pending = rows.filter(row => missingAnswers([readRow(row)]) > 0);
+    const counts = tierCounts(tier => new Set(pending.filter(row => row.tier === tier).map(row => row.concern)).size);
+    status.textContent = missing ? `Unanswered questions in ${counts}.` : '';
   }
 
-  function questionField(item, question, number, tier) {
-    const itemCode = question.source ?? item.source[0];
+  function questionField(item, question, number, tier, concern) {
+    const owned = new Set(item.questions.map(entry => entry.source).filter(Boolean));
+    const itemCode = question.source ?? item.source.find(source => !owned.has(source) && !item.unlinkedSources?.includes(source)) ?? item.source[0];
     const field = node('fieldset', '', 'q');
     const answer = stored?.answers?.find(value => value.item === itemCode && value.question === number);
     field.disabled = sent || !data.wait;
@@ -252,7 +359,7 @@
     const eyebrow = node('span', item.questions.length > 1 ? `Question ${number + 1} of ${item.questions.length}` : 'Question', 'q-eyebrow');
     if (tier !== 'yellow') eyebrow.append(node('span', 'Answer required', 'req'));
     legend.append(eyebrow);
-    inline(legend, question.source ? `${question.source} · ${question.prompt}` : question.prompt);
+    inline(legend, question.prompt);
     field.append(legend);
     const opts = node('div', '', 'opts');
     const other = node('textarea', '', 'note');
@@ -283,75 +390,74 @@
     note.setAttribute('aria-label', 'Optional note');
     note.value = answer?.note ?? '';
     field.append(other, note);
-    rows.push({ field, item: itemCode, question: number, required: tier !== 'yellow', other, note });
+    rows.push({ field, concern, item: itemCode, question: number, required: tier !== 'yellow', tier, other, note });
     field.addEventListener('input', updateStatus);
     return field;
   }
 
-  let itemNumber = 0;
-  function renderItems(tier, title) {
-    if (!data[tier].length) return;
-    const block = section(tier, title);
-    const items = node('div', '', tier === 'red' ? 'items' : 'items compact');
-    const nested = node('ul');
-    toc.get(tier).append(nested);
-    for (const [index, item] of data[tier].entries()) {
-      const entry = node('article', '', 'item');
-      entry.id = `${tier}-${index + 1}`;
-      const number = String(++itemNumber);
-      const body = node('div', '', 'item-body');
-      const tierName = tier[0].toUpperCase() + tier.slice(1);
-      const tags = node('div', '', 'tags');
-      tags.append(node('span', tierName, `tier ${tier}`));
-      for (const kind of item.type.split(',')) tags.append(node('span', kind.trim(), 'kind'));
-      body.append(tags, inline(node('h3'), item.title), prose(item.detail));
-      const sources = node('div', '', 'src');
-      for (const code of item.source) {
-        const ref = data.codes[code];
-        if (ref && !item.title.includes(code)) sources.append(link(`${code} · ${ref.title}`, ref.href));
-      }
-      if (item.href) sources.append(link('Source', item.href));
-      body.append(sources);
-      for (const journey of item.journeys ?? []) body.append(story(`${journey.code} (${journey.commit})`));
-      const ask = node('div', '', 'ask');
-      item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier)));
-      body.append(ask);
-      entry.append(node('div', number, 'n'), body);
-      items.append(entry);
-      const toItem = link('', `#${entry.id}`);
-      toItem.append(node('span', '', `dot ${tier}`), node('span', number, 'n'), node('span', data.codes[item.title]?.title ?? item.title));
-      const itemLink = node('li');
-      itemLink.append(toItem);
-      nested.append(itemLink);
-    }
-    block.append(items);
+  function tierCounts(count) {
+    return Object.entries(tierNames).flatMap(([tier, name]) => {
+      const total = count(tier);
+      return total ? [`${total} ${name.toLowerCase()} ${total === 1 ? 'concern' : 'concerns'}`] : [];
+    }).join(', ');
   }
 
-  function renderLog(id, title, text) {
-    const block = section(id, title);
-    for (const part of text.trim().split(/(?=^## )/m).filter(Boolean)) {
-      const [first, ...lines] = part.split('\n');
-      const heading = /^## (?:(\S+): )?(.+)$/.exec(first);
-      if (!heading) { block.append(prose(part)); continue; }
-      const article = node('article', '', 'decision');
-      const header = node('header');
-      const ref = data.codes[heading[1]];
-      const caption = node('span', '', 'did');
-      if (ref) caption.append(link(heading[1], ref.href));
-      else caption.textContent = heading[1] ?? '';
-      header.append(caption, inline(node('h3'), heading[2]));
-      article.append(header);
-      const fields = node('dl', '', 'fields');
-      const free = [];
-      for (const line of lines) {
-        const field = /^(?:- )?(?:\*\*)?([^:*]+):(?:\*\*)? (.+)$/.exec(line);
-        if (field) fields.append(node('dt', field[1]), inline(node('dd'), field[2]));
-        else if (line.trim()) free.push(line);
-      }
-      if (fields.children.length) article.append(fields);
-      if (free.length) article.append(prose(free.join('\n')));
-      block.append(article);
+  function concern(item, tier, number, id) {
+    const entry = node('article', '', 'item');
+    entry.id = id;
+    const body = node('div', '', 'item-body');
+    const tags = node('div', '', 'tags');
+    tags.append(node('span', tierNames[tier], 'tier ' + tier));
+    for (const kind of item.type.split(',')) tags.append(node('span', kind.trim(), 'kind'));
+    body.append(tags, inline(node('h3'), item.title));
+    if (item.failLine) body.append(node('p', item.failLine, 'fail-line'));
+    body.append(prose(item.detail));
+    if (item.evidence) body.append(commandEvidence(item.evidence));
+    const ask = node('div', '', 'ask');
+    item.questions.forEach((question, offset) => ask.append(questionField(item, question, offset, tier, id)));
+    body.append(ask);
+    if (item.links?.length) {
+      const links = node('div', '', 'links');
+      links.append(node('span', 'On GitHub', 'links-label'));
+      for (const source of item.links) links.append(link(source.label, source.href));
+      body.append(links);
     }
+    entry.append(node('div', number, 'n'), body);
+    return entry;
+  }
+
+  function renderConcerns() {
+    const { block, sectionLink } = section('concerns', 'Concerns');
+    const tiers = node('ul', '', 'tiers');
+    sectionLink.append(tiers);
+    let total = 0;
+    for (const [tier, name] of Object.entries(tierNames)) {
+      if (!data[tier].length) continue;
+      const group = node('div', '', 'tier-group');
+      group.id = tier;
+      const title = `${name} (${data[tier].length})`;
+      const heading = node('h3', '', 'tier-head');
+      heading.append(node('span', '', 'dot ' + tier), name, node('span', `(${data[tier].length})`, 'c'));
+      group.append(heading);
+      const items = node('div', '', tier === 'red' ? 'items' : 'items compact');
+      const nested = node('ul');
+      const tierEntry = node('li');
+      tierEntry.append(link(title, '#' + tier), nested);
+      tiers.append(tierEntry);
+      for (const [index, item] of data[tier].entries()) {
+        const number = String(++total);
+        const id = `${tier}-${index + 1}`;
+        items.append(concern(item, tier, number, id));
+        const toItem = link('', '#' + id);
+        toItem.append(node('span', '', 'dot ' + tier), node('span', number, 'n'), inline(node('span'), item.title));
+        const itemLink = node('li');
+        itemLink.append(toItem);
+        nested.append(itemLink);
+      }
+      group.append(items);
+      block.append(group);
+    }
+    if (!total) block.append(node('p', 'No concerns.', 'empty'));
   }
 
   function recordText(record) {
@@ -360,7 +466,7 @@
 
   async function send(action) {
     if (sending || sent) return;
-    const answer = collectReview({ action, round: data.round, head: data.head, rows: rows.map(readRow), screenshots: data.screenshots, comments });
+    const answer = collectReview({ action, round: data.round, head: data.head, rows: rows.map(readRow), screenshots: data.screenshots, commands, comments });
     sending = true;
     for (const row of rows) row.field.disabled = true;
     for (const comment of openComments) comment.disabled = true;
@@ -388,10 +494,10 @@
   }
 
   function confirmMerge() {
-    const count = data.red.length + data.orange.length;
-    if (!count) { void send('merge'); return; }
+    const counts = tierCounts(tier => tier === 'yellow' ? 0 : data[tier].length);
+    if (!counts) { void send('merge'); return; }
     const dialog = node('dialog', '', 'confirm');
-    dialog.append(node('h3', 'Merge pull request?'), node('p', `${count} red or orange ${count === 1 ? 'item is' : 'items are'} open. Answers on this page will not be sent.`));
+    dialog.append(node('h3', 'Merge pull request?'), node('p', `Open concerns: ${counts}. Answers on this page will not be sent.`));
     const cancel = node('button', 'Cancel', 'merge');
     const confirm = node('button', 'Merge', 'send');
     cancel.onclick = () => dialog.close();
@@ -404,25 +510,40 @@
     dialog.showModal();
   }
 
-  document.title = data.title;
-  document.querySelector('h1').textContent = data.title;
-  document.querySelector('#round').append(node('span', `Review round ${data.round}`), node('span', data.repository));
-  const meta = document.querySelector('.masthead .meta');
-  for (const [label, value] of [['Pull request', `#${data.pullRequest}`], ['Reviewed head', data.head], ['Run', data.run]]) {
-    if (!value) continue;
-    const field = node('div');
-    field.append(node('dt', label), node('dd', value));
-    meta.append(field);
+  function renderHeader() {
+    document.title = data.title;
+    document.querySelector('h1').textContent = data.title;
+    document.querySelector('#round').append(node('span', 'Review round ' + data.round), node('span', data.repository));
+    const meta = document.querySelector('.masthead .meta');
+    const entries = [
+      ['Pull request', link('#' + data.pullRequest, data.pullRequestUrl)],
+      ['Reviewed head', data.head], ['Run', data.run],
+    ];
+    const logs = Object.entries(data.logs ?? {}).filter(([, href]) => href);
+    if (logs.length) entries.push(['Logs', ...logs.flatMap(([kind, href], index) =>
+      [...(index ? [' · '] : []), link(kind === 'decisions' ? 'Decisions' : 'Disputes', href)])]);
+    for (const [label, ...values] of entries) {
+      if (!values[0]) continue;
+      const field = node('div');
+      const value = node('dd');
+      value.append(...values);
+      field.append(node('dt', label), value);
+      meta.append(field);
+    }
+    const tiers = Object.keys(tierNames);
+    const total = tiers.reduce((sum, tier) => sum + data[tier].length, 0);
+    const highest = tiers.find(tier => data[tier].length) ?? '';
+    const count = link('', '#concerns');
+    count.className = ('concerns-total ' + highest).trim();
+    count.append(node('b', String(total)), total === 1 ? ' concern' : ' concerns');
+    document.querySelector('.meta-row').append(count);
   }
+
+  renderHeader();
   if (stored) document.body.classList.add('answered');
-  document.querySelector('#state').textContent = data.state;
   renderSummary();
-  renderScreenshots();
-  renderItems('red', 'Red items');
-  renderItems('orange', 'Orange items');
-  renderItems('yellow', 'Yellow items');
-  renderLog('decisions', 'Decision log', data.decisions || 'No entries.');
-  renderLog('disputes', 'Dispute log', data.disputes || 'No entries.');
+  renderEvidence();
+  renderConcerns();
   let mergeButton;
   if (stored) {
     status.textContent = recordText(stored);

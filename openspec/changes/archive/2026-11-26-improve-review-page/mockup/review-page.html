@@ -1,0 +1,1228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Reference mockup for the improve-review-page change: the review page styles itself as this one does.
+     Its content is a sample and its screenshots are placeholders. Where it differs from the specs, the specs win. -->
+<title>Evolving Scenes Review Package</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a masthead band with the PR title and the number of concerns, then a sticky contents rail beside one reading column. */
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --ink: #161a22;
+  --muted: #5a6271;
+  --faint: #868d9b;
+  --line: #dde1e8;
+  --line-strong: #c6ccd7;
+  --accent: #3145c4;
+  --code-bg: #eaedf3;
+  --red: #b3302a;
+  --red-bg: #fbe7e5;
+  --orange: #b0560f;
+  --orange-bg: #fcede0;
+  --yellow: #765c00;
+  --yellow-bg: #f7eecd;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --measure: 70ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1217; --surface: #161a21; --ink: #e5e8ee; --muted: #a0a8b6; --faint: #7a8291;
+    --line: #262c36; --line-strong: #363e4b; --accent: #93a2ff; --code-bg: #1f242d;
+    --red: #ff8a80; --red-bg: #3a1c1a; --orange: #f5a462; --orange-bg: #382718; --yellow: #e6c65a; --yellow-bg: #332c15;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1217; --surface: #161a21; --ink: #e5e8ee; --muted: #a0a8b6; --faint: #7a8291;
+  --line: #262c36; --line-strong: #363e4b; --accent: #93a2ff; --code-bg: #1f242d;
+  --red: #ff8a80; --red-bg: #3a1c1a; --orange: #f5a462; --orange-bg: #382718; --yellow: #e6c65a; --yellow-bg: #332c15;
+  color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--ink); font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+code { font: 400 0.86em/1.4 var(--mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3, h4 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+
+.inner { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Masthead */
+.masthead { background: var(--surface); border-bottom: 1px solid var(--line); margin-top: calc(-1 * env(safe-area-inset-top, 0px)); padding-top: calc(env(safe-area-inset-top, 0px) + 40px); padding-bottom: 32px; }
+.masthead .inner { display: grid; gap: 20px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.eyebrow span + span::before { content: "/"; margin-right: 14px; color: var(--line-strong); }
+h1 { font: 600 clamp(26px, 3.4vw, 36px)/1.2 var(--sans); letter-spacing: -0.015em; }
+h1 .prefix { font-family: var(--mono); font-weight: 500; color: var(--muted); font-size: 0.78em; letter-spacing: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--muted); }
+.meta div { display: flex; gap: 8px; align-items: baseline; }
+.meta dt { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+.meta dd { margin: 0; font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.meta { margin: 0; }
+.meta dd a { color: var(--accent); }
+
+/* The meta line ends with the number of concerns, which links to them. */
+.meta-row { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; justify-content: space-between; }
+.concerns-total { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 8px; color: inherit; text-decoration: none; font-weight: 500; }
+.concerns-total b { font: 600 20px/1.1 var(--sans); font-variant-numeric: tabular-nums; }
+.concerns-total:hover { border-color: var(--line-strong); }
+/* Colored by the highest tier present; neutral when there are none. */
+.concerns-total.red { color: var(--red); }
+.concerns-total.orange { color: var(--orange); }
+.concerns-total.yellow { color: var(--yellow); }
+
+/* Shell */
+.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding-block: 40px 96px; align-items: start; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); font-size: 14px; }
+.rail h2 { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 12px; }
+.rail ol, .rail ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rail > ol > li > a { display: block; padding: 5px 0; color: var(--ink); text-decoration: none; font-weight: 500; }
+.rail > ol > li > a:hover { color: var(--accent); }
+.rail ul { margin: 2px 0 8px; padding-left: 2px; }
+.rail ul a { display: grid; grid-template-columns: 10px 18px minmax(0, 1fr); gap: 6px; align-items: baseline; padding: 3px 0; color: var(--muted); text-decoration: none; line-height: 1.35; }
+.rail ul a:hover { color: var(--ink); }
+.rail ul a .n { font: 400 12px/1 var(--mono); color: var(--faint); }
+/* Item titles wrap in full, with their inline code. */
+.rail ul a code { font-size: 0.88em; padding: 0 0.25em; }
+/* Concerns: a subheading for each tier, with its count, above its items. */
+.rail .tiers { margin-top: 2px; gap: 0; }
+.rail .tiers > li > a { display: block; padding: 8px 0 4px; font: 500 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); text-decoration: none; }
+.rail .tiers > li > a:hover { color: var(--ink); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; transform: translateY(-1px); }
+.dot.red { background: var(--red); } .dot.orange { background: var(--orange); } .dot.yellow { background: var(--yellow); }
+
+main { min-width: 0; display: grid; gap: 72px; }
+section { display: grid; gap: 24px; scroll-margin-top: 24px; }
+.section-head { display: grid; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line-strong); }
+.section-head h2 { font: 600 24px/1.25 var(--sans); letter-spacing: -0.01em; }
+.section-head p { color: var(--muted); font-size: 15px; max-width: var(--measure); }
+
+.prose { display: grid; gap: 14px; max-width: var(--measure); }
+.ref { color: var(--accent); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.ref:hover { text-decoration-color: var(--accent); }
+.ref code { font-weight: 600; }
+.prose ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.prose h3 { font: 600 17px/1.35 var(--sans); margin-top: 10px; }
+
+/* Tags */
+.tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tier, .kind { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; padding: 4px 7px; border: 1px solid var(--line); border-radius: 4px; white-space: nowrap; }
+.tier.red { color: var(--red); background: var(--red-bg); }
+.tier.orange { color: var(--orange); background: var(--orange-bg); }
+.tier.yellow { color: var(--yellow); background: var(--yellow-bg); }
+.kind { color: var(--muted); background: var(--surface); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.45; }
+th { text-align: left; font: 500 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+tr:first-child td { border-top: 0; }
+td.num { font-family: var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; width: 1%; }
+td.nowrap { white-space: nowrap; }
+.size { max-width: 560px; }
+.size th.c, .size td.c { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.size td { padding: 8px 14px; }
+.size tr.total td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.size-note { margin: 0; color: var(--muted); font-size: 13.5px; }
+
+/* Concerns, grouped by tier under one heading */
+.tier-group { display: grid; gap: 4px; scroll-margin-top: 24px; }
+.tier-group + .tier-group { border-top: 1px solid var(--line-strong); padding-top: 28px; }
+.tier-head { display: flex; align-items: center; gap: 10px; font: 600 18px/1.3 var(--sans); }
+.tier-head .c { color: var(--faint); font-weight: 500; }
+.items { display: grid; gap: 0; }
+.item { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 16px; padding-block: 28px; border-top: 1px solid var(--line); scroll-margin-top: 24px; }
+.item:first-child { border-top: 0; padding-top: 8px; }
+.item > .n { font: 500 20px/1.3 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.item-body { display: grid; gap: 14px; min-width: 0; }
+.item h3 { font: 600 19px/1.35 var(--sans); letter-spacing: -0.005em; }
+
+.item h3 code { font-size: 0.82em; }
+.prose p + ul { margin-top: -6px; }
+/* A failed step's item opens with the publisher's line on what failed. */
+.fail-line { max-width: var(--measure); padding: 9px 12px; border-left: 3px solid var(--red); background: var(--red-bg); font-weight: 500; }
+/* Labeled links close every item. Each goes to GitHub at the page's head. */
+.links { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font-size: 14.5px; }
+.links-label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+.links a::after { content: "\2197"; display: inline-block; margin-left: 3px; font-size: 0.85em; }
+
+.compact .item { padding-block: 20px; }
+.compact .item h3 { font-size: 16.5px; }
+
+.empty { padding: 20px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--muted); max-width: var(--measure); }
+
+footer.inner { color: var(--faint); font: 400 12.5px/1.5 var(--mono); padding-block: 0 48px; }
+
+
+@media (max-width: 960px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 24px 64px; }
+  .rail { position: static; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+  .rail > ol { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .rail ul, .rail .tiers { display: none; }
+}
+@media (max-width: 560px) {
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .item > .n { font-size: 14px; margin-bottom: 6px; }
+  .masthead { padding-bottom: 24px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+/* Questions: one card per question under its item, the recommended option pre-selected, "Other" and notes in the box below. */
+.ask { display: grid; gap: 14px; margin-top: 6px; max-width: var(--measure); }
+/* Block layout, not grid: a grid item cannot float, and WebKit then draws the legend on the top border. */
+.q { margin: 0; padding: 16px 18px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.q legend { float: left; width: 100%; padding: 0; margin-bottom: 12px; font: 500 15.5px/1.45 var(--sans); }
+.q .note { display: block; margin-top: 12px; }
+.q-eyebrow { display: block; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); margin-bottom: 8px; }
+.opts { clear: both; display: grid; gap: 6px; }
+.opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.opt:hover { border-color: var(--line-strong); }
+.opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt input { margin: 4px 0 0; accent-color: var(--accent); }
+/* An answered page is a read-only record of what was sent from it. */
+.answered .opt { cursor: default; }
+.answered .opt input:disabled { opacity: 1; }
+.answered textarea.note:disabled, .answered textarea.note[readonly] { background: transparent; color: var(--ink); resize: none; }
+.answered fieldset.q textarea.note:placeholder-shown { display: none; }
+.answered .comment-btn { display: none; }
+.answered .req { display: none; }
+.opt-text { display: grid; gap: 2px; min-width: 0; }
+.opt-label { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-weight: 500; }
+.opt-desc { color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+.rec { font: 500 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; }
+.note { box-sizing: border-box; width: 100%; font: 400 15px/1.45 var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; resize: vertical; }
+.note:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.note.missing { border-color: var(--red); }
+
+.sendbar { position: sticky; bottom: 0; z-index: 10; background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.sendbar-inner { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; padding-block: 12px; }
+.send-status { font-size: 14px; color: var(--muted); }
+.send-status.error { color: var(--red); }
+.send { font: 600 14.5px/1 var(--sans); color: var(--surface); background: var(--accent); border: 0; border-radius: 8px; padding: 11px 18px; cursor: pointer; }
+.send:disabled { opacity: 0.6; cursor: default; }
+.send:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.q-eyebrow .req { margin-left: 10px; color: var(--red); }
+.send-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.merge { font: 600 14.5px/1 var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 18px; cursor: pointer; }
+.merge:hover { border-color: var(--ink); }
+.merge:disabled { opacity: 0.6; cursor: default; }
+.merge:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.confirm { width: min(440px, calc(100vw - 32px)); padding: 22px 22px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); }
+.confirm::backdrop { background: rgb(10 12 16 / 0.6); }
+.confirm h3 { margin: 0 0 8px; font: 600 17px/1.3 var(--sans); }
+.confirm p { margin: 0 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.copy-box { width: min(620px, calc(100vw - 32px)); }
+.copy-box pre { margin: 0 0 16px; max-height: 40vh; overflow: auto; padding: 12px 14px; border-radius: 8px; background: var(--code-bg); color: var(--ink); font: 400 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.next-q { font: 500 14px/1 var(--sans); color: var(--accent); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+.next-q:hover { border-color: var(--accent); }
+.next-q:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Key evidence: a few large screenshots at the reading column's width, then every acceptance screenshot as a thumbnail. Each opens in a viewer with a comment box. */
+.key-shots { display: grid; gap: 28px; }
+.shot { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.shot-open { display: block; width: 100%; padding: 0; border: 0; background: var(--code-bg); cursor: zoom-in; }
+.shot-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.shot-open img { display: block; width: 100%; height: auto; max-height: min(78vh, 900px); object-fit: contain; }
+.shot figcaption { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: start; padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+.shot figcaption .cap { display: grid; gap: 4px; max-width: var(--measure); }
+.shot figcaption b { font-weight: 600; }
+.shot figcaption p { color: var(--muted); font-size: 15px; line-height: 1.5; }
+.comment-btn { font: 500 13.5px/1 var(--sans); color: var(--accent); background: transparent; border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+.comment-btn:hover { border-color: var(--accent); }
+.comment-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shot-note { grid-column: 1 / -1; padding: 9px 12px; border-left: 3px solid var(--accent); background: var(--bg); font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; }
+.shot-note b { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin-right: 8px; }
+@media (max-width: 560px) { .shot figcaption { grid-template-columns: minmax(0, 1fr); } .comment-btn { justify-self: start; } }
+
+.all-shots { display: grid; gap: 24px; margin-top: 12px; }
+.all-shots > h3 { font: 600 18px/1.35 var(--sans); }
+.round { display: grid; gap: 10px; }
+.round h4 { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.round > p { font-size: 14.5px; color: var(--muted); max-width: var(--measure); }
+.thumbs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.thumb { position: relative; display: grid; gap: 6px; width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: zoom-in; }
+.thumb:hover { border-color: var(--line-strong); }
+.thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.thumb img { display: block; width: 100%; height: 96px; object-fit: contain; background: var(--code-bg); border-radius: 4px; }
+.thumb-label { font: 400 12px/1.3 var(--mono); color: var(--muted); }
+.thumb.has-comment { border-color: var(--accent); }
+.thumb.has-comment::after { content: "Comment"; position: absolute; top: 10px; right: 10px; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--surface); background: var(--accent); padding: 3px 5px; border-radius: 3px; }
+
+.viewer { width: min(1180px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); overflow: auto; }
+.viewer::backdrop { background: rgb(10 12 16 / 0.72); }
+.viewer-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.viewer-pos { flex: 1; min-width: 0; font: 500 12px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.viewer-bar button { font: 500 14px/1 var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.viewer-bar button:hover { border-color: var(--accent); color: var(--accent); }
+.viewer-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.viewer-stage { display: grid; place-items: center; padding: 12px; background: var(--code-bg); }
+.viewer-stage img { display: block; width: auto; height: auto; max-width: 100%; max-height: max(240px, calc(100dvh - 340px)); }
+.viewer-info { display: grid; gap: 6px; padding: 14px 18px 18px; }
+.viewer-info h3 { font: 600 17px/1.35 var(--sans); }
+.viewer-info p { color: var(--muted); font-size: 15px; max-width: var(--measure); }
+.viewer-info label { margin-top: 8px; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+
+/* Command evidence: what the tester ran, as it ran it, and a verbatim excerpt of what it printed. */
+.cmd { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.cmd.has-comment, .cmd-row.has-comment { border-color: var(--accent); }
+.cmd-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: start; padding: 14px 18px 12px; }
+.cmd-head .cap { display: grid; gap: 4px; max-width: var(--measure); }
+.cmd-head b { font-weight: 600; }
+.cmd-head p { color: var(--muted); font-size: 15px; line-height: 1.5; }
+.cmd-meta { font: 500 11px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); }
+.cmd-line { display: flex; gap: 10px; align-items: baseline; padding: 10px 18px; border-top: 1px solid var(--line); font: 500 13px/1.5 var(--mono); overflow-x: auto; }
+.cmd-line .prompt { color: var(--faint); user-select: none; }
+.cmd-line code { background: none; padding: 0; font-size: inherit; white-space: pre; overflow-wrap: normal; }
+.excerpt { margin: 0; padding: 12px 18px 14px; background: var(--code-bg); color: var(--ink); font: 400 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto; }
+.cmd > .shot-note { margin: 12px 18px 14px; }
+@media (max-width: 560px) { .cmd-head { grid-template-columns: minmax(0, 1fr); } }
+
+.round h5 { font: 500 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin: 4px 0 0; }
+.cmds { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cmd-row { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.cmd-row > summary { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 10px 14px; cursor: pointer; list-style: none; }
+.cmd-row > summary::-webkit-details-marker { display: none; }
+.cmd-row > summary::before { content: "\25B8"; color: var(--faint); font-size: 12px; }
+.cmd-row[open] > summary::before { content: "\25BE"; }
+.cmd-row > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cmd-row.has-comment > summary::after { content: "Comment"; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--surface); background: var(--accent); padding: 3px 5px; border-radius: 3px; }
+.cmd-row .cap { display: grid; gap: 2px; min-width: 0; }
+.cmd-row .cap b { font-weight: 500; font-size: 15px; }
+.cmd-row .cap span { color: var(--muted); font-size: 14px; }
+.cmd-row .cmd-line, .cmd-row .excerpt { padding-inline: 14px; }
+.cmd-foot { display: grid; gap: 10px; justify-items: start; padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.cmd-foot .shot-note { justify-self: stretch; }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <div class="eyebrow"><span>Review round 1</span><span>example/sample-app</span></div>
+    <h1><span class="prefix">feat:</span> add evolving scene presentations and generation skill</h1>
+    <div class="meta-row">
+      <dl class="meta">
+        <div><dt>Pull request</dt><dd><a href="https://github.com/example/sample-app/pull/14">#14</a></dd></div>
+        <div><dt>Reviewed head</dt><dd>f400f242</dd></div>
+        <div><dt>Run</dt><dd>e0b71129</dd></div>
+        <div><dt>Logs</dt><dd><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md">Decisions</a> · <a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/dispute-log.md">Disputes</a></dd></div>
+      </dl>
+      <a class="concerns-total red" href="#concerns"><b>8</b> concerns</a>
+    </div>
+  </div>
+</header>
+
+<div class="inner shell">
+  <nav class="rail" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#evidence">Key evidence</a></li>
+      <li><a href="#concerns">Concerns</a>
+        <ol class="tiers">
+      <li><a href="#high">High (2)</a>
+        <ul>
+          <li><a href="#item-1"><span class="dot red"></span><span class="n">1</span><span><code>verify:presentation</code> passes a presentation whose steps are out of order</span></a></li>
+          <li><a href="#item-2"><span class="dot red"></span><span class="n">2</span><span>No agent has used the skill to make a presentation</span></a></li>
+        </ul>
+      </li>
+      <li><a href="#medium">Medium (3)</a>
+        <ul>
+          <li><a href="#item-3"><span class="dot orange"></span><span class="n">3</span><span>On a very short window the presentation shrinks to nothing</span></a></li>
+          <li><a href="#item-4"><span class="dot orange"></span><span class="n">4</span><span>Verification never sees a presentation the way an audience does</span></a></li>
+          <li><a href="#item-5"><span class="dot orange"></span><span class="n">5</span><span>Switching modes can make another presentation on the page jump</span></a></li>
+        </ul>
+      </li>
+      <li><a href="#low">Low (3)</a>
+        <ul>
+          <li><a href="#item-6"><span class="dot yellow"></span><span class="n">6</span><span>At step 3 a link points at a card that hasn't appeared yet</span></a></li>
+          <li><a href="#item-7"><span class="dot yellow"></span><span class="n">7</span><span>Presentations with more than 1000 steps fail verification</span></a></li>
+          <li><a href="#item-8"><span class="dot yellow"></span><span class="n">8</span><span>A new presentation project lints the same way as this repository</span></a></li>
+        </ul>
+      </li>
+        </ol>
+      </li>
+    </ol>
+  </nav>
+
+  <main>
+    <!-- Summary -->
+    <section id="summary">
+      <div class="section-head"><h2>Summary</h2></div>
+      <div class="prose">
+        <p>Implements OpenSpec change <code>create-presentations</code>: browser presentations that develop one continuous diagram through named steps, with a distributable skill for creating and modifying them.</p>
+        <ul>
+          <li>Add a style-neutral React scene kit with typed grouped payloads, stable entity motion, fixed-canvas scaling, keyboard/touch navigation, and browse/present modes.</li>
+          <li>Add explicit lazy-loaded presentation routes and the canonical nine-step “How to Use This Skill to Make a Presentation” example, with presentation-owned styling.</li>
+          <li>Package the presentation skill, bootstrap scaffold, and authoring templates, including standalone/monorepo target selection and partial scaffold reuse. Keep vendored kit and script copies aligned.</li>
+          <li>Add production browser verification and settled screenshot capture with advisory overlap, active-navigation, and attribution diagnostics. Include fixes for reference validation, portable scaffold linting, preview process cleanup and signal handling, inspection input validation, and stale capture replacement.</li>
+        </ul>
+        <h3>Lines of code</h3>
+        <div class="table-wrap size">
+          <table>
+            <thead><tr><th>Language</th><th class="c">Files</th><th class="c">Added</th><th class="c">Modified</th><th class="c">Removed</th></tr></thead>
+            <tbody>
+              <tr><td>TypeScript</td><td class="c">103</td><td class="c">937</td><td class="c">210</td><td class="c">2,648</td></tr>
+              <tr><td>JavaScript</td><td class="c">18</td><td class="c">589</td><td class="c">127</td><td class="c">1,216</td></tr>
+              <tr><td>Markdown</td><td class="c">22</td><td class="c">518</td><td class="c">151</td><td class="c">1,234</td></tr>
+              <tr><td>CSS</td><td class="c">4</td><td class="c">79</td><td class="c">0</td><td class="c">464</td></tr>
+              <tr><td>JSON</td><td class="c">9</td><td class="c">97</td><td class="c">19</td><td class="c">32</td></tr>
+              <tr><td>YAML</td><td class="c">1</td><td class="c">1</td><td class="c">6</td><td class="c">1</td></tr>
+              <tr><td>SVG</td><td class="c">2</td><td class="c">0</td><td class="c">0</td><td class="c">2</td></tr>
+              <tr class="total"><td>Total</td><td class="c">159</td><td class="c">2,221</td><td class="c">513</td><td class="c">5,597</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="size-note">Counted by cloc against the base branch. Blank lines, comments and lock files are left out.</p>
+      </div>
+    </section>
+
+    <!-- Key evidence: up to five screenshots and commands the ranking picks, then everything acceptance recorded, by round. -->
+    <section id="evidence">
+      <div class="section-head"><h2>Key evidence</h2><p>What the acceptance tester saw and ran. Its last round tested revision <code>4eea639a</code>. Open a screenshot to enlarge it, or comment on any screenshot or command. Comments go to the factory with your answers.</p></div>
+      <div class="key-shots">
+        <figure class="cmd" data-cmd="round2-verify-swapped" data-round="Round 2" data-title="Verifier on steps 3 and 4 swapped" data-desc="The sample check passes, although the steps are out of order.">
+          <figcaption class="cmd-head"><div class="cap"><span class="cmd-meta">Round 2 · 4eea639a</span><b>Verifier on steps 3 and 4 swapped</b><p>The sample check passes, although the steps are out of order.</p></div><button type="button" class="comment-btn">Comment</button></figcaption>
+          <div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.41s
+render   ok   9 steps, 0 console errors, 0 page errors
+sample   ok   9 of 9 step titles match the outline
+PASS how-to-use-this-skill
+exit 0</pre>
+          <p class="shot-note" hidden><b>Your comment</b><span></span></p>
+        </figure>
+        <figure class="shot" data-shot="round2-helper-wide-step-04.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 4 on a desktop screen, round 2"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="Step 4 on a desktop screen, round 2" width="1440" height="900"></button>
+          <figcaption><div class="cap"><b>Step 4 on a desktop screen, round 2</b><p>Each answer adds a beat card under the you and skill exchange, and the morph labels between cards now stay on one line.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+        <figure class="shot" data-shot="round2-helper-narrow-step-04.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 4 on a phone screen, round 2"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="Step 4 on a phone screen, round 2" width="390" height="900"></button>
+          <figcaption><div class="cap"><b>Step 4 on a phone screen, round 2</b><p>The scene scales down as one piece and its labels stay readable, 12px at the smallest.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+        <figure class="cmd" data-cmd="round2-verify-title" data-round="Round 2" data-title="Verifier on a wrong step title" data-desc="The sample check fails and names the step, as the spec says.">
+          <figcaption class="cmd-head"><div class="cap"><span class="cmd-meta">Round 2 · 4eea639a</span><b>Verifier on a wrong step title</b><p>The sample check fails and names the step, as the spec says.</p></div><button type="button" class="comment-btn">Comment</button></figcaption>
+          <div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.38s
+render   ok   9 steps, 0 console errors, 0 page errors
+FAIL [sample]: step 5: title &quot;Pick a target&quot; does not match the outline&#x27;s &quot;Choose where it goes&quot;
+exit 1</pre>
+          <p class="shot-note" hidden><b>Your comment</b><span></span></p>
+        </figure>
+        <figure class="shot" data-shot="round1-1440x900-step-09.png">
+          <button type="button" class="shot-open" aria-label="Enlarge: Step 9, the finished scene"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="Step 9, the finished scene" width="1440" height="900"></button>
+          <figcaption><div class="cap"><b>Step 9, the finished scene</b><p>All nine steps build one diagram, framed as the presentation's own output. Taken in round 1, before the morph label fix, so those labels still split.</p></div><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></figcaption>
+        </figure>
+      </div>
+      <div class="all-shots">
+        <h3>All acceptance evidence (25 screenshots, 6 commands)</h3>
+        <div class="round">
+          <h4>Round 2 · 4eea639a</h4>
+          <p>Retested the morph label that split across lines at steps 3 and 4. <a href="https://github.com/example/sample-app/commit/4eea639addd46d809226c9717a90e5c431d3be76">The fix</a> works. Found that the verifier passes a presentation whose steps are out of order.</p>
+          <h5>Commands (3)</h5>
+          <ul class="cmds">
+            <li><details class="cmd-row" data-cmd="round2-verify-swapped" data-round="Round 2" data-title="Verifier on steps 3 and 4 swapped" data-desc="The sample check passes, although the steps are out of order."><summary><span class="cap"><b>Verifier on steps 3 and 4 swapped</b><span>The sample check passes, although the steps are out of order.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.41s
+render   ok   9 steps, 0 console errors, 0 page errors
+sample   ok   9 of 9 step titles match the outline
+PASS how-to-use-this-skill
+exit 0</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+            <li><details class="cmd-row" data-cmd="round2-verify-title" data-round="Round 2" data-title="Verifier on a wrong step title" data-desc="The sample check fails and names the step, as the spec says."><summary><span class="cap"><b>Verifier on a wrong step title</b><span>The sample check fails and names the step, as the spec says.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.38s
+render   ok   9 steps, 0 console errors, 0 page errors
+FAIL [sample]: step 5: title &quot;Pick a target&quot; does not match the outline&#x27;s &quot;Choose where it goes&quot;
+exit 1</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+            <li><details class="cmd-row" data-cmd="round2-lint-fresh" data-round="Round 2" data-title="Lint in a newly set-up project" data-desc="A project the skill set up outside this repository lints cleanly."><summary><span class="cap"><b>Lint in a newly set-up project</b><span>A project the skill set up outside this repository lints cleanly.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>cd ../scratch-standalone &amp;&amp; npm run lint; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; scratch-standalone@0.0.0 lint
+&gt; eslint .
+
+exit 0</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+          </ul>
+          <h5>Screenshots (6)</h5>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="round2-helper-wide-step-04.png" data-round="Round 2" data-title="Step 4 · 1440×900" data-desc="Both morph labels stay on one line between the three cards." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-narrow-step-04.png" data-round="Round 2" data-title="Step 4 · 390×900" data-desc="The cards read at phone width, and both morph labels stay on one line." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-wide-step-03.png" data-round="Round 2" data-title="Step 3 · 1440×900" data-desc="The first morph label stays on one line." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 3 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-helper-narrow-step-03.png" data-round="Round 2" data-title="Step 3 · 390×900" data-desc="The first morph label stays on one line at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 3 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-axi-wide-step-04.png" data-round="Round 2" data-title="Step 4 · 1440×900 · live browser" data-desc="The same step checked in a live browser." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round2-axi-narrow-step-04.png" data-round="Round 2" data-title="Step 4 · 390×900 · live browser" data-desc="Cards readable and morph labels on one line, with the step controls and attribution visible." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900 · live browser</span></button></li>
+          </ul>
+        </div>
+        <div class="round">
+          <h4>Round 1 · 986ef34a</h4>
+          <p>Retested the labels that were too small at phone width. <a href="https://github.com/example/sample-app/commit/c15f9596dc68ca1a38ee62b05f05ff35c226f573">The fix</a> works. Found that the morph label splits across two lines.</p>
+          <h5>Commands (2)</h5>
+          <ul class="cmds">
+            <li><details class="cmd-row" data-cmd="round1-capture" data-round="Round 1" data-title="Screenshots of steps 1, 4 and 9" data-desc="The capture helper waits for each step to settle, then saves a desktop and a phone screenshot."><summary><span class="cap"><b>Screenshots of steps 1, 4 and 9</b><span>The capture helper waits for each step to settle, then saves a desktop and a phone screenshot.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>node skills/presentation/scripts/capture.mjs how-to-use-this-skill --steps 1,4,9 --sizes 1440x900,390x900</code></div><pre class="excerpt">preview  http://127.0.0.1:4173/p/how-to-use-this-skill
+step 1   1440x900  settled after 812ms  round1-1440x900-step-01.png
+step 4   1440x900  settled after 806ms  round1-1440x900-step-04.png
+step 9   1440x900  settled after 820ms  round1-1440x900-step-09.png
+step 1   390x900   settled after 804ms  round1-390x900-step-01.png
+step 4   390x900   settled after 811ms  round1-390x900-step-04.png
+step 9   390x900   settled after 809ms  round1-390x900-step-09.png
+6 screenshots written</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+            <li><details class="cmd-row" data-cmd="round1-verify-reference" data-round="Round 1" data-title="Verifier on the reference presentation" data-desc="The reference presentation passes all three checks."><summary><span class="cap"><b>Verifier on the reference presentation</b><span>The reference presentation passes all three checks.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.52s
+render   ok   9 steps, 0 console errors, 0 page errors
+sample   ok   9 of 9 step titles match the outline
+PASS how-to-use-this-skill
+exit 0</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+          </ul>
+          <h5>Screenshots (11)</h5>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-01.png" data-round="Round 1" data-title="Step 1 · 1440×900" data-desc="The first card and prompt read clearly, with the browse controls." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-04.png" data-round="Round 1" data-title="Step 4 · 1440×900" data-desc="The morph labels split onto two lines as morp and h." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-1440x900-step-09.png" data-round="Round 1" data-title="Step 9 · 1440×900" data-desc="The finished scene inside the reveal frame, with the kit, verify and the edit loop." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-01.png" data-round="Round 1" data-title="Step 1 · 390×900" data-desc="Title, caption and controls read at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 1 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-04.png" data-round="Round 1" data-title="Step 4 · 390×900" data-desc="The labels now read at phone width, but morph splits onto two lines." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-390x900-step-09.png" data-round="Round 1" data-title="Step 9 · 390×900" data-desc="The finished scene at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 9 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-initial.png" data-round="Round 1" data-title="Step 1 · 780×380 · live browser" data-desc="At this short viewport the scene shrinks to a sliver. See concern 3." data-w="780" data-h="380"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='780' height='380' viewBox='0 0 780 380'%3E%3Crect width='780' height='380' fill='%23d9dde5'/%3E%3Ctext x='390' y='190' font-family='sans-serif' font-size='32' fill='%236b7280' text-anchor='middle'%3EScreenshot 780x380%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="780" height="380"><span class="thumb-label">Step 1 · 780×380 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-01.png" data-round="Round 1" data-title="Step 1 · 1440×900 · live browser" data-desc="The first step in a live browser." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-04.png" data-round="Round 1" data-title="Step 4 · 780×380 · live browser" data-desc="The scene is a few pixels tall at this short viewport; the tester&#x27;s notes call it 1440×900. See concern 3." data-w="780" data-h="380"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='780' height='380' viewBox='0 0 780 380'%3E%3Crect width='780' height='380' fill='%23d9dde5'/%3E%3Ctext x='390' y='190' font-family='sans-serif' font-size='32' fill='%236b7280' text-anchor='middle'%3EScreenshot 780x380%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="780" height="380"><span class="thumb-label">Step 4 · 780×380 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-narrow-step-04.png" data-round="Round 1" data-title="Step 4 · 390×900 · live browser" data-desc="The labels read at phone width, but morph splits onto two lines." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="round1-axi-wide-step-09.png" data-round="Round 1" data-title="Step 9 · 1440×900 · live browser" data-desc="The finished scene, with the next-step control disabled." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900 · live browser</span></button></li>
+          </ul>
+        </div>
+        <div class="round">
+          <h4>Round 0 · 3cc4f166</h4>
+          <p>First pass over the reference presentation. Found that its labels are too small to read at phone width.</p>
+          <h5>Commands (1)</h5>
+          <ul class="cmds">
+            <li><details class="cmd-row" data-cmd="round0-bootstrap" data-round="Round 0" data-title="Setting up a presentation in a monorepo" data-desc="The setup script picks the web app and leaves the root&#x27;s scripts alone."><summary><span class="cap"><b>Setting up a presentation in a monorepo</b><span>The setup script picks the web app and leaves the root&#x27;s scripts alone.</span></span></summary><div class="cmd-line"><span class="prompt">$</span><code>node skills/presentation/scripts/bootstrap.mjs --target ../scratch-monorepo</code></div><pre class="excerpt">workspace  npm workspaces: apps/*, packages/*
+target     apps/web (react, vite)
+create     apps/web/src/presentations/index.ts
+create     apps/web/src/presentations/example/Example.tsx
+update     apps/web/package.json  scripts: verify:presentation, capture:presentation
+keep       package.json  (root scripts unchanged)
+done       2 created, 1 updated</pre><div class="cmd-foot"><button type="button" class="comment-btn">Comment</button><p class="shot-note" hidden><b>Your comment</b><span></span></p></div></details></li>
+          </ul>
+          <h5>Screenshots (8)</h5>
+          <ul class="thumbs">
+            <li><button type="button" class="thumb" data-shot="helper-wide-first.png" data-round="Round 0" data-title="Step 1 · 1440×900" data-desc="The first scene, with the section list and progress." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 1 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-wide-dense.png" data-round="Round 0" data-title="Step 4 · 1440×900" data-desc="Three beat cards build up under the you and skill exchange." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 4 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-wide-last.png" data-round="Round 0" data-title="Step 9 · 1440×900" data-desc="The full scene, framed as the presentation&#x27;s own output." data-w="1440" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Crect width='1440' height='900' fill='%23d9dde5'/%3E%3Ctext x='720' y='450' font-family='sans-serif' font-size='60' fill='%236b7280' text-anchor='middle'%3EScreenshot 1440x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="1440" height="900"><span class="thumb-label">Step 9 · 1440×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-first.png" data-round="Round 0" data-title="Step 1 · 390×900" data-desc="The scene is centered and scaled down as one piece." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 1 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-dense.png" data-round="Round 0" data-title="Step 4 · 390×900" data-desc="The scene&#x27;s labels are too small to read at phone width." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 4 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="helper-narrow-last.png" data-round="Round 0" data-title="Step 9 · 390×900" data-desc="The final scene holds together, but its labels are still too small." data-w="390" data-h="900"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='900' viewBox='0 0 390 900'%3E%3Crect width='390' height='900' fill='%23d9dde5'/%3E%3Ctext x='195' y='450' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x900%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="900"><span class="thumb-label">Step 9 · 390×900</span></button></li>
+            <li><button type="button" class="thumb" data-shot="wide-first.png" data-round="Round 0" data-title="Step 1 · 390×844 · live browser" data-desc="The first step in a live browser." data-w="390" data-h="844"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844' viewBox='0 0 390 844'%3E%3Crect width='390' height='844' fill='%23d9dde5'/%3E%3Ctext x='195' y='422' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x844%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="844"><span class="thumb-label">Step 1 · 390×844 · live browser</span></button></li>
+            <li><button type="button" class="thumb" data-shot="narrow-first.png" data-round="Round 0" data-title="Step 4 · 390×844 · live browser" data-desc="The tester saved this same image three times, as narrow-first, wide-dense and wide-last." data-w="390" data-h="844"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844' viewBox='0 0 390 844'%3E%3Crect width='390' height='844' fill='%23d9dde5'/%3E%3Ctext x='195' y='422' font-family='sans-serif' font-size='24' fill='%236b7280' text-anchor='middle'%3EScreenshot 390x844%3C/text%3E%3C/svg%3E" alt="" loading="lazy" width="390" height="844"><span class="thumb-label">Step 4 · 390×844 · live browser</span></button></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Concerns: high (red), then medium (orange), then low (yellow) -->
+    <section id="concerns">
+      <div class="section-head"><h2>Concerns</h2></div>
+      <div class="tier-group" id="high">
+      <h3 class="tier-head"><span class="dot red"></span>High <span class="c">(2)</span></h3>
+      <div class="items">
+        <article class="item" id="item-1">
+          <div class="n">1</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">High</span><span class="kind">Failure</span></div>
+            <h3><code>verify:presentation</code> passes a presentation whose steps are out of order</h3>
+            <p class="fail-line">Acceptance did not converge after 3 rounds.</p>
+            <div class="prose">
+              <p>In its last round the tester swapped steps 3 and 4 of the reference presentation and ran the verifier. It expected the sample check to fail and the command to exit with status 1. The verifier passed.</p>
+            </div>
+            <figure class="cmd" data-cmd="round2-verify-swapped" data-round="Round 2" data-title="Verifier on steps 3 and 4 swapped" data-desc="The sample check passes, although the steps are out of order.">
+              <figcaption class="cmd-head"><div class="cap"><span class="cmd-meta">Round 2 · 4eea639a</span><b>Verifier on steps 3 and 4 swapped</b><p>The sample check passes, although the steps are out of order.</p></div><button type="button" class="comment-btn">Comment</button></figcaption>
+              <div class="cmd-line"><span class="prompt">$</span><code>npm run verify:presentation; echo &quot;exit $?&quot;</code></div><pre class="excerpt">&gt; sample-app@0.1.0 verify:presentation
+&gt; node skills/presentation/scripts/verify.mjs how-to-use-this-skill
+
+build    ok   vite build in 2.41s
+render   ok   9 steps, 0 console errors, 0 page errors
+sample   ok   9 of 9 step titles match the outline
+PASS how-to-use-this-skill
+exit 0</pre>
+              <p class="shot-note" hidden><b>Your comment</b><span></span></p>
+            </figure>
+            <div class="prose">
+              <p>Acceptance had no round left to test a fix.</p>
+              <p><strong>What covers it:</strong></p>
+              <ul><li>A unit test checks a missing step and a wrong title, but not a wrong order.</li><li>Nothing runs the verifier on steps out of order.</li></ul>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-1-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>The verifier should fail when the steps are out of order. What should the factory do?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-1-q1" value="0"><span class="opt-text"><span class="opt-label">Fix it in the next round<span class="rec">Recommended</span></span><span class="opt-desc">The check compares the order too, a test covers it, and acceptance retests it.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="1"><span class="opt-text"><span class="opt-label">Accept it as a known issue</span><span class="opt-desc">Merge with the gap, and the skill notes it.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="2"><span class="opt-text"><span class="opt-label">Handle it in a follow-up</span><span class="opt-desc">Leave this pull request as is and open a new change for it.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-1-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-1-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/scripts/verify.mjs#L88-L112">The outline check</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/scripts/verify.test.mjs#L40-L71">The unit test</a></p>
+          </div>
+        </article>
+
+        <article class="item" id="item-2">
+          <div class="n">2</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier red">High</span><span class="kind">Risk</span><span class="kind">Agent decision</span></div>
+            <h3>No agent has used the skill to make a presentation</h3>
+            <div class="prose">
+              <p>The skill was checked only by reading it. No agent followed it to make or change a presentation, during the build or in acceptance.</p>
+              <p><strong>Not tried:</strong></p>
+              <ul><li>asking for a new presentation in an empty project</li><li>adding steps to an existing presentation</li><li>making one in a monorepo, where the skill has to pick the right app</li></ul>
+              <p><strong>If it goes wrong:</strong> in a monorepo the skill could set up the presentation at the repository's root, or change the root's scripts.</p>
+              <p><strong>What covers it:</strong></p>
+              <ul><li>Integration tests run the setup scripts the skill calls, in a plain project and in a monorepo.</li><li>Acceptance ran the setup script in a monorepo by hand.</li><li>Nothing checks that an agent following the skill calls the scripts the right way.</li></ul>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-2-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>No agent has used the skill yet. What should the factory do?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-2-q1" value="0"><span class="opt-text"><span class="opt-label">Have an agent use it in the next round<span class="rec">Recommended</span></span><span class="opt-desc">Acceptance asks an agent to make and change a presentation, in a plain project and in a monorepo.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="1"><span class="opt-text"><span class="opt-label">Accept the reading</span><span class="opt-desc">Merge as is. The setup scripts the skill calls are tested.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="2"><span class="opt-text"><span class="opt-label">I&#x27;ll try the skill before merging</span><span class="opt-desc">The factory changes nothing, and you try it yourself.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-2-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-2-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L1-L10">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/SKILL.md#L24-L61">The skill's setup steps</a></p>
+          </div>
+        </article>
+
+      </div>
+      </div>
+
+      <div class="tier-group" id="medium">
+      <h3 class="tier-head"><span class="dot orange"></span>Medium <span class="c">(3)</span></h3>
+      <div class="items">
+        <article class="item" id="item-3">
+          <div class="n">3</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier orange">Medium</span><span class="kind">Agent decision</span></div>
+            <h3>On a very short window the presentation shrinks to nothing</h3>
+            <div class="prose">
+              <p>The presentation draws on one tall canvas, 880 by 1280, and scales it to fit the window. In browse mode the controls take 316 pixels of height, so a window about 300 pixels tall leaves no room for the scene.</p>
+              <p><strong>Checked by acceptance:</strong></p>
+              <ul><li>a desktop window, 1440 by 900</li><li>a phone, 390 by 900</li><li>a short window, 780 by 380, where the scene is a sliver</li></ul>
+              <p>A landscape phone was not checked. Changing the canvas later would change every presentation made with the skill.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-3-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>Should short, wide windows get their own layout?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-3-q1" value="0"><span class="opt-text"><span class="opt-label">Keep the single canvas<span class="rec">Recommended</span></span><span class="opt-desc">Presentations run on ordinary screens. The skill notes the limit.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q1" value="1"><span class="opt-text"><span class="opt-label">Add a landscape canvas</span><span class="opt-desc">Use a wide canvas when the window is wider than it is tall.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q1" value="2"><span class="opt-text"><span class="opt-label">Set a minimum size</span><span class="opt-desc">Below a minimum height, show a message instead of the scene.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-3-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-3-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L126-L163">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/src/scene-kit/fit.ts#L12-L38">The fit calculation</a></p>
+          </div>
+        </article>
+
+        <article class="item" id="item-4">
+          <div class="n">4</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier orange">Medium</span><span class="kind">Agent decision</span></div>
+            <h3>Verification never sees a presentation the way an audience does</h3>
+            <div class="prose">
+              <p>The verifier switches every presentation to browse mode before it checks it, so it never sees present mode, the full-screen view an audience gets. A defect that shows only when presenting would pass verification.</p>
+              <p><strong>What covers it:</strong></p>
+              <ul><li>Acceptance checked present mode at steps 1, 4 and 9 in a live browser.</li><li>Nothing checks it when someone makes a new presentation with the skill.</li></ul>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-4-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>Should verification check present mode too?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-4-q1" value="0"><span class="opt-text"><span class="opt-label">Check both modes<span class="rec">Recommended</span></span><span class="opt-desc">The verifier checks each step in browse and present mode, and takes about twice as long.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-4-q1" value="1"><span class="opt-text"><span class="opt-label">Browse mode is enough</span><span class="opt-desc">Verification stays as it is.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-4-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-4-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L12-L21">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/scripts/verify.mjs#L140-L152">The verifier's mode switch</a></p>
+          </div>
+        </article>
+
+        <article class="item" id="item-5">
+          <div class="n">5</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier orange">Medium</span><span class="kind">Agent decision</span></div>
+            <h3>Switching modes can make another presentation on the page jump</h3>
+            <div class="prose">
+              <p>When you switch between browse and present mode, the presentation turns off animation for one frame on the whole page, not only for itself. A second presentation on the same page that is moving at that moment jumps to its end instead of animating.</p>
+              <p><strong>What covers it:</strong></p>
+              <ul><li>A component test checks that switching modes starts no animation, and that the next step still animates.</li><li>Nothing tests two presentations on one page.</li></ul>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-5-q1" data-rec="0" data-required="true">
+                <legend><span class="q-eyebrow">Question<span class="req">Answer required</span></span>What should switching modes do to the rest of the page?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-5-q1" value="0"><span class="opt-text"><span class="opt-label">Accept it<span class="rec">Recommended</span></span><span class="opt-desc">A page shows one presentation at a time. The skill notes the limit.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-5-q1" value="1"><span class="opt-text"><span class="opt-label">Limit it to this presentation</span><span class="opt-desc">Turn off animation only inside the presentation being switched, with a test of two on one page.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-5-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-5-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L66-L76">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/src/scene-kit/Scene.tsx#L140-L161">The mode switch</a></p>
+          </div>
+        </article>
+      </div>
+      </div>
+
+      <div class="tier-group" id="low">
+      <h3 class="tier-head"><span class="dot yellow"></span>Low <span class="c">(3)</span></h3>
+      <div class="items">
+        <article class="item" id="item-6">
+          <div class="n">6</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Low</span><span class="kind">Agent decision</span></div>
+            <h3>At step 3 a link points at a card that hasn't appeared yet</h3>
+            <div class="prose">
+              <p>The spec puts the first “what morphs” link at step 3, when only one card is on screen. The link points at the empty spot where the second card lands at step 4, and stays put when it lands.</p>
+              <p><strong>What covers it:</strong></p>
+              <ul><li>Acceptance saw it on a desktop and a phone, in the step 3 screenshots.</li><li>The reference test checks that the link is there at step 3.</li></ul>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-6-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>Keep the link at step 3?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-6-q1" value="0" checked><span class="opt-text"><span class="opt-label">Keep it<span class="rec">Recommended</span></span><span class="opt-desc">It follows the spec&#x27;s outline.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-6-q1" value="1"><span class="opt-text"><span class="opt-label">Move it to step 4</span><span class="opt-desc">The link appears when the second card lands, and step 3&#x27;s caption no longer names it.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-6-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-6-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L34-L64">How the agent decided</a></p>
+          </div>
+        </article>
+
+        <article class="item" id="item-7">
+          <div class="n">7</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Low</span><span class="kind">Agent decision</span></div>
+            <h3>Presentations with more than 1000 steps fail verification</h3>
+            <div class="prose">
+              <p>The verifier refuses a presentation with more than 1000 steps. The spec sets no limit.</p>
+              <p><strong>What covers it:</strong> a unit test checks 1000 and 1001 steps.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-7-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>What should happen to the limit?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-7-q1" value="0" checked><span class="opt-text"><span class="opt-label">Add it to the spec<span class="rec">Recommended</span></span><span class="opt-desc">The limit stays, and the spec states it.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-7-q1" value="1"><span class="opt-text"><span class="opt-label">Remove it</span><span class="opt-desc">The verifier accepts any number of steps.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-7-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-7-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L78-L88">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/scripts/verify.mjs#L30-L34">The limit</a></p>
+          </div>
+        </article>
+
+        <article class="item" id="item-8">
+          <div class="n">8</div>
+          <div class="item-body">
+            <div class="tags"><span class="tier yellow">Low</span><span class="kind">Agent decision</span></div>
+            <h3>A new presentation project lints the same way as this repository</h3>
+            <div class="prose">
+              <p>Lint in the template now finds its TypeScript settings next to itself, instead of in this repository. Presentations behave the same either way. This decides whether a project made with the skill can run lint on its own.</p>
+              <p><strong>What covers it:</strong> the integration test runs lint in a newly set-up project, and acceptance ran it too.</p>
+            </div>
+            <div class="ask">
+              <fieldset class="q" data-qid="item-8-q1" data-rec="0">
+                <legend><span class="q-eyebrow">Question</span>Keep the template&#x27;s own lint settings?</legend>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="item-8-q1" value="0" checked><span class="opt-text"><span class="opt-label">Keep them<span class="rec">Recommended</span></span><span class="opt-desc">Projects made with the skill lint on their own.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-8-q1" value="1"><span class="opt-text"><span class="opt-label">Point lint at this repository</span><span class="opt-desc">The template has fewer files, but lint fails outside this repository.</span></span></label>
+                  <label class="opt"><input type="radio" name="item-8-q1" value="other"><span class="opt-text"><span class="opt-label">Other</span><span class="opt-desc">Write your own answer in the box below.</span></span></label>
+                </div>
+                <textarea class="note" name="item-8-q1-note" rows="2" placeholder="Add a note (optional)" aria-label="Note for this question"></textarea>
+              </fieldset>
+            </div>
+            <p class="links"><span class="links-label">On GitHub</span><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/openspec/changes/archive/2026-11-16-create-presentations/decision-log.md#L23-L32">How the agent decided</a><a href="https://github.com/example/sample-app/blob/f400f2422b3d816ce65a1a33b34ef6569fe7bf90/skills/presentation/templates/app/eslint.config.js#L1-L22">The template's lint settings</a></p>
+          </div>
+        </article>
+
+      </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="inner">Reference mockup with sample content and placeholder screenshots.</footer>
+
+<div class="sendbar" role="region" aria-label="Send feedback or merge">
+  <div class="inner sendbar-inner">
+    <p class="send-status" id="send-status" aria-live="polite"></p>
+    <div class="send-actions">
+      <button type="button" id="next-q" class="next-q" hidden>Next unanswered</button>
+      <button type="button" id="merge" class="merge">Merge</button>
+      <button type="button" id="send" class="send">Send feedback</button>
+    </div>
+  </div>
+</div>
+
+<dialog class="confirm" id="merge-confirm" aria-labelledby="merge-title">
+  <h3 id="merge-title">Merge with open concerns?</h3>
+  <p id="merge-text"></p>
+  <div class="confirm-actions">
+    <button type="button" class="next-q" id="merge-cancel">Cancel</button>
+    <button type="button" class="send" id="merge-go">Merge anyway</button>
+  </div>
+</dialog>
+
+<dialog class="confirm copy-box" id="copy-fallback" aria-labelledby="copy-title">
+  <h3 id="copy-title">This page can't send from here</h3>
+  <p id="copy-why"></p>
+  <pre id="copy-text"></pre>
+  <div class="confirm-actions">
+    <button type="button" class="next-q" id="copy-close">Close</button>
+    <button type="button" class="send" id="copy-go">Copy command</button>
+  </div>
+</dialog>
+
+<dialog class="viewer" id="viewer" aria-labelledby="viewer-title">
+  <div class="viewer-bar">
+    <p class="viewer-pos" id="viewer-pos"></p>
+    <button type="button" id="viewer-prev" aria-label="Previous screenshot">&larr;</button>
+    <button type="button" id="viewer-next" aria-label="Next screenshot">&rarr;</button>
+    <button type="button" id="viewer-close">Close</button>
+  </div>
+  <div class="viewer-stage"><img id="viewer-img" alt=""></div>
+  <div class="viewer-info">
+    <h3 id="viewer-title"></h3>
+    <p id="viewer-desc"></p>
+    <label for="viewer-note">Comment</label>
+    <textarea class="note" id="viewer-note" rows="3" placeholder="Comment on this screenshot (sent to the factory with your answers)"></textarea>
+  </div>
+</dialog>
+
+<dialog class="confirm" id="cmd-dialog" aria-labelledby="cmd-title">
+  <h3 id="cmd-title"></h3>
+  <p id="cmd-desc"></p>
+  <textarea class="note" id="cmd-note" rows="3" placeholder="Comment on this command (sent to the factory with your answers)" aria-label="Comment"></textarea>
+  <div class="confirm-actions" style="margin-top: 14px">
+    <button type="button" class="send" id="cmd-done">Done</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  // Answers and evidence comments: drafts stay in this browser. "Send feedback" stores one submission in the
+  // artifact's database; "Merge" stores a merge request instead, after warning when red or orange items are open.
+  var KEY = 'review-answers:e0b71129';
+  var RUN = 'e0b71129';
+  var sets = [].slice.call(document.querySelectorAll('fieldset.q'));
+  var thumbs = [].slice.call(document.querySelectorAll('.thumb'));
+  var statusEl = document.getElementById('send-status');
+  var btn = document.getElementById('send');
+  var nextBtn = document.getElementById('next-q');
+  var mergeBtn = document.getElementById('merge');
+  var confirmEl = document.getElementById('merge-confirm');
+  var OPEN = { red: 2, orange: 3 };
+  var HEAD = 'f400f242';
+  var mergedAt = null;
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var db = null;
+  var sentAt = null;
+  var record = null;
+  var comments = {};
+  var cmdComments = {};
+  var cmdEls = [].slice.call(document.querySelectorAll('[data-cmd]'));
+  var cmdIds = cmdEls.map(function (el) { return el.dataset.cmd; }).filter(function (id, i, all) { return all.indexOf(id) === i; });
+
+  function clean(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+
+  // Questions
+  function stateOf(fs) {
+    var c = fs.querySelector('input[type=radio]:checked');
+    return { choice: c ? c.value : null, note: fs.querySelector('.note').value.trim() };
+  }
+  function sync(fs) {
+    var st = stateOf(fs);
+    var ta = fs.querySelector('.note');
+    var other = st.choice === 'other';
+    ta.placeholder = other ? 'Your answer' : 'Add a note (optional)';
+    if (!other || st.note) ta.classList.remove('missing');
+    fs.classList.toggle('unanswered', !st.choice);
+  }
+  // Questions on red and orange items start unanswered and must be answered before sending.
+  function pending() {
+    return sets.filter(function (fs) { return fs.dataset.required === 'true' && !stateOf(fs).choice; });
+  }
+  function changedCount() {
+    return sets.filter(function (fs) { var c = stateOf(fs).choice; return c && c !== fs.dataset.rec; }).length;
+  }
+
+  // Screenshot comments
+  function commented() {
+    return thumbs.filter(function (t) { return clean(comments[t.dataset.shot]); });
+  }
+  function cmdCommented() {
+    return cmdIds.filter(function (id) { return clean(cmdComments[id]); });
+  }
+  function commentText() {
+    var c = commented().length + cmdCommented().length;
+    return c ? ' ' + c + (c === 1 ? ' evidence comment.' : ' evidence comments.') : '';
+  }
+
+  function show(text, isError) {
+    statusEl.textContent = text;
+    statusEl.classList.toggle('error', !!isError);
+  }
+  function idle() {
+    if (record) return;
+    var left = pending().length;
+    btn.disabled = left > 0;
+    nextBtn.hidden = left === 0;
+    if (left) {
+      show(left + (left === 1 ? ' question on a high or medium concern needs' : ' questions on high and medium concerns need') + ' your answer before you can send.' + commentText(), false);
+      return;
+    }
+    var n = changedCount();
+    var text = sets.length + ' questions answered. ' + (n === 0 ? 'All answers are the recommended ones.' : n + (n === 1 ? ' answer differs' : ' answers differ') + ' from the recommendation.');
+    text += commentText();
+    if (sentAt) text += ' Feedback sent at ' + sentAt + '; send again after any change.';
+    show(text, false);
+  }
+  function goNext() {
+    var fs = pending()[0];
+    if (!fs) return;
+    fs.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+    var first = fs.querySelector('input[type=radio]');
+    if (first) first.focus({ preventScroll: true });
+  }
+  function save() {
+    var draft = {};
+    sets.forEach(function (fs) { draft[fs.dataset.qid] = stateOf(fs); });
+    draft.__shots = comments;
+    // The real page keeps no answers across a reload.
+  }
+  function restore() {
+    var draft = null;
+    if (!draft) return;
+    sets.forEach(function (fs) {
+      var d = draft[fs.dataset.qid];
+      if (!d) return;
+      var input = fs.querySelector('input[type=radio][value="' + d.choice + '"]');
+      if (input) input.checked = true;
+      else if (d.choice === null) fs.querySelectorAll('input[type=radio]').forEach(function (i) { i.checked = false; });
+      fs.querySelector('.note').value = d.note || '';
+    });
+    var saved = draft.__shots;
+    if (saved && typeof saved === 'object') {
+      thumbs.forEach(function (t) {
+        var v = saved[t.dataset.shot];
+        if (typeof v === 'string' && v.trim()) comments[t.dataset.shot] = v;
+      });
+    }
+  }
+  function collect() {
+    return sets.map(function (fs) {
+      var st = stateOf(fs);
+      var item = fs.closest('.item');
+      var picked = fs.querySelector('input[type=radio]:checked');
+      var label = picked ? clean(picked.closest('.opt').querySelector('.opt-label').firstChild.textContent) : '';
+      return {
+        question: fs.dataset.qid,
+        item: clean(item.querySelector('.n').textContent),
+        itemTitle: clean(item.querySelector('h3').textContent),
+        text: clean(fs.querySelector('legend').lastChild.textContent),
+        choice: st.choice === 'other' ? 'Other' : label,
+        recommended: st.choice === fs.dataset.rec,
+        note: st.note
+      };
+    });
+  }
+  function cmdInfo(id) {
+    var el = document.querySelector('[data-cmd="' + id + '"]');
+    return { round: el.dataset.round, title: el.dataset.title, desc: el.dataset.desc };
+  }
+  function collectCmdComments() {
+    return cmdCommented().map(function (id) {
+      var info = cmdInfo(id);
+      return { command: id, round: info.round, title: info.title, comment: clean(cmdComments[id]) };
+    });
+  }
+  function collectComments() {
+    return commented().map(function (t) {
+      return { screenshot: t.dataset.shot, round: t.dataset.round, title: t.dataset.title, comment: clean(comments[t.dataset.shot]) };
+    });
+  }
+
+  // When the page can't reach the run, it offers the answers as an Archon command to copy, and keeps them on the page.
+  var copyEl = document.getElementById('copy-fallback');
+  var copyText = document.getElementById('copy-text');
+  function shellQuote(t) { return "'" + t.replace(/'/g, "'\\''") + "'"; }
+  function offerCopy(kind, body) {
+    document.getElementById('copy-why').textContent = 'The page could not reach the run, so nothing was sent and your answers stay on the page. Run this command to send the ' + (kind === 'merge' ? 'merge' : 'feedback') + ' to the run instead. Fill in <occurrence> from: archon workflow attention ' + RUN + '.';
+    copyText.textContent = 'archon workflow answer ' + RUN + ' --occurrence <occurrence> \\\n  --text ' + shellQuote(JSON.stringify(body));
+    show('Nothing was sent: the page could not reach the run. Copy the command to send it from a terminal.', true);
+    copyEl.showModal();
+    document.getElementById('copy-go').focus();
+  }
+  document.getElementById('copy-close').addEventListener('click', function () { copyEl.close(); btn.focus(); });
+  document.getElementById('copy-go').addEventListener('click', function () {
+    var go = this;
+    var done = function (ok) { go.textContent = ok ? 'Copied' : 'Select and copy it'; setTimeout(function () { go.textContent = 'Copy command'; }, 1600); };
+    try { navigator.clipboard.writeText(copyText.textContent).then(function () { done(true); }, function () { done(false); }); } catch (e) { done(false); }
+  });
+
+  function send() {
+    if (pending().length) { idle(); goNext(); return; }
+    var missing = sets.filter(function (fs) { var st = stateOf(fs); return st.choice === 'other' && !st.note; });
+    if (missing.length) {
+      missing.forEach(function (fs) { fs.querySelector('.note').classList.add('missing'); });
+      var first = missing[0];
+      show('Write your answer for item ' + clean(first.closest('.item').querySelector('.n').textContent) + ', or pick one of its options.', true);
+      first.querySelector('.note').focus();
+      return;
+    }
+    var body = { action: 'feedback', run: RUN, head: HEAD, submittedAt: new Date().toISOString(), answers: collect(), screenshotComments: collectComments(), commandComments: collectCmdComments() };
+    if (!db) { offerCopy('feedback', body); return; }
+    btn.disabled = true;
+    show('Sending...', false);
+    var attempt = function (retry) {
+      return db.collection('submissions').add(body).catch(function (err) {
+        if (retry && err && err.code === 'unavailable') {
+          return new Promise(function (r) { setTimeout(r, 400 + Math.random() * 600); }).then(function () { return attempt(false); });
+        }
+        throw err;
+      });
+    };
+    attempt(true).then(function () {
+      lockPage(recordNow('feedback'));
+    }).catch(function (err) {
+      btn.disabled = false;
+      var code = err && err.code;
+      if (code === 'quota_exceeded') show('The page has no room for another submission. Ask the factory owner to clear old ones.', true);
+      else if (code === 'revoked' || code === 'not_granted') show('You no longer have access to send answers from this page.', true);
+      else show('The answers were not sent. Try again in a moment.', true);
+    });
+  }
+
+  // Merge: warns first when red or orange items are open, since the answers on the page are not sent.
+  function openText() {
+    var parts = [];
+    if (OPEN.red) parts.push(OPEN.red + (OPEN.red === 1 ? ' high concern' : ' high concerns'));
+    if (OPEN.orange) parts.push(OPEN.orange + (OPEN.orange === 1 ? ' medium concern' : ' medium concerns'));
+    return parts.join(' and ');
+  }
+  function doMerge() {
+    if (!db) { offerCopy('merge', { action: 'merge', run: RUN, head: HEAD }); return; }
+    mergeBtn.disabled = true; btn.disabled = true;
+    show('Merging...', false);
+    db.collection('submissions').add({ action: 'merge', run: RUN, head: HEAD, submittedAt: new Date().toISOString() }).then(function () {
+      lockPage(recordNow('merge'));
+    }).catch(function () {
+      mergeBtn.disabled = false; idle();
+      show('The merge was not sent. Try again in a moment.', true);
+    });
+  }
+  function merge() {
+    if (!OPEN.red && !OPEN.orange) { doMerge(); return; }
+    var n = OPEN.red + OPEN.orange;
+    document.getElementById('merge-text').textContent = openText() + (n === 1 ? ' is' : ' are') + ' still open. If you merge now, the answers on this page will not be sent.';
+    confirmEl.showModal();
+    document.getElementById('merge-cancel').focus();
+  }
+  document.getElementById('merge-cancel').addEventListener('click', function () { confirmEl.close(); mergeBtn.focus(); });
+  document.getElementById('merge-go').addEventListener('click', function () { confirmEl.close(); doMerge(); });
+
+  // Screenshot viewer: every screenshot opens here, with a comment box.
+  var viewer = document.getElementById('viewer');
+  var vImg = document.getElementById('viewer-img');
+  var vTitle = document.getElementById('viewer-title');
+  var vDesc = document.getElementById('viewer-desc');
+  var vPos = document.getElementById('viewer-pos');
+  var vNote = document.getElementById('viewer-note');
+  var current = 0;
+  var opener = null;
+
+  function indexOf(file) {
+    for (var i = 0; i < thumbs.length; i++) if (thumbs[i].dataset.shot === file) return i;
+    return -1;
+  }
+  function mark(file) {
+    var text = clean(comments[file]);
+    var t = thumbs[indexOf(file)];
+    if (t) t.classList.toggle('has-comment', !!text);
+    var fig = document.querySelector('figure.shot[data-shot="' + file + '"]');
+    if (!fig) return;
+    var box = fig.querySelector('.shot-note');
+    box.hidden = !text;
+    box.querySelector('span').textContent = text;
+    fig.querySelector('.comment-btn').textContent = text ? 'Edit comment' : 'Comment';
+  }
+  function showShot(i) {
+    current = (i + thumbs.length) % thumbs.length;
+    var d = thumbs[current].dataset;
+    vImg.width = +d.w;
+    vImg.height = +d.h;
+    vImg.src = thumbs[current].querySelector('img').src;
+    vImg.alt = d.title + '. ' + d.desc;
+    vTitle.textContent = d.title;
+    vDesc.textContent = d.desc;
+    vPos.textContent = d.round + ' · ' + (current + 1) + ' of ' + thumbs.length;
+    vNote.value = comments[d.shot] || '';
+  }
+  function openShot(file, toNote, from) {
+    var i = indexOf(file);
+    if (i < 0) return;
+    opener = from || null;
+    showShot(i);
+    if (!viewer.open) viewer.showModal();
+    if (toNote) vNote.focus();
+  }
+
+  vNote.addEventListener('input', function () {
+    var file = thumbs[current].dataset.shot;
+    if (vNote.value.trim()) comments[file] = vNote.value; else delete comments[file];
+    mark(file);
+    save();
+    idle();
+  });
+  document.getElementById('viewer-prev').addEventListener('click', function () { showShot(current - 1); });
+  document.getElementById('viewer-next').addEventListener('click', function () { showShot(current + 1); });
+  document.getElementById('viewer-close').addEventListener('click', function () { viewer.close(); });
+  viewer.addEventListener('click', function (e) { if (e.target === viewer) viewer.close(); });
+  viewer.addEventListener('keydown', function (e) {
+    if (e.target === vNote) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); showShot(current - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); showShot(current + 1); }
+  });
+  viewer.addEventListener('close', function () {
+    if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+  });
+  thumbs.forEach(function (t) {
+    t.addEventListener('click', function () { openShot(t.dataset.shot, false, t); });
+  });
+  [].slice.call(document.querySelectorAll('figure.shot')).forEach(function (fig) {
+    fig.querySelector('.shot-open').addEventListener('click', function (e) { openShot(fig.dataset.shot, false, e.currentTarget); });
+    fig.querySelector('.comment-btn').addEventListener('click', function (e) { openShot(fig.dataset.shot, true, e.currentTarget); });
+  });
+
+  // Command evidence comments: one entry can show in an item, in key evidence and under its round,
+  // so a comment shows on every copy.
+  var cmdDialog = document.getElementById('cmd-dialog');
+  var cmdNote = document.getElementById('cmd-note');
+  var cmdCurrent = null;
+  var cmdOpener = null;
+  function markCmd(id) {
+    var text = clean(cmdComments[id]);
+    cmdEls.forEach(function (el) {
+      if (el.dataset.cmd !== id) return;
+      el.classList.toggle('has-comment', !!text);
+      var box = el.querySelector('.shot-note');
+      box.hidden = !text;
+      box.querySelector('span').textContent = text;
+      el.querySelector('.comment-btn').textContent = text ? 'Edit comment' : 'Comment';
+    });
+  }
+  function openCmd(id, from) {
+    var info = cmdInfo(id);
+    cmdCurrent = id;
+    cmdOpener = from || null;
+    document.getElementById('cmd-title').textContent = info.title;
+    document.getElementById('cmd-desc').textContent = info.round + ' · ' + info.desc;
+    cmdNote.value = cmdComments[id] || '';
+    cmdDialog.showModal();
+    cmdNote.focus();
+  }
+  cmdNote.addEventListener('input', function () {
+    if (cmdNote.value.trim()) cmdComments[cmdCurrent] = cmdNote.value; else delete cmdComments[cmdCurrent];
+    markCmd(cmdCurrent);
+    idle();
+  });
+  document.getElementById('cmd-done').addEventListener('click', function () { cmdDialog.close(); });
+  cmdDialog.addEventListener('close', function () {
+    if (cmdOpener && document.contains(cmdOpener)) cmdOpener.focus({ preventScroll: true });
+  });
+  cmdEls.forEach(function (el) {
+    el.querySelector('.comment-btn').addEventListener('click', function (e) { openCmd(el.dataset.cmd, e.currentTarget); });
+  });
+
+  // Read-only record: once the run receives an answer, it embeds what was sent as #sent-answers,
+  // and the page shows those choices, notes and comments locked, with no buttons.
+  function recordNow(action) {
+    var answers = {};
+    if (action === 'feedback') sets.forEach(function (fs) { answers[fs.dataset.qid] = stateOf(fs); });
+    var shots = {};
+    if (action === 'feedback') Object.keys(comments).forEach(function (k) { if (clean(comments[k])) shots[k] = comments[k]; });
+    var cmds = {};
+    if (action === 'feedback') cmdCommented().forEach(function (id) { cmds[id] = cmdComments[id]; });
+    return { action: action, commandComments: cmds, sentAt: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), answers: answers, screenshotComments: shots };
+  }
+  function lockPage(rec) {
+    record = rec;
+    var answers = rec.answers || {};
+    sets.forEach(function (fs) {
+      var a = answers[fs.dataset.qid];
+      if (a) {
+        fs.querySelectorAll('input[type=radio]').forEach(function (i) { i.checked = i.value === a.choice; });
+        fs.querySelector('.note').value = a.note || '';
+      }
+      sync(fs);
+      fs.classList.remove('unanswered');
+      fs.querySelectorAll('input, textarea').forEach(function (el) { el.disabled = true; });
+    });
+    var shots = rec.screenshotComments || {};
+    Object.keys(shots).forEach(function (k) { if (typeof shots[k] === 'string') { comments[k] = shots[k]; mark(k); } });
+    var cmds = rec.commandComments || {};
+    Object.keys(cmds).forEach(function (k) { if (typeof cmds[k] === 'string') { cmdComments[k] = cmds[k]; markCmd(k); } });
+    cmdNote.readOnly = true;
+    vNote.readOnly = true;
+    vNote.placeholder = '';
+    btn.hidden = true; mergeBtn.hidden = true; nextBtn.hidden = true;
+    document.body.classList.add('answered');
+    show(rec.action === 'merge'
+      ? 'You chose Merge on ' + rec.sentAt + '. The run merges the pull request at ' + HEAD + ' and ends. This page is a read-only record.'
+      : 'Feedback sent on ' + rec.sentAt + '. This page is a read-only record of what you sent.', false);
+  }
+
+  restore();
+  sets.forEach(function (fs) {
+    sync(fs);
+    fs.addEventListener('change', function () { sync(fs); save(); idle(); });
+    fs.querySelector('.note').addEventListener('input', function () { sync(fs); save(); });
+  });
+  Object.keys(comments).forEach(mark);
+  btn.addEventListener('click', send);
+  mergeBtn.addEventListener('click', merge);
+  nextBtn.addEventListener('click', goNext);
+  idle();
+  var sentBlock = document.getElementById('sent-answers');
+  if (sentBlock) { try { lockPage(JSON.parse(sentBlock.textContent)); } catch (e) {} }
+
+  // Sending is a stand-in: the real page answers its run's wait (see the review-page spec).
+  // This reference never reaches a run, so both buttons show the copy fallback.
+})();
+</script>
+
+</body>
+</html>
