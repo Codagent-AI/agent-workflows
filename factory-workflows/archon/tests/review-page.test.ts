@@ -146,6 +146,14 @@ test('dynamic review markup lays out concerns and toggles the screenshot viewer 
   const toggle = querySelector('body').find('viewer-info')?.byTag('button')[0];
   toggle?.onclick?.();
   expect([stage.classList.contains('full-size'), toggle?.textContent]).toEqual([true, 'Fit to view']);
+  const navigation = querySelector('body').find('viewer-bar')?.byTag('button') ?? [];
+  for (const [label, title] of [['Previous', 'Start'], ['Next', 'Retest']]) {
+    stage.scrollLeft = 300;
+    stage.scrollTop = 150;
+    navigation.find(control => control.textContent === label)?.onclick?.();
+    expect(querySelector('body').find('viewer-info')?.byTag('h3')[0].textContent).toBe(title);
+    expect([stage.classList.contains('full-size'), stage.scrollLeft, stage.scrollTop]).toEqual([true, 0, 0]);
+  }
   stage.scrollLeft = 300;
   stage.scrollTop = 150;
   toggle?.onclick?.();

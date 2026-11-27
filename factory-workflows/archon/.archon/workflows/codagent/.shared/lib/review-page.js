@@ -180,6 +180,8 @@
     function refresh() {
       const current = shots[index];
       image.src = current.href;
+      stage.scrollLeft = 0;
+      stage.scrollTop = 0;
       image.alt = current.alt;
       title.textContent = current.title;
       detail.replaceChildren(story(current.shows));
