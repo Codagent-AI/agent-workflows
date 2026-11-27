@@ -44799,9 +44799,8 @@ function processes(env) {
     return pid && parent !== void 0 && group ? [{ pid, parent, group }] : [];
   });
 }
-function descendantGroups(pid, env) {
-  const all = processes(env);
-  const own2 = all.find((item) => item.pid === process.pid)?.group;
+function descendantGroups(pid, all, serverPid) {
+  const own2 = all.find((item) => item.pid === serverPid)?.group;
   const children = /* @__PURE__ */ new Map();
   for (const item of all) {
     const siblings = children.get(item.parent) ?? [];
@@ -44909,7 +44908,7 @@ var Reviewer = class {
     }
   }
   captureGroups(pid) {
-    for (const group of descendantGroups(pid, this.context.env)) {
+    for (const group of descendantGroups(pid, processes(this.context.env), process.pid)) {
       this.groups.add(group);
     }
   }

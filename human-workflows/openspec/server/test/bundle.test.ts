@@ -68,7 +68,10 @@ test("E2E-1: the committed server exposes the four tools and runs, polls and can
 
 test("E2E-1: Codex sandboxCwd resolves the launch folder outside a repository", async () => {
   const fixture = makeFixture();
-  const client = await connect(fixture, "codex-mcp-client", PLUGIN_ROOT);
+  const manifest = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".codex-mcp.json"), "utf8"));
+  const hostEnv = { ACPX_CLAUDE_INCLUDE_USER_SETTINGS: "1" };
+  const forwarded = Object.fromEntries(Object.entries(hostEnv).filter(([name]) => manifest.mcpServers.define.env_vars.includes(name)));
+  const client = await connect(fixture, "codex-mcp-client", PLUGIN_ROOT, forwarded);
   const metadata = { "codex/sandbox-state-meta": { sandboxCwd: pathToFileURL(fixture.dir).href } };
   try {
     const missing = await client.callTool({ name: "crosscheck", arguments: { prompt: "Missing metadata." } });
@@ -81,6 +84,7 @@ test("E2E-1: Codex sandboxCwd resolves the launch folder outside a repository", 
     assert.equal(final.reviewers[0].cli, "claude");
     const child = fakeCall(fixture, "acpx");
     assert.equal(child.cwd, fixture.dir);
+    assert.equal(child.env?.ACPX_CLAUDE_INCLUDE_USER_SETTINGS, "1");
     assert.equal(child.args[child.args.indexOf("--cwd") + 1], fixture.dir);
   } finally {
     await client.close();

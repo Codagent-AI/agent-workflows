@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -8,8 +8,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { childEnv, detectLead, SESSION_ENV_VARS } from "../src/acpx.js";
 import { supportedAcpxVersion } from "../src/acpx-version.js";
 import { snapshotOf } from "../src/call.js";
+import { reserveLogDir } from "../src/callchild.js";
 import { chooseCrosscheck, readConfig } from "../src/config.js";
 import { repoLogDir, waitMsFromEnv } from "../src/context.js";
+import { descendantGroups } from "../src/reviewer.js";
 import { readReview, reviewOutcome } from "../src/reviewoutcome.js";
 import { compareTrees, snapshotTree } from "../src/worktree.js";
 import { CHANGE, defined, fakeLog, type Fixture, makeContext, makeFixture, pathWithout, session, writeConfig } from "./helpers.js";
@@ -204,6 +206,21 @@ test("INTEG-2: private logs are separated across managers", async () => {
   assert.equal(fixture.events().filter(({ event }) => event === "crosscheck_end").length, 2);
 });
 
+test("an existing log folder forces a new crosscheck ID without altering prior logs", () => {
+  const fixture = makeFixture();
+  const context = makeContext(fixture);
+  const taken = "cc-01234567";
+  const occupied = join(repoLogDir(context, fixture.repo), taken);
+  mkdirSync(occupied, { recursive: true });
+  const previousLog = join(occupied, "prompt.txt");
+  writeFileSync(previousLog, "prior review");
+  const reserved = reserveLogDir(context, fixture.repo, taken);
+  assert.notEqual(reserved.id, taken);
+  assert.equal(reserved.dir, join(repoLogDir(context, fixture.repo), reserved.id));
+  assert.equal(statSync(reserved.dir).mode & 0o777, 0o700);
+  assert.equal(readFileSync(previousLog, "utf8"), "prior review");
+});
+
 test("INTEG-2: a temp path inside the working tree uses the external private log base", async () => {
   const fixture = makeFixture();
   const alias = join(fixture.dir, "repo-alias");
@@ -256,16 +273,24 @@ test("result formatting omits interim answers and sets MCP error only for no suc
 
 test("review parser matches the prompt response, skips malformed lines, and falls back to any stop reason", async () => {
   const { dir } = makeFixture();
-  const update = { method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "review" } } } };
+  const chunk = (text: string) => ({
+    method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+  });
   const prompt = { id: 7, method: "session/prompt" };
   const response = { id: 7, result: { stopReason: "end_turn" } };
   const other = { id: 8, result: { stopReason: "max_tokens" } };
   const events = join(dir, "events.ndjson");
   writeFileSync(join(dir, "stderr.txt"), `${"padding ".repeat(500)}error tail`);
-  writeFileSync(events, `not json\n${[prompt, update, response, other, { error: { message: "fallback error" } }].map((event) => JSON.stringify(event)).join("\n")}`);
+  const log = [
+    prompt, chunk("first"), chunk(" and "), chunk("last"),
+    { id: 6, error: { message: "recovered error", data: { details: "recovered detail" } } },
+    response, other, { id: 9, error: { message: "fallback error" } },
+  ];
+  writeFileSync(events, `not json\n${log.map((event) => JSON.stringify(event)).join("\n")}`);
   const matched = await readReview(dir);
-  assert.equal(matched.answer, "review");
+  assert.equal(matched.answer, "first and last");
   assert.equal(matched.stop, "end_turn");
+  assert.doesNotMatch(matched.error, /recovered/);
   assert.match(matched.error, /^fallback error\n\.\.\..*error tail$/);
   writeFileSync(events, JSON.stringify(other));
   assert.equal((await readReview(dir)).stop, "max_tokens");
@@ -393,6 +418,35 @@ for (const { action, ignoreTerm } of [
   });
 }
 
+test("descendant group selection excludes the server group even when a descendant joins it", () => {
+  const groups = descendantGroups(200, [
+    { pid: 100, parent: 1, group: 90 },
+    { pid: 200, parent: 100, group: 200 },
+    { pid: 201, parent: 200, group: 90 },
+    { pid: 202, parent: 201, group: 202 },
+    { pid: 300, parent: 100, group: 300 },
+  ], 100);
+  assert.deepEqual(groups, [200, 202]);
+});
+
+test("INTEG-3: cancellation finds a detached child created after SIGTERM", async (t) => {
+  const fixture = makeFixture();
+  const { calls } = session(makeContext(fixture, {
+    waitMs: 20, killGraceMs: 500,
+    extraEnv: { FAKE_REVIEWERS: JSON.stringify({ codex: { lateDescendant: true, delay: 8_000 } }) },
+  }));
+  const pending = parse(await calls.start("review"));
+  const parent = await ready(fixture, "codex");
+  const lateChild = () => fakeLog(fixture).find(({ bin }) => bin === "late-descendant")?.pids ?? [];
+  t.after(() => {
+    for (const pid of [...parent, ...lateChild()].filter(alive)) process.kill(pid, "SIGKILL");
+  });
+  await calls.cancel(pending.crosscheck_id);
+  assert.equal(parse(await settled(calls, pending.crosscheck_id)).status, "canceled");
+  assert.equal(lateChild().length, 1);
+  await assertStopped([...parent, ...lateChild()]);
+});
+
 const staged = (fixture: Fixture) => {
   fixture.write("README.md", "staged\n");
   fixture.git("add", "README.md");
@@ -423,9 +477,18 @@ test("INTEG-4: real git snapshots report exact changed paths or unknown", async 
     const result = await compareTrees(before, after, options);
     assert.deepEqual(result, changed_paths.length > 0 ? { working_tree: "changed", changed_paths } : { working_tree: "unchanged" });
   }
+  const unavailable = makeFixture();
+  const outside = { cwd: unavailable.dir, env: unavailable.env };
+  const inside = { cwd: unavailable.repo, env: unavailable.env };
+  const before = await snapshotTree(inside);
+  rmSync(join(unavailable.repo, ".git"), { recursive: true });
+  const failed = await snapshotTree(inside);
+  assert.ok(before);
+  assert.equal(failed, undefined);
+  assert.equal(await snapshotTree(outside), undefined);
+  assert.deepEqual(await compareTrees(before, failed, inside), { working_tree: "unknown" });
+  assert.deepEqual(await compareTrees(failed, before, inside), { working_tree: "unknown" });
   const fixture = makeFixture();
-  const outside = { cwd: fixture.dir, env: fixture.env };
-  assert.deepEqual(await compareTrees(await snapshotTree(outside), undefined, outside), { working_tree: "unknown" });
   const { calls } = session(makeContext(fixture, {
     extraEnv: { FAKE_REVIEWERS: JSON.stringify({ codex: { write: "reviewer-written" } }) },
   }));

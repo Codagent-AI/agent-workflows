@@ -23,9 +23,8 @@ function processes(env: NodeJS.ProcessEnv): ProcessGroup[] {
   });
 }
 
-function descendantGroups(pid: number, env: NodeJS.ProcessEnv): number[] {
-  const all = processes(env);
-  const own = all.find((item) => item.pid === process.pid)?.group;
+export function descendantGroups(pid: number, all: ProcessGroup[], serverPid: number): number[] {
+  const own = all.find((item) => item.pid === serverPid)?.group;
   const children = new Map<number, ProcessGroup[]>();
   for (const item of all) {
     const siblings = children.get(item.parent) ?? [];
@@ -141,7 +140,7 @@ export class Reviewer {
   }
 
   private captureGroups(pid: number): void {
-    for (const group of descendantGroups(pid, this.context.env)) {
+    for (const group of descendantGroups(pid, processes(this.context.env), process.pid)) {
       this.groups.add(group);
     }
   }

@@ -66,10 +66,17 @@ if (args[0] === "--version") {
 }
 const agent = args.includes("--agent") ? "agy" : args[args.indexOf("exec") - 1];
 const options = JSON.parse(process.env.FAKE_REVIEWERS ?? "{}")[agent] ?? {};
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(CLAUDE|CODEX|FAKE_|DEFINE_)/.test(key)));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(ACPX_|CLAUDE|CODEX|FAKE_|DEFINE_)/.test(key)));
 const prompt = fs.readFileSync(0, "utf8");
 const started = Date.now();
-if (options.ignoreTerm) process.on("SIGTERM", () => {});
+if (options.lateDescendant) {
+  process.once("SIGTERM", () => {
+    const child = spawnLongRunningChild(true);
+    log({ bin: "late-descendant", pids: [child.pid] });
+  });
+} else if (options.ignoreTerm) {
+  process.on("SIGTERM", () => {});
+}
 const event = (message) => fs.writeSync(1, JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
 const update = (sessionUpdate, content) => event({
   method: "session/update", params: { sessionId: "session", update: { sessionUpdate, content } }
@@ -99,12 +106,15 @@ function launch() {
   log({ bin: "acpx", args, agent, cwd: process.cwd(), env, prompt, started, pids: [process.pid, ...children.map((child) => child.pid)] });
   setTimeout(answer, options.delay ?? 0);
 }
+function spawnLongRunningChild(detached) {
+  return spawn(process.execPath, ["-e",
+    "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)"
+  ], { detached, stdio: ["ignore", "pipe", "ignore"] });
+}
 const children = [];
 if (options.descendants) {
   for (const detached of [false, true]) {
-    children.push(spawn(process.execPath, ["-e",
-      "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)"
-    ], { detached, stdio: ["ignore", "pipe", "ignore"] }));
+    children.push(spawnLongRunningChild(detached));
   }
   Promise.all(children.map((child) => new Promise((resolve) => child.stdout.once("data", resolve)))).then(launch);
 } else {

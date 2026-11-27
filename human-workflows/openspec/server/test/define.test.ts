@@ -414,6 +414,20 @@ test("INTEG-5: named reviews record current progress and keep legacy calls", asy
   assert.equal(startedState.calls, undefined);
   writeArtifacts(fixture, CHANGE, "proposal");
   await next({ change_name: CHANGE });
+  const legacyChange = "legacy-change";
+  const legacyPath = `openspec/changes/${legacyChange}/${STATE_FILE}`;
+  assert.equal((await next({ change_name: legacyChange, start: true })).isError, undefined);
+  writeArtifacts(fixture, legacyChange, "proposal");
+  await next({ change_name: legacyChange });
+  const legacy = JSON.parse(fixture.read(legacyPath));
+  delete legacy.crosschecks;
+  const previous = {
+    call_id: "call-old", step: "proposal", cli: "codex", model: "old-model", effort: "high", status: "succeeded",
+    started_at: legacy.created_at, ended_at: legacy.created_at,
+  };
+  fixture.write(legacyPath, JSON.stringify({ ...legacy, calls: [previous] }));
+  const legacyBefore = fixture.read(legacyPath);
+
   assert.equal(JSON.parse((await calls.start("named", fixture.repo, CHANGE)).text).status, "succeeded");
   const recorded = JSON.parse(fixture.read(STATE));
   const [entry] = recorded.crosschecks;
@@ -424,21 +438,21 @@ test("INTEG-5: named reviews record current progress and keep legacy calls", asy
   assert.ok(Date.parse(entry.ended_at) >= Date.parse(entry.started_at));
   assert.deepEqual(entry.reviewers, [{ cli: "codex", effort: "high", effort_applied: true, status: "succeeded" }]);
 
-  const legacy = { ...recorded };
-  delete legacy.crosschecks;
-  const previous = { call_id: "call-old", step: "proposal", cli: "codex", model: "old-model", effort: "high", status: "succeeded", started_at: entry.started_at, ended_at: entry.ended_at };
-  fixture.write(STATE, JSON.stringify({ ...legacy, calls: [previous] }));
-  const resumed = await next({ change_name: CHANGE, start: true });
+  assert.equal(fixture.read(legacyPath), legacyBefore);
+  const currentSaved = fixture.read(STATE);
+  const resumed = await next({ change_name: legacyChange, start: true });
   assert.match(resumed.text, /Resuming step: "specs"/);
-  await calls.start("new review", fixture.repo, CHANGE);
-  const migrated = JSON.parse(fixture.read(STATE));
+  assert.equal(JSON.parse((await calls.start("new review", fixture.repo, legacyChange)).text).status, "succeeded");
+  const migrated = JSON.parse(fixture.read(legacyPath));
   assert.deepEqual(migrated.calls, [previous]);
   assert.equal(migrated.crosschecks.length, 1);
   assert.notEqual(migrated.crosschecks[0].crosscheck_id, entry.crosscheck_id);
+  assert.equal(fixture.read(STATE), currentSaved);
 
-  const saved = fixture.read(STATE);
+  const legacySaved = fixture.read(legacyPath);
   assert.equal(JSON.parse((await calls.start("unnamed")).text).status, "succeeded");
-  assert.equal(fixture.read(STATE), saved);
+  assert.equal(fixture.read(STATE), currentSaved);
+  assert.equal(fixture.read(legacyPath), legacySaved);
 });
 
 test("INTEG-5: unnamed reviews run outside git and invalid named reviews never launch", async () => {
