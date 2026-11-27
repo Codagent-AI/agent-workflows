@@ -2992,7 +2992,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve3.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3019,7 +3019,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve3(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3883,7 +3883,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve3(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3919,50 +3919,50 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse5(serialize(base, options), options);
-        relative = parse5(serialize(relative, options), options);
+        relative2 = parse5(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
               if (baseHasAuthority && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3970,7 +3970,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4274,7 +4274,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve3,
       resolveComponent,
       equal,
       serialize,
@@ -11226,10 +11226,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -11243,7 +11243,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep) {
+          if (!keyProps.anchor && !keyProps.tag && !sep2) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map2.comment)
@@ -11267,7 +11267,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep ?? [], {
+        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -11283,7 +11283,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -11374,7 +11374,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep = "";
+        let sep2 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -11388,13 +11388,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep + cb;
-              sep = "";
+                comment += sep2 + cb;
+              sep2 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep += source;
+                sep2 += source;
               hasSpace = true;
               break;
             default:
@@ -11437,18 +11437,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep && !value) {
+          if (!props.anchor && !props.tag && !sep2 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -11502,8 +11502,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
+        if (!isMap && !sep2 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -11515,7 +11515,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep ?? [], {
+          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -11526,8 +11526,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep)
-                for (const st of sep) {
+              if (sep2)
+                for (const st of sep2) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -11544,7 +11544,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -11724,7 +11724,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep = "";
+      let sep2 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -11741,24 +11741,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep + indent.slice(trimIndent) + content;
-          sep = "\n";
+          value += sep2 + indent.slice(trimIndent) + content;
+          sep2 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep === " ")
-            sep = "\n";
-          else if (!prevMoreIndented && sep === "\n")
-            sep = "\n\n";
-          value += sep + indent.slice(trimIndent) + content;
-          sep = "\n";
+          if (sep2 === " ")
+            sep2 = "\n";
+          else if (!prevMoreIndented && sep2 === "\n")
+            sep2 = "\n\n";
+          value += sep2 + indent.slice(trimIndent) + content;
+          sep2 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep === "\n")
+          if (sep2 === "\n")
             value += "\n";
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          value += sep + content;
-          sep = " ";
+          value += sep2 + content;
+          sep2 = " ";
           prevMoreIndented = false;
         }
       }
@@ -11941,25 +11941,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep = " ";
+      let sep2 = " ";
       let pos = line.lastIndex;
       while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep === "\n")
-            res += sep;
+          if (sep2 === "\n")
+            res += sep2;
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          res += sep + lm;
-          sep = " ";
+          res += sep2 + lm;
+          sep2 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep + (match?.[1] ?? "");
+      return res + sep2 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -12769,14 +12769,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep, value }) {
+    function stringifyItem({ start, key, sep: sep2, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep)
-        for (const st of sep)
+      if (sep2)
+        for (const st of sep2)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -13943,18 +13943,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep;
+          let sep2;
           if (scalar.end) {
-            sep = scalar.end;
-            sep.push(this.sourceToken);
+            sep2 = scalar.end;
+            sep2.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep = [this.sourceToken];
+            sep2 = [this.sourceToken];
           const map2 = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep }]
+            items: [{ start, key: scalar, sep: sep2 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map2;
@@ -14107,15 +14107,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep = it.sep;
-                  sep.push(this.sourceToken);
+                  const sep2 = it.sep;
+                  sep2.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep }]
+                    items: [{ start: start2, key, sep: sep2 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -14309,13 +14309,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep = fc.end.splice(1, fc.end.length);
-            sep.push(this.sourceToken);
+            const sep2 = fc.end.splice(1, fc.end.length);
+            sep2.push(this.sourceToken);
             const map2 = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep }]
+              items: [{ start, key: fc, sep: sep2 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map2;
@@ -14595,7 +14595,7 @@ var require_dist2 = __commonJS({
 
 // src/main.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import { dirname, join as join10 } from "node:path";
+import { dirname as dirname3, join as join12 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
@@ -19668,7 +19668,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve) {
+function isRecursive(inst, stack, resolve3) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -19678,7 +19678,7 @@ function isRecursive(inst, stack, resolve) {
   let result = NONE;
   const check3 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve);
+      const answer = isRecursive(child, stack, resolve3);
       if (answer > result)
         result = answer;
     }
@@ -19689,7 +19689,7 @@ function isRecursive(inst, stack, resolve) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve3) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -19753,7 +19753,7 @@ function isRecursive(inst, stack, resolve) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve3 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -31254,8 +31254,8 @@ function rewriteKeyNames(ctx) {
       bySchema.set(entry.schema, entry);
   }
   const rewrites = /* @__PURE__ */ new Map();
-  for (const record2 of pendingRecords.get(ctx) ?? []) {
-    const seen = ctx.seen.get(record2);
+  for (const record3 of pendingRecords.get(ctx) ?? []) {
+    const seen = ctx.seen.get(record3);
     const names = (seen?.def ?? seen?.schema)?.propertyNames;
     if (!names || names === true || rewrites.has(names))
       continue;
@@ -35942,12 +35942,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve3) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve();
+        resolve3();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve3);
       }
     });
   }
@@ -35955,9 +35955,9 @@ var StdioServerTransport = class {
 
 // src/context.ts
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // src/proc.ts
 import { spawn } from "node:child_process";
@@ -35970,14 +35970,14 @@ function spawnPiped(command, args, options) {
   });
 }
 function run(command, args, options) {
-  return new Promise((resolve) => {
+  return new Promise((resolve3) => {
     let stdout = "";
     let stderr = "";
     let settled = false;
     const finish = (result) => {
       if (!settled) {
         settled = true;
-        resolve(result);
+        resolve3(result);
       }
     };
     let child;
@@ -36024,17 +36024,43 @@ async function repoRoot(context) {
   }
   return result.stdout.trim();
 }
+function resolvedLogPath(path) {
+  try {
+    return realpathSync(path);
+  } catch (error62) {
+    if (error62.code !== "ENOENT" || dirname(path) === path) {
+      throw error62;
+    }
+    return join(resolvedLogPath(dirname(path)), basename(path));
+  }
+}
+function contains(root, path) {
+  const fromRoot = relative(root, path);
+  return !isAbsolute(fromRoot) && fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`);
+}
+function logBaseFor(context, root) {
+  const repo = realpathSync(root);
+  const configured = resolvedLogPath(resolve(context.logBase));
+  if (!contains(repo, configured)) {
+    return configured;
+  }
+  const fallback = resolvedLogPath(join("/tmp", basename(defaultLogBase())));
+  if (contains(repo, fallback)) {
+    throw new Error(`No system temp folder outside the working tree at ${root}.`);
+  }
+  return fallback;
+}
 function repoLogDir(context, root) {
   const hash2 = createHash("sha256").update(root).digest("hex").slice(0, 12);
-  return join(context.logBase, hash2);
+  return join(logBaseFor(context, root), hash2);
 }
 function ensurePrivateDir(path) {
   mkdirSync(path, { recursive: true, mode: 448 });
   chmodSync(path, 448);
 }
 function privateLogDir(context, root, ...parts) {
-  ensurePrivateDir(context.logBase);
   const repoDir = repoLogDir(context, root);
+  ensurePrivateDir(dirname(repoDir));
   ensurePrivateDir(repoDir);
   const dir = join(repoDir, ...parts);
   ensurePrivateDir(dir);
@@ -36049,6 +36075,9 @@ function logEvent(context, root, event, fields = {}) {
   } catch {
   }
 }
+
+// src/server.ts
+import { resolve as resolve2 } from "node:path";
 
 // node_modules/zod/v3/helpers/util.js
 var util;
@@ -42024,7 +42053,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -42041,7 +42070,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve3, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -42119,7 +42148,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve3(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -42372,7 +42401,7 @@ var Protocol = class {
    * @param sessionId Session of the request that waits, passed to the task store
    * @returns Promise that resolves when an update occurs or rejects if aborted
    */
-  async _waitForTaskUpdate(taskId, signal, sessionId) {
+  async _waitForTaskUpdate(taskId, signal2, sessionId) {
     let interval = this._options?.defaultTaskPollInterval ?? 1e3;
     try {
       const task = await this._taskStore?.getTask(taskId, sessionId);
@@ -42381,13 +42410,13 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
-      if (signal.aborted) {
+    return new Promise((resolve3, reject) => {
+      if (signal2.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
-      signal.addEventListener("abort", () => {
+      const timeoutId = setTimeout(resolve3, interval);
+      signal2.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
       }, { once: true });
@@ -43526,7 +43555,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -44094,488 +44123,7 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
-// src/call.ts
-function errorText(code, message, extra = {}) {
-  return { text: JSON.stringify({ error: { code, message }, ...extra }, null, 2), isError: true };
-}
-function formatElapsed(ms) {
-  const seconds = Math.max(0, Math.round(ms / 1e3));
-  const minutes = Math.floor(seconds / 60);
-  return minutes > 0 ? `${minutes}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
-}
-function snapshotOf(call, now) {
-  const end = call.endedAt ?? now;
-  const base = {
-    status: call.status,
-    call_id: call.id,
-    cli: call.cli,
-    model: call.model ?? "default",
-    effort: call.effort,
-    elapsed: formatElapsed(end.getTime() - call.startedAt.getTime())
-  };
-  if (call.status === "running") {
-    base.next = "Call get_agent_call with this call_id to keep waiting. This is not the child's answer.";
-    return { text: JSON.stringify(base, null, 2) };
-  }
-  base.working_tree = call.workingTree ?? "unknown";
-  if (call.costUsd !== void 0) {
-    base.cost_usd = call.costUsd;
-  }
-  if (call.error) {
-    base.error = call.error;
-  }
-  if (call.response !== void 0) {
-    base.response = call.response;
-  }
-  return { text: JSON.stringify(base, null, 2), isError: call.status === "failed" };
-}
-
-// src/state.ts
-import { existsSync, readdirSync, readFileSync as readFileSync2, renameSync, writeFileSync } from "node:fs";
-import { join as join3 } from "node:path";
-
-// src/schema.ts
-function locate(path) {
-  let text = "";
-  for (const part of path) {
-    text += typeof part === "number" ? `[${part}]` : `${text === "" ? "" : "."}${String(part)}`;
-  }
-  return text;
-}
-function describeIssues(error62) {
-  return error62.issues.map((issue2) => {
-    const where = locate(issue2.path);
-    return where === "" ? issue2.message : `${where}: ${issue2.message}`;
-  }).join("; ");
-}
-function check2(schema, value) {
-  const result = schema.safeParse(value);
-  return result.success ? { value: result.data } : { problem: describeIssues(result.error) };
-}
-
-// src/steps.ts
-var import_yaml = __toESM(require_dist2(), 1);
-import { readFileSync } from "node:fs";
-import { join as join2 } from "node:path";
-var WorkflowError = class extends Error {
-};
-var PLACEHOLDERS = ["{{change_name}}", "{{reviews_dir}}"];
-var required2 = (what) => external_exports.string({ error: `needs ${what}` }).refine((value) => value.trim() !== "", { error: `needs ${what}` });
-var promptSchema = required2("a prompt").superRefine((prompt, context) => {
-  const unknown2 = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
-  if (unknown2 !== void 0) {
-    context.addIssue({ code: "custom", message: `has an unknown placeholder ${unknown2}` });
-  }
-});
-var stepSchema = external_exports.object(
-  {
-    id: required2("an id"),
-    prompt: promptSchema,
-    tools: external_exports.array(external_exports.literal("call_agent", { error: "is not a supported tool. Only [call_agent] is supported" })).optional()
-  },
-  { error: "must be a mapping with an id and a prompt" }
-).transform((step) => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
-var sharedPromptsSchema = external_exports.strictObject(
-  { call_agent: promptSchema.optional(), every_step: promptSchema.optional() },
-  {
-    error: (issue2) => issue2.code === "unrecognized_keys" ? `has an unknown key ${issue2.keys.join(", ")}. Only call_agent and every_step are supported` : "must be a mapping with call_agent or every_step"
-  }
-).transform((shared) => ({ callAgent: shared.call_agent, everyStep: shared.every_step }));
-var workflowSchema = external_exports.object(
-  {
-    name: required2("a name"),
-    description: required2("a description"),
-    shared_prompts: sharedPromptsSchema.optional(),
-    steps: external_exports.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step")
-  },
-  { error: "must be a mapping with name, description, and steps" }
-).superRefine((workflow2, context) => {
-  const seen = /* @__PURE__ */ new Set();
-  for (const [index, step] of workflow2.steps.entries()) {
-    if (seen.has(step.id)) {
-      context.addIssue({ code: "custom", message: `step id "${step.id}" is used twice`, path: ["steps", index, "id"] });
-    }
-    seen.add(step.id);
-  }
-}).transform(
-  (workflow2) => ({
-    name: workflow2.name.trim(),
-    description: workflow2.description.trim(),
-    sharedPrompts: workflow2.shared_prompts ?? {},
-    steps: workflow2.steps
-  })
-);
-function parseWorkflow(source) {
-  let raw;
-  try {
-    raw = (0, import_yaml.parse)(source);
-  } catch (error62) {
-    throw new WorkflowError(`is not valid YAML: ${error62.message}`);
-  }
-  const checked = check2(workflowSchema, raw);
-  if ("problem" in checked) {
-    throw new WorkflowError(`is not a valid workflow: ${checked.problem}`);
-  }
-  return checked.value;
-}
-function loadWorkflow(pluginRoot2) {
-  const path = join2(pluginRoot2, "workflow.yaml");
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (error62) {
-    throw new WorkflowError(`Cannot read ${path}: ${error62.message}`);
-  }
-  try {
-    return parseWorkflow(text);
-  } catch (error62) {
-    if (error62 instanceof WorkflowError) {
-      throw new WorkflowError(`${path} ${error62.message}`);
-    }
-    throw error62;
-  }
-}
-function stepIds(workflow2) {
-  return workflow2.steps.map((step) => step.id);
-}
-function firstStepId(workflow2) {
-  return workflow2.steps[0]?.id ?? "";
-}
-function lastStepId(workflow2) {
-  return workflow2.steps[workflow2.steps.length - 1]?.id ?? "";
-}
-function callAgentSteps(workflow2) {
-  return workflow2.steps.filter((step) => step.callAgent).map((step) => step.id);
-}
-function callAgentStepsText(workflow2) {
-  const ids = callAgentSteps(workflow2);
-  const last = ids.pop();
-  if (last === void 0) {
-    return "no steps";
-  }
-  return ids.length === 0 ? `the ${last} step` : `the ${ids.join(", ")} and ${last} steps`;
-}
-function allowsCallAgent(workflow2, step) {
-  return workflow2.steps.some((candidate) => candidate.id === step && candidate.callAgent);
-}
-function stepNumber(workflow2, step) {
-  return stepIds(workflow2).indexOf(step) + 1;
-}
-function nextStepId(workflow2, step) {
-  return workflow2.steps[stepIds(workflow2).indexOf(step) + 1]?.id;
-}
-function changeDirFor(changeName) {
-  return `openspec/changes/${changeName}`;
-}
-function stepBody(workflow2, pluginRoot2, step, changeName) {
-  const own2 = workflow2.steps.find((candidate) => candidate.id === step);
-  const { callAgent, everyStep } = workflow2.sharedPrompts;
-  return [own2?.prompt, own2?.callAgent ? callAgent : void 0, everyStep].filter((part) => part !== void 0).map((part) => part.trim()).join("\n\n").replaceAll("{{change_name}}", changeName).replaceAll("{{reviews_dir}}", join2(pluginRoot2, "reviews"));
-}
-function renderStep(input2) {
-  const { workflow: workflow2, changeName, step, mode } = input2;
-  const position = `(step ${stepNumber(workflow2, step)} of ${workflow2.steps.length})`;
-  const changeDir = changeDirFor(changeName);
-  const parts = [];
-  switch (mode) {
-    case "new":
-      parts.push(`Created OpenSpec change "${changeName}" at \`${changeDir}/\`.`);
-      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
-      parts.push(`The current step is "${step}" ${position}.`);
-      break;
-    case "continue":
-      parts.push(`Continuing to step "${step}" ${position}.`);
-      break;
-    case "resume":
-      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
-      parts.push(`Resuming step: "${step}" ${position}. If you already started on this step, resume from where you left off.`);
-      if (input2.completed.length > 0) {
-        parts.push(
-          `Completed steps: ${input2.completed.join(", ")}. Their artifacts are under \`${changeDir}/\`.`
-        );
-      }
-      break;
-  }
-  parts.push("Before doing anything else, announce that you are starting this step.");
-  parts.push(stepBody(workflow2, input2.pluginRoot, step, changeName));
-  let completion = `When you or the user determine this step is complete, call the \`next_step\` tool with change_name "${changeName}". Make that call the final action of the step, and carry out the instructions it returns in this conversation. Do not merely say that the step is complete.`;
-  if (!nextStepId(workflow2, step)) {
-    completion += " This is the last step: that call validates the change and commits its documents.";
-  }
-  parts.push(completion);
-  return parts.join("\n\n");
-}
-
-// src/state.ts
-var STATE_FILE = ".define-openspec-change.json";
-var StateError = class extends Error {
-};
-function statePath(root, changeName) {
-  return join3(root, changeDirFor(changeName), STATE_FILE);
-}
-function newState(workflow2, changeName, at, lead) {
-  const first = firstStepId(workflow2);
-  return {
-    schema: 1,
-    workflow: workflow2.name,
-    change_name: changeName,
-    change_dir: changeDirFor(changeName),
-    status: "in_progress",
-    current_step: first,
-    steps: { [first]: { started_at: at } },
-    starts: [{ at, lead, mode: "new", step: first }],
-    calls: [],
-    created_at: at,
-    updated_at: at,
-    completed_at: null
-  };
-}
-function stateSchema(workflow2, changeName) {
-  const ids = stepIds(workflow2);
-  const step = external_exports.string().refine((id) => ids.includes(id), { error: `must be one of ${ids.join(", ")}` });
-  const text = external_exports.string();
-  const times = external_exports.object({ started_at: text, completed_at: text.optional() });
-  const start = external_exports.object({ at: text, lead: text, mode: external_exports.enum(["new", "resume"]), step });
-  const call = external_exports.object({
-    call_id: text,
-    step,
-    cli: text,
-    model: text.optional(),
-    effort: text,
-    status: text,
-    working_tree: text.optional(),
-    started_at: text,
-    ended_at: text
-  });
-  return external_exports.object({
-    schema: external_exports.literal(1),
-    workflow: external_exports.literal(workflow2.name),
-    change_name: external_exports.literal(changeName),
-    // The finish step commits this folder, so a saved state cannot point it anywhere else.
-    change_dir: external_exports.literal(changeDirFor(changeName)),
-    status: external_exports.enum(["in_progress", "complete"]),
-    current_step: step.nullable(),
-    steps: external_exports.record(step, times),
-    starts: external_exports.array(start),
-    calls: external_exports.array(call),
-    created_at: text,
-    updated_at: text,
-    completed_at: text.nullable()
-  }).refine((state) => state.status !== "in_progress" || state.current_step !== null, {
-    error: "an in-progress define needs a current_step",
-    path: ["current_step"]
-  });
-}
-function readState(workflow2, root, changeName) {
-  const path = statePath(root, changeName);
-  if (!existsSync(path)) {
-    return void 0;
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync2(path, "utf8"));
-  } catch (error62) {
-    throw new StateError(`${path} is not valid JSON: ${error62.message}`);
-  }
-  const checked = check2(stateSchema(workflow2, changeName), parsed);
-  if ("problem" in checked) {
-    throw new StateError(`${path} is not a define-openspec-change state file this version understands: ${checked.problem}`);
-  }
-  return checked.value;
-}
-function readStateText(root, changeName) {
-  const path = statePath(root, changeName);
-  return existsSync(path) ? readFileSync2(path, "utf8") : void 0;
-}
-function writeStateText(root, changeName, text) {
-  const path = statePath(root, changeName);
-  const temporary = `${path}.tmp-${process.pid}`;
-  writeFileSync(temporary, text);
-  renameSync(temporary, path);
-}
-function writeState(root, state, at) {
-  state.updated_at = at;
-  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}
-`);
-}
-function inProgressChanges(workflow2, root) {
-  const changes = join3(root, "openspec", "changes");
-  if (!existsSync(changes)) {
-    return [];
-  }
-  const names = [];
-  for (const entry of readdirSync(changes, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === "archive") {
-      continue;
-    }
-    try {
-      const state = readState(workflow2, root, entry.name);
-      if (state?.status === "in_progress") {
-        names.push(entry.name);
-      }
-    } catch {
-    }
-  }
-  return names.sort();
-}
-function completedSteps(workflow2, state) {
-  return stepIds(workflow2).filter((step) => state.steps[step]?.completed_at !== void 0);
-}
-
-// src/callowner.ts
-function eligibleOwners(workflow2, root) {
-  const owners = [];
-  for (const name of inProgressChanges(workflow2, root)) {
-    const step = readState(workflow2, root, name)?.current_step;
-    if (step && allowsCallAgent(workflow2, step)) {
-      owners.push({ changeName: name, step });
-    }
-  }
-  return owners;
-}
-function chooseCallOwner(workflow2, root, changeName) {
-  const owners = eligibleOwners(workflow2, root);
-  const wanted = changeName?.trim() ?? "";
-  const named = wanted === "" ? void 0 : owners.find((candidate) => candidate.changeName === wanted);
-  const only = owners.length === 1 ? owners[0] : void 0;
-  const owner = wanted === "" ? only : named;
-  if (owner) {
-    return owner;
-  }
-  if (wanted === "" && owners.length > 1) {
-    const names = owners.map((candidate) => candidate.changeName).join(", ");
-    return errorText("ambiguous_change", `More than one define can use call_agent (${names}). Pass change_name.`);
-  }
-  return errorText(
-    "call_agent_unavailable",
-    `call_agent is only available during ${callAgentStepsText(workflow2)} of a define that is in progress` + (wanted === "" ? "." : `, and "${wanted}" is not at one of them.`)
-  );
-}
-
-// src/callrecord.ts
-import { existsSync as existsSync2 } from "node:fs";
-function recordCall(context, call) {
-  try {
-    const state = readState(context.workflow, call.root, call.changeName);
-    if (!(state && existsSync2(call.root))) {
-      return;
-    }
-    state.calls.push({
-      call_id: call.id,
-      step: call.step,
-      cli: call.cli,
-      ...call.model === void 0 ? {} : { model: call.model },
-      effort: call.effort,
-      status: call.status,
-      ...call.workingTree === void 0 ? {} : { working_tree: call.workingTree },
-      started_at: call.startedAt.toISOString(),
-      ended_at: (call.endedAt ?? context.now()).toISOString()
-    });
-    writeState(call.root, state, context.now().toISOString());
-  } catch {
-  }
-}
-
-// src/calloutcome.ts
-import { readFileSync as readFileSync3 } from "node:fs";
-import { join as join4 } from "node:path";
-var MAX_RESPONSE_CHARS = 2e5;
-function describeExit(exit) {
-  return exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code}`;
-}
-function readText(path) {
-  try {
-    return readFileSync3(path, "utf8");
-  } catch {
-    return "";
-  }
-}
-function lastCodexErrors(jsonl) {
-  const messages = [];
-  for (const line of jsonl.split("\n")) {
-    try {
-      const event = JSON.parse(line);
-      if (event.type === "error" && event.message) {
-        messages.push(event.message);
-      } else if (event.type === "turn.failed" && event.error?.message) {
-        messages.push(event.error.message);
-      }
-    } catch {
-    }
-  }
-  return messages.slice(-3).join("\n");
-}
-function capResponse(text) {
-  return text.length <= MAX_RESPONSE_CHARS ? text : `${text.slice(0, MAX_RESPONSE_CHARS)}
-
-[response truncated at ${MAX_RESPONSE_CHARS} characters]`;
-}
-function succeed(call, response) {
-  call.status = "succeeded";
-  call.response = capResponse(response);
-}
-function fail(call, code, message) {
-  call.status = "failed";
-  call.error = { code, message };
-}
-function codexOutcome(call, exit) {
-  const last = readText(join4(call.dir, "last-message.txt")).trim();
-  if (exit.code === 0 && last !== "") {
-    succeed(call, last);
-    return;
-  }
-  const detail = [lastCodexErrors(readText(join4(call.dir, "stdout"))), tail(readText(join4(call.dir, "stderr")), 1500)].filter(Boolean).join("\n");
-  fail(call, "execution_failed", `codex ended with ${describeExit(exit)} and no final message. ${detail}`.trim());
-}
-function parseClaudeResult(stdout) {
-  try {
-    return JSON.parse(stdout.trim());
-  } catch {
-    return void 0;
-  }
-}
-function claudeAnswer(parsed, code) {
-  if (code === 0 && parsed && parsed.is_error !== true && typeof parsed.result === "string" && parsed.result.trim() !== "") {
-    return parsed.result.trim();
-  }
-  return void 0;
-}
-function claudeOutcome(call, exit) {
-  const parsed = parseClaudeResult(readText(join4(call.dir, "stdout")));
-  if (typeof parsed?.total_cost_usd === "number") {
-    call.costUsd = parsed.total_cost_usd;
-  }
-  const answer = claudeAnswer(parsed, exit.code);
-  if (answer !== void 0) {
-    succeed(call, answer);
-    return;
-  }
-  const reported = typeof parsed?.result === "string" ? parsed.result : parsed?.subtype ?? "";
-  const stderr = tail(readText(join4(call.dir, "stderr")), 1500);
-  fail(call, "execution_failed", `claude ended with ${describeExit(exit)}. ${[reported, stderr].filter(Boolean).join("\n")}`.trim());
-}
-function applyOutcome(call, exit) {
-  if (call.timedOut) {
-    fail(call, "timeout", `The call ran past its limit of ${formatElapsed(call.limitMs)} and was stopped (${describeExit(exit)}).`);
-  } else if (call.cancelRequested) {
-    call.status = "canceled";
-    call.error = { code: "call_canceled", message: `The call was canceled (${describeExit(exit)}).` };
-  } else if (exit.launchError) {
-    fail(call, "launch_failed", exit.launchError);
-  } else if (call.cli === "codex") {
-    codexOutcome(call, exit);
-  } else {
-    claudeOutcome(call, exit);
-  }
-}
-
-// src/callchild.ts
-import { spawn as spawn2 } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { closeSync, openSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join5 } from "node:path";
-
-// src/child.ts
+// src/acpx.ts
 var CHILD_ENV_VAR = "DEFINE_OPENSPEC_CHANGE_CHILD";
 var SESSION_ENV_VARS = [
   "CLAUDECODE",
@@ -44604,38 +44152,25 @@ function detectLead(clientName, env) {
   }
   return void 0;
 }
-function childCommand(input2) {
-  if (input2.cli === "codex") {
-    const args2 = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only"];
-    args2.push("-c", `model_reasoning_effort="${input2.effort}"`);
-    if (input2.model) {
-      args2.push("-m", input2.model);
-    }
-    args2.push("-o", input2.lastMessageFile, "-");
-    return { command: "codex", args: args2, prompt: input2.prompt };
+var effortKeys = /* @__PURE__ */ new Map([
+  ["claude", "effort"],
+  ["codex", "reasoning_effort"],
+  ["agy", "thought_level"]
+]);
+function effortApplied(cli) {
+  return effortKeys.has(cli);
+}
+function acpxCommand(choice, folder, prompt) {
+  const args = ["--format", "json", "--json-strict", "--suppress-reads", "--approve-all", "--timeout", "3660", "--cwd", folder];
+  if (choice.model !== void 0) {
+    args.push("--model", choice.model);
   }
-  const tools = ["Read", "Grep", "Glob", "WebSearch"];
-  const args = [
-    "-p",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--setting-sources",
-    "",
-    "--strict-mcp-config",
-    "--tools",
-    tools.join(","),
-    "--allowedTools",
-    ...tools,
-    "--add-dir",
-    input2.pluginRoot,
-    "--effort",
-    input2.effort
-  ];
-  if (input2.model) {
-    args.push("--model", input2.model);
+  args.push(...choice.cli === "agy" ? ["--agent", "agy acp"] : [choice.cli], "exec", "-f", "-");
+  const key = effortKeys.get(choice.cli);
+  if (key !== void 0) {
+    args.push("--config-option", `${key}=${choice.effort}`);
   }
-  return { command: "claude", args, prompt: input2.prompt };
+  return { command: "acpx", args, prompt };
 }
 function childEnv(env) {
   const clean = { ...env, [CHILD_ENV_VAR]: "1" };
@@ -44645,22 +44180,205 @@ function childEnv(env) {
   return clean;
 }
 
+// src/crosscheck.ts
+import { join as join10 } from "node:path";
+
+// src/config.ts
+var import_yaml = __toESM(require_dist2(), 1);
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, join as join2 } from "node:path";
+
+// src/schema.ts
+function locate(path) {
+  let text = "";
+  for (const part of path) {
+    text += typeof part === "number" ? `[${part}]` : `${text === "" ? "" : "."}${String(part)}`;
+  }
+  return text;
+}
+function describeIssues(error62) {
+  return error62.issues.map((issue2) => {
+    const where = locate(issue2.path);
+    return where === "" ? issue2.message : `${where}: ${issue2.message}`;
+  }).join("; ");
+}
+function check2(schema, value) {
+  const result = schema.safeParse(value);
+  return result.success ? { value: result.data } : { problem: describeIssues(result.error) };
+}
+
+// src/config.ts
+var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
+var DEFAULT_EFFORT = "high";
+var LOCAL_CLIS = /* @__PURE__ */ new Set(["claude", "codex", "agy"]);
+var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
+var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
+function configPath(env) {
+  return join2(env.HOME || homedir(), ".agent-workflows", "config.yaml");
+}
+function invalid(path, problem) {
+  return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
+}
+var NEEDS_LIST = `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
+var optionalText = external_exports.string({ error: "must be non-empty text when given" }).trim().min(1, "must be non-empty text when given").nullish().transform((value) => value ?? void 0);
+var entrySchema = external_exports.strictObject(
+  {
+    cli: external_exports.string().regex(/^[a-z][a-z0-9-]*$/, "must start with a lowercase letter and use only lowercase letters, digits, and hyphens"),
+    model: optionalText,
+    effort: optionalText
+  },
+  {
+    error: (issue2) => issue2.code === "unrecognized_keys" ? `has unknown keys: ${issue2.keys.join(", ")}. Allowed: cli, model, effort.` : "must be a mapping with cli, model, and effort."
+  }
+).transform(({ cli, model, effort }) => model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT });
+var crosscheckSchema = external_exports.array(entrySchema, { error: NEEDS_LIST }).min(1, NEEDS_LIST).superRefine((entries, context) => {
+  const seen = /* @__PURE__ */ new Set();
+  for (const [index, entry] of entries.entries()) {
+    if (seen.has(entry.cli)) {
+      context.addIssue({ code: "custom", message: `more than one entry has cli: ${entry.cli}`, path: [index, "cli"] });
+    }
+    seen.add(entry.cli);
+  }
+});
+var configSchema = external_exports.looseObject(
+  { "human-workflows": external_exports.looseObject({ crosscheck: crosscheckSchema }, { error: NEEDS_LIST }) },
+  { error: NEEDS_LIST }
+);
+function readConfig(env) {
+  const path = configPath(env);
+  if (!existsSync(path)) {
+    return { ok: false, path, reason: "missing", message: `There is no ${CONFIG_DISPLAY_PATH} (${path}), so the crosscheck agent is not configured.` };
+  }
+  let doc;
+  try {
+    doc = (0, import_yaml.parse)(readFileSync(path, "utf8"));
+  } catch (error62) {
+    return invalid(path, error62.message);
+  }
+  const checked = check2(configSchema, doc);
+  return "problem" in checked ? invalid(path, checked.problem) : { ok: true, path, crosscheck: checked.value["human-workflows"].crosscheck };
+}
+function onPath(command, env) {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (dir === "") {
+      continue;
+    }
+    const candidate = join2(dir, command);
+    try {
+      if (statSync(candidate).isFile()) {
+        accessSync(candidate, constants.X_OK);
+        return true;
+      }
+    } catch {
+    }
+  }
+  return false;
+}
+function chooseCrosscheck(entries, lead, env) {
+  const available = entries.filter(({ cli }) => !LOCAL_CLIS.has(cli) || onPath(cli, env));
+  const others = available.filter(({ cli }) => cli !== lead);
+  return others.length > 0 ? others : available;
+}
+function resolveCrosscheck(lead, env) {
+  const config2 = readConfig(env);
+  if (!config2.ok) {
+    return `${config2.message} ${SETUP_HINT}`;
+  }
+  const choices = chooseCrosscheck(config2.crosscheck, lead, env);
+  return choices.length > 0 ? choices : `No crosscheck reviewer can run. ${CONFIG_DISPLAY_PATH} lists ${config2.crosscheck.map(({ cli }) => cli).join(", ")}, but none are on PATH. ${SETUP_HINT}`;
+}
+
+// src/acpx-version.ts
+function supportedAcpxVersion(output3) {
+  const version2 = output3.trim().match(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[\w.-]+)?(?:\+[\w.-]+)?$/);
+  if (!version2) {
+    return false;
+  }
+  const [, major, minor, patch, prerelease] = version2;
+  return Number(major) > 0 || Number(minor) > 23 || Number(minor) === 23 && (Number(patch) > 0 || prerelease === void 0);
+}
+var AcpxVersion = class {
+  usable = false;
+  async refusal(cwd, env) {
+    if (!this.usable && onPath("acpx", env)) {
+      const result = await run("acpx", ["--version"], { cwd, env, timeoutMs: 5e3 });
+      this.usable = result.code === 0 && supportedAcpxVersion(result.stdout);
+    }
+    return this.usable ? void 0 : `Crosscheck requires acpx 0.23 or later on PATH. ${SETUP_HINT}`;
+  }
+};
+
+// src/call.ts
+function errorText(code, message, extra = {}) {
+  return { text: JSON.stringify({ error: { code, message }, ...extra }, null, 2), isError: true };
+}
+function formatElapsed(start, end) {
+  const seconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1e3));
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+}
+function reviewerResult(reviewer, now, running) {
+  const { cli, model, effort } = reviewer.entry;
+  const outcome = reviewer.outcome;
+  return {
+    cli,
+    model: model ?? "default",
+    effort: effortApplied(cli) ? effort : `not applied (${effort})`,
+    elapsed: formatElapsed(reviewer.startedAt, reviewer.endedAt ?? now),
+    ...running ? { status: outcome?.status ?? "running" } : outcome
+  };
+}
+function snapshotOf(call, now) {
+  const running = call.status === "running";
+  const result = {
+    status: call.status,
+    crosscheck_id: call.id,
+    elapsed: formatElapsed(call.startedAt, call.endedAt ?? now),
+    reviewers: call.reviewers.map((reviewer) => reviewerResult(reviewer, now, running)),
+    ...running ? { next: "Call get_crosscheck with this crosscheck_id to keep waiting. This is not the answer." } : call.tree
+  };
+  const isError = !running && call.reviewers.every((reviewer) => reviewer.outcome?.status !== "succeeded");
+  return { text: JSON.stringify(result, null, 2), isError };
+}
+
 // src/callchild.ts
-function prepareChild(context, root, prompt, choice) {
-  const id = `call-${randomBytes(4).toString("hex")}`;
-  const dir = privateLogDir(context, root, id);
-  const lastMessageFile = join5(dir, "last-message.txt");
-  const command = childCommand({ ...choice, prompt, pluginRoot: context.pluginRoot, lastMessageFile });
-  writeFileSync2(join5(dir, "prompt.txt"), prompt, { mode: 384 });
+import { spawn as spawn2 } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { closeSync, mkdirSync as mkdirSync2, openSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+function newCrosscheckId() {
+  return `cc-${randomBytes(4).toString("hex")}`;
+}
+function reserveLogDir(context, root, initialId) {
+  const base = privateLogDir(context, root);
+  let id = initialId;
+  for (; ; ) {
+    const dir = join3(base, id);
+    try {
+      mkdirSync2(dir, { mode: 448 });
+      return { id, dir };
+    } catch (error62) {
+      if (error62.code !== "EEXIST") {
+        throw error62;
+      }
+      id = newCrosscheckId();
+    }
+  }
+}
+function prepareChild(dir, root, prompt, choice) {
+  mkdirSync2(dir, { mode: 448 });
+  const command = acpxCommand(choice, root, prompt);
+  writeFileSync(join3(dir, "prompt.txt"), prompt, { mode: 384 });
   const shown = JSON.stringify({ command: command.command, args: command.args, prompt: "on stdin, see prompt.txt" }, null, 2);
-  writeFileSync2(join5(dir, "command.json"), shown, { mode: 384 });
-  return { id, dir, command };
+  writeFileSync(join3(dir, "command.json"), shown, { mode: 384 });
+  return command;
 }
 function spawnLogged(command, dir, root, env) {
-  const stdoutFd = openSync(join5(dir, "stdout"), "w", 384);
+  const stdoutFd = openSync(join3(dir, "events.ndjson"), "w", 384);
   let stderrFd;
   try {
-    stderrFd = openSync(join5(dir, "stderr"), "w", 384);
+    stderrFd = openSync(join3(dir, "stderr.txt"), "w", 384);
   } catch (error62) {
     closeSync(stdoutFd);
     throw error62;
@@ -44686,430 +44404,175 @@ function spawnLogged(command, dir, root, env) {
   }
 }
 
-// src/config.ts
+// src/checks.ts
+import { existsSync as existsSync2, readdirSync, statSync as statSync2 } from "node:fs";
+import { join as join5 } from "node:path";
+
+// src/steps.ts
 var import_yaml2 = __toESM(require_dist2(), 1);
-import { accessSync, constants, existsSync as existsSync3, readFileSync as readFileSync4, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { delimiter, join as join6 } from "node:path";
-var CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
-var DEFAULT_EFFORT = "high";
-var CLIS = ["claude", "codex"];
-var CROSSCHECK_KEY = "`human-workflows.crosscheck`";
-var SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
-function configPath(env) {
-  return join6(env.HOME || homedir(), ".agent-workflows", "config.yaml");
-}
-function invalid(path, problem) {
-  return { ok: false, path, reason: "invalid", message: `${CONFIG_DISPLAY_PATH} (${path}) is not valid: ${problem}` };
-}
-var NEEDS_LIST = `it needs a ${CROSSCHECK_KEY} list with one entry per CLI.`;
-var optionalText = external_exports.string({ error: "must be non-empty text when given" }).trim().min(1, "must be non-empty text when given").nullish().transform((value) => value ?? void 0);
-var entrySchema = external_exports.strictObject(
-  {
-    cli: external_exports.enum(CLIS, { error: (issue2) => `must be "claude" or "codex", not ${JSON.stringify(issue2.input)}` }),
-    model: optionalText,
-    effort: optionalText
-  },
-  {
-    error: (issue2) => issue2.code === "unrecognized_keys" ? `has unknown keys: ${issue2.keys.join(", ")}. Allowed: cli, model, effort.` : "must be a mapping with cli, model, and effort."
-  }
-).transform(({ cli, model, effort }) => model === void 0 ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT });
-var crosscheckSchema = external_exports.array(entrySchema, { error: NEEDS_LIST }).min(1, NEEDS_LIST).superRefine((entries, context) => {
-  const seen = /* @__PURE__ */ new Set();
-  for (const [index, entry] of entries.entries()) {
-    if (seen.has(entry.cli)) {
-      context.addIssue({ code: "custom", message: `more than one entry has cli: ${entry.cli}`, path: [index, "cli"] });
-    }
-    seen.add(entry.cli);
+import { readFileSync as readFileSync2, realpathSync as realpathSync2 } from "node:fs";
+import { dirname as dirname2, join as join4 } from "node:path";
+var WorkflowError = class extends Error {
+};
+var placeholderPattern = /\{\{[^{}]*\}\}/g;
+var reviewPattern = /^\{\{review:([^/\\{}]+\.md)\}\}$/;
+var required2 = (what) => external_exports.string({ error: `needs ${what}` }).refine((value) => value.trim() !== "", { error: `needs ${what}` });
+var promptSchema = required2("a prompt").superRefine((prompt, context) => {
+  const unknown3 = (prompt.match(placeholderPattern) ?? []).find((placeholder) => placeholder !== "{{change_name}}" && !reviewPattern.test(placeholder));
+  if (unknown3 !== void 0) {
+    context.addIssue({ code: "custom", message: `has an unknown placeholder ${unknown3}` });
   }
 });
-var configSchema = external_exports.looseObject(
-  { "human-workflows": external_exports.looseObject({ crosscheck: crosscheckSchema }, { error: NEEDS_LIST }) },
-  { error: NEEDS_LIST }
+var stepSchema = external_exports.object(
+  {
+    id: required2("an id"),
+    prompt: promptSchema
+  },
+  { error: "must be a mapping with an id and a prompt" }
 );
-function readConfig(env) {
-  const path = configPath(env);
-  if (!existsSync3(path)) {
-    return { ok: false, path, reason: "missing", message: `There is no ${CONFIG_DISPLAY_PATH} (${path}), so the crosscheck agent is not configured.` };
+var sharedPromptsSchema = external_exports.strictObject(
+  { every_step: promptSchema.optional() },
+  {
+    error: (issue2) => issue2.code === "unrecognized_keys" ? `has an unknown key ${issue2.keys.join(", ")}. Only every_step is supported` : "must be a mapping with every_step"
   }
-  let doc;
+).transform((shared) => ({ everyStep: shared.every_step }));
+var workflowSchema = external_exports.object(
+  {
+    name: required2("a name"),
+    description: required2("a description"),
+    shared_prompts: sharedPromptsSchema.optional(),
+    steps: external_exports.array(stepSchema, { error: "needs at least one step" }).min(1, "needs at least one step")
+  },
+  { error: "must be a mapping with name, description, and steps" }
+).superRefine((workflow2, context) => {
+  const seen = /* @__PURE__ */ new Set();
+  for (const [index, step] of workflow2.steps.entries()) {
+    if (seen.has(step.id)) {
+      context.addIssue({ code: "custom", message: `step id "${step.id}" is used twice`, path: ["steps", index, "id"] });
+    }
+    seen.add(step.id);
+  }
+}).transform(
+  (workflow2) => ({
+    name: workflow2.name.trim(),
+    description: workflow2.description.trim(),
+    sharedPrompts: workflow2.shared_prompts ?? {},
+    steps: workflow2.steps,
+    reviewText: /* @__PURE__ */ new Map()
+  })
+);
+function parseWorkflow(source) {
+  let raw;
   try {
-    doc = (0, import_yaml2.parse)(readFileSync4(path, "utf8"));
+    raw = (0, import_yaml2.parse)(source);
   } catch (error62) {
-    return invalid(path, error62.message);
+    throw new WorkflowError(`is not valid YAML: ${error62.message}`);
   }
-  const checked = check2(configSchema, doc);
-  return "problem" in checked ? invalid(path, checked.problem) : { ok: true, path, crosscheck: checked.value["human-workflows"].crosscheck };
+  const checked = check2(workflowSchema, raw);
+  if ("problem" in checked) {
+    throw new WorkflowError(`is not a valid workflow: ${checked.problem}`);
+  }
+  return checked.value;
 }
-function onPath(command, env) {
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (dir === "") {
+function loadWorkflow(pluginRoot2) {
+  const path = join4(pluginRoot2, "workflow.yaml");
+  let text;
+  try {
+    text = readFileSync2(path, "utf8");
+  } catch (error62) {
+    throw new WorkflowError(`Cannot read ${path}: ${error62.message}`);
+  }
+  try {
+    const workflow2 = parseWorkflow(text);
+    loadReviewText(workflow2, join4(pluginRoot2, "reviews"));
+    return workflow2;
+  } catch (error62) {
+    if (error62 instanceof WorkflowError) {
+      throw new WorkflowError(`${path} ${error62.message}`);
+    }
+    throw error62;
+  }
+}
+function loadReviewText(workflow2, directory) {
+  const prompts = [...workflow2.steps.map((step) => step.prompt), workflow2.sharedPrompts.everyStep ?? ""];
+  const placeholders = new Set(prompts.flatMap((prompt) => prompt.match(placeholderPattern) ?? []));
+  for (const placeholder of placeholders) {
+    const file2 = placeholder.match(reviewPattern)?.[1];
+    if (file2 === void 0) {
       continue;
     }
-    const candidate = join6(dir, command);
     try {
-      if (statSync(candidate).isFile()) {
-        accessSync(candidate, constants.X_OK);
-        return true;
+      const base = realpathSync2(directory);
+      const path = realpathSync2(join4(base, file2));
+      if (dirname2(path) !== base) {
+        throw new WorkflowError("file must be inside the reviews folder");
       }
-    } catch {
-    }
-  }
-  return false;
-}
-function chooseCrosscheck(lead, entries, installed) {
-  const order = lead === void 0 ? entries.map((entry) => entry.cli) : [lead === "claude" ? "codex" : "claude", lead];
-  for (const cli of order) {
-    const entry = entries.find((candidate) => candidate.cli === cli);
-    if (entry && installed(cli)) {
-      return entry;
-    }
-  }
-  const configured = entries.map((entry) => entry.cli);
-  const missing = configured.filter((cli) => !installed(cli));
-  const leadText = lead === void 0 ? "" : ` for a ${lead} lead`;
-  const detail = missing.length > 0 ? `${CONFIG_DISPLAY_PATH} lists ${configured.join(" and ")}, but ${missing.join(" and ")} is not on PATH.` : `${CONFIG_DISPLAY_PATH} has no entry for ${CLIS.join(" or ")} that can run${leadText}.`;
-  return `No crosscheck agent can run${leadText}. ${detail}`;
-}
-function resolveCrosscheck(lead, env) {
-  const config2 = readConfig(env);
-  if (!config2.ok) {
-    return `${config2.message} ${SETUP_HINT}`;
-  }
-  const choice = chooseCrosscheck(lead, config2.crosscheck, (cli) => onPath(cli, env));
-  return typeof choice === "string" ? `${choice} ${SETUP_HINT}` : choice;
-}
-
-// src/gate.ts
-var Gate = class {
-  holding = false;
-  get held() {
-    return this.holding;
-  }
-  /**
-   * Runs `work` with the gate held. Check `held` just before calling this, with no await in between,
-   * so no other call can pass the same check before the gate closes.
-   */
-  async hold(work) {
-    this.holding = true;
-    try {
-      return await work();
-    } finally {
-      this.holding = false;
-    }
-  }
-};
-
-// src/worktree.ts
-import { createHash as createHash2 } from "node:crypto";
-import { lstatSync, readFileSync as readFileSync5, readlinkSync } from "node:fs";
-import { join as join7 } from "node:path";
-function hashUntracked(hash2, root, file2) {
-  hash2.update(file2).update("\0");
-  try {
-    const path = join7(root, file2);
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink()) {
-      hash2.update("-> ").update(readlinkSync(path));
-    } else if (stat.isFile()) {
-      hash2.update(readFileSync5(path));
-    }
-  } catch {
-    hash2.update("<unreadable>");
-  }
-}
-async function workingTreeFingerprint(root, env) {
-  const git = (...args) => run("git", args, { cwd: root, env });
-  const status = await git("status", "--porcelain=v1", "-uall");
-  if (status.code !== 0) {
-    return void 0;
-  }
-  const diff = await git("diff", "HEAD", "--binary");
-  const untracked = await git("ls-files", "-o", "--exclude-standard", "-z");
-  if (diff.code !== 0 || untracked.code !== 0) {
-    return void 0;
-  }
-  const hash2 = createHash2("sha256").update(status.stdout).update("\0").update(diff.stdout).update("\0");
-  for (const file2 of untracked.stdout.split("\0").filter(Boolean).sort()) {
-    hashUntracked(hash2, root, file2);
-  }
-  return hash2.digest("hex");
-}
-function compareFingerprints(before, after) {
-  if (before === void 0 || after === void 0) {
-    return "unknown";
-  }
-  return before === after ? "unchanged" : "changed";
-}
-
-// src/agentcall.ts
-var CROSSCHECK_AGENT = "crosscheck";
-var KILL_GRACE_MS = 1e4;
-var MAX_CALL_MS = 60 * 60 * 1e3;
-var SHUTDOWN_GRACE_MS = 3e3;
-var CallManager = class {
-  constructor(context) {
-    this.context = context;
-  }
-  context;
-  calls = /* @__PURE__ */ new Map();
-  active;
-  /** True from the busy check until a new call is the active one. */
-  starting = false;
-  /** Held while next_step runs, so no crosscheck starts against a step that may be advancing or being committed. */
-  stepGate = new Gate();
-  running() {
-    return this.active?.status === "running" ? this.active : void 0;
-  }
-  /** Whether a call_agent has passed its busy check and its child has not started yet. */
-  isStarting() {
-    return this.starting;
-  }
-  async start(agent, prompt, cwd = this.context.cwd, changeName) {
-    const refusal = this.startRefusal(agent, prompt);
-    if (refusal) {
-      return refusal;
-    }
-    this.starting = true;
-    let call;
-    let command;
-    try {
-      const plan = await this.planStart(cwd, changeName);
-      if ("text" in plan) {
-        return plan;
-      }
-      const prepared = prepareChild(this.context, plan.root, prompt, plan.choice);
-      command = prepared.command;
-      call = await this.register(plan, prepared.id, prepared.dir);
-    } finally {
-      this.starting = false;
-    }
-    return this.launch(call, command);
-  }
-  async get(callId) {
-    const call = this.calls.get(callId.trim());
-    return call ? this.wait(call) : unknownCall(callId);
-  }
-  async cancel(callId) {
-    const call = this.calls.get(callId.trim());
-    if (!call) {
-      return unknownCall(callId);
-    }
-    if (call.status !== "running") {
-      return this.snapshot(call);
-    }
-    this.terminate(call);
-    await Promise.race([call.done, new Promise((resolve) => setTimeout(resolve, Math.min(this.context.waitMs, 15e3)))]);
-    return this.snapshot(call);
-  }
-  /**
-   * Stops every running child. Called when the server exits, so no child outlives its lead. A child
-   * that is still running after `graceMs` is killed.
-   */
-  async killAll(graceMs = SHUTDOWN_GRACE_MS) {
-    const running = [...this.calls.values()].filter((call) => call.status === "running");
-    for (const call of running) {
-      this.terminate(call);
-    }
-    let timer;
-    await Promise.race([
-      Promise.all(running.map((call) => call.done)),
-      new Promise((resolve) => timer = setTimeout(resolve, graceMs))
-    ]);
-    clearTimeout(timer);
-    for (const call of running) {
-      if (call.status === "running") {
-        this.signal(call, "SIGKILL");
-      }
-    }
-  }
-  /** Asks the child to stop, and kills it if it is still there after the grace period. Safe to repeat. */
-  terminate(call) {
-    call.cancelRequested = true;
-    this.signal(call, "SIGTERM");
-    if (call.killTimer === void 0) {
-      call.killTimer = setTimeout(() => this.signal(call, "SIGKILL"), KILL_GRACE_MS);
-      call.killTimer.unref();
-    }
-  }
-  /** The refusal for a bad request or a call already running, if any. */
-  startRefusal(agent, prompt) {
-    if (agent !== CROSSCHECK_AGENT) {
-      return errorText("invalid_target", `agent must be "${CROSSCHECK_AGENT}", the only target this plugin supports.`);
-    }
-    if (prompt.trim() === "") {
-      return errorText("invalid_request", "prompt is required.");
-    }
-    if (this.starting) {
-      return errorText("call_in_progress", "Another call_agent is still starting. Try again in a moment.");
-    }
-    if (this.stepGate.held) {
-      return errorText("step_in_progress", "next_step is still running. Call call_agent again after it returns.");
-    }
-    const busy = this.running();
-    if (busy) {
-      return errorText(
-        "call_in_progress",
-        `Call ${busy.id} is still running. Poll it with get_agent_call or stop it with cancel_agent_call before starting another.`,
-        { call_id: busy.id }
-      );
-    }
-    return void 0;
-  }
-  /** Finds the repository, the define the call belongs to, and the crosscheck to run, or says why it cannot. */
-  async planStart(cwd, changeName) {
-    let root;
-    try {
-      root = await repoRoot({ ...this.context, cwd });
+      workflow2.reviewText.set(placeholder, readFileSync2(path, "utf8"));
     } catch (error62) {
-      return errorText("call_agent_unavailable", error62.message);
-    }
-    const owner = chooseCallOwner(this.context.workflow, root, changeName);
-    if ("text" in owner) {
-      return owner;
-    }
-    const choice = resolveCrosscheck(detectLead(this.context.clientName(), this.context.env), this.context.env);
-    if (typeof choice === "string") {
-      return errorText("crosscheck_not_configured", choice);
-    }
-    return { root, owner, choice };
-  }
-  /** Creates the call, takes the working-tree fingerprint, and makes it the active call. */
-  async register(plan, id, dir) {
-    const { root, owner, choice } = plan;
-    let markDone = () => {
-    };
-    const call = {
-      id,
-      cli: choice.cli,
-      effort: choice.effort,
-      root,
-      changeName: owner.changeName,
-      step: owner.step,
-      dir,
-      startedAt: this.context.now(),
-      status: "running",
-      done: new Promise((resolve) => {
-        markDone = resolve;
-      }),
-      markDone: () => markDone(),
-      cancelRequested: false,
-      limitMs: this.context.maxCallMs ?? MAX_CALL_MS,
-      timedOut: false,
-      ...choice.model === void 0 ? {} : { model: choice.model }
-    };
-    call.fingerprintBefore = await workingTreeFingerprint(root, this.context.env);
-    this.calls.set(id, call);
-    this.active = call;
-    return call;
-  }
-  /** Starts the child, then waits for it up to the poll window. */
-  async launch(call, command) {
-    let logged;
-    try {
-      logged = spawnLogged(command, call.dir, call.root, this.context.env);
-    } catch (error62) {
-      await this.settle(call, { code: null, signal: null, launchError: launchErrorText(command, error62.message) });
-      call.markDone();
-      return this.snapshot(call);
-    }
-    call.child = logged.child;
-    logEvent(this.context, call.root, "call_start", {
-      call_id: call.id,
-      cli: call.cli,
-      model: call.model,
-      effort: call.effort,
-      step: call.step,
-      child_pid: logged.child.pid
-    });
-    this.watch(call, logged, command);
-    call.limitTimer = setTimeout(() => {
-      call.timedOut = true;
-      this.terminate(call);
-    }, call.limitMs);
-    call.limitTimer.unref();
-    return this.wait(call);
-  }
-  /** Settles the call once, when its child closes or fails to start. */
-  watch(call, logged, command) {
-    const { child, closeLogs } = logged;
-    let finished = false;
-    const finish = (exit) => {
-      if (finished) {
-        return;
-      }
-      finished = true;
-      closeLogs();
-      clearTimeout(call.killTimer);
-      clearTimeout(call.limitTimer);
-      if (call.cancelRequested) {
-        this.signal(call, "SIGKILL");
-      }
-      void this.settle(call, exit).finally(call.markDone);
-    };
-    child.on("error", (error62) => {
-      if (child.pid === void 0) {
-        finish({ code: null, signal: null, launchError: launchErrorText(command, error62.message) });
-      }
-    });
-    child.on("close", (code, signal) => finish({ code, signal }));
-  }
-  signal(call, signal) {
-    const pid = call.child?.pid;
-    if (pid === void 0) {
-      return;
-    }
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        call.child?.kill(signal);
-      } catch {
-      }
+      throw new WorkflowError(`cannot load ${placeholder}: ${error62.message}`);
     }
   }
-  async wait(call) {
-    if (call.status === "running") {
-      let timer;
-      await Promise.race([call.done, new Promise((resolve) => timer = setTimeout(resolve, this.context.waitMs))]);
-      clearTimeout(timer);
-    }
-    return this.snapshot(call);
-  }
-  snapshot(call) {
-    return snapshotOf(call, this.context.now());
-  }
-  /** Reads the child's result, checks whether the working tree changed, logs the end, and records the call. */
-  async settle(call, exit) {
-    const endedAt = this.context.now();
-    const after = await workingTreeFingerprint(call.root, this.context.env);
-    applyOutcome(call, exit);
-    call.endedAt = endedAt;
-    call.workingTree = compareFingerprints(call.fingerprintBefore, after);
-    logEvent(this.context, call.root, "call_end", {
-      call_id: call.id,
-      status: call.status,
-      exit: describeExit(exit),
-      working_tree: call.workingTree,
-      cost_usd: call.costUsd
-    });
-    recordCall(this.context, call);
-  }
-};
-function unknownCall(callId) {
-  return errorText("unknown_call", `No call with call_id ${JSON.stringify(callId)} was started by this server.`);
 }
-function launchErrorText(command, message) {
-  return `could not start ${command.command}: ${message}`;
+function stepIds(workflow2) {
+  return workflow2.steps.map((step) => step.id);
 }
-
-// src/define.ts
-import { existsSync as existsSync5 } from "node:fs";
-import { join as join9 } from "node:path";
+function firstStepId(workflow2) {
+  return workflow2.steps[0]?.id ?? "";
+}
+function lastStepId(workflow2) {
+  return workflow2.steps[workflow2.steps.length - 1]?.id ?? "";
+}
+function stepNumber(workflow2, step) {
+  return stepIds(workflow2).indexOf(step) + 1;
+}
+function nextStepId(workflow2, step) {
+  return workflow2.steps[stepIds(workflow2).indexOf(step) + 1]?.id;
+}
+function changeDirFor(changeName) {
+  return `openspec/changes/${changeName}`;
+}
+function stepBody(workflow2, step, changeName) {
+  const own2 = workflow2.steps.find((candidate) => candidate.id === step);
+  return [own2?.prompt, workflow2.sharedPrompts.everyStep].filter((part) => part !== void 0).map((part) => part.trim()).join("\n\n").replace(
+    placeholderPattern,
+    (placeholder) => placeholder === "{{change_name}}" ? changeName : workflow2.reviewText.get(placeholder) ?? placeholder
+  );
+}
+function renderStep(input2) {
+  const { workflow: workflow2, changeName, step, mode } = input2;
+  const position = `(step ${stepNumber(workflow2, step)} of ${workflow2.steps.length})`;
+  const changeDir = changeDirFor(changeName);
+  const parts = [];
+  switch (mode) {
+    case "new":
+      parts.push(`Created OpenSpec change "${changeName}" at \`${changeDir}/\`.`);
+      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
+      parts.push(`The current step is "${step}" ${position}.`);
+      break;
+    case "continue":
+      parts.push(`Continuing to step "${step}" ${position}.`);
+      break;
+    case "resume":
+      parts.push(`You are running in the "${workflow2.name}" workflow: ${workflow2.description}`);
+      parts.push(`Resuming step: "${step}" ${position}. If you already started on this step, resume from where you left off.`);
+      if (input2.completed.length > 0) {
+        parts.push(
+          `Completed steps: ${input2.completed.join(", ")}. Their artifacts are under \`${changeDir}/\`.`
+        );
+      }
+      break;
+  }
+  parts.push("Before doing anything else, announce that you are starting this step.");
+  parts.push(stepBody(workflow2, step, changeName));
+  let completion = `When you or the user determine this step is complete, call the \`next_step\` tool with change_name "${changeName}". Make that call the final action of the step, and carry out the instructions it returns in this conversation. Do not merely say that the step is complete.`;
+  if (!nextStepId(workflow2, step)) {
+    completion += " This is the last step: that call validates the change and commits its documents.";
+  }
+  parts.push(completion);
+  return parts.join("\n\n");
+}
 
 // src/checks.ts
-import { existsSync as existsSync4, readdirSync as readdirSync2, statSync as statSync2 } from "node:fs";
-import { join as join8 } from "node:path";
 function isValidChangeName(name) {
   return /^[a-z0-9][a-z0-9-]*$/.test(name);
 }
@@ -45125,11 +44588,11 @@ function nonEmptyFile(path) {
   }
 }
 function nonEmptySpecs(root, changeDir) {
-  const specsDir = join8(root, changeDir, "specs");
-  if (!existsSync4(specsDir)) {
+  const specsDir = join5(root, changeDir, "specs");
+  if (!existsSync2(specsDir)) {
     return [];
   }
-  return readdirSync2(specsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `${changeDir}/specs/${entry.name}/spec.md`).filter((relative) => nonEmptyFile(join8(root, relative))).sort();
+  return readdirSync(specsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `${changeDir}/specs/${entry.name}/spec.md`).filter((relative2) => nonEmptyFile(join5(root, relative2))).sort();
 }
 async function openspecStatuses(root, changeName, env) {
   const result = await run("openspec", ["status", "--change", changeName, "--json"], { cwd: root, env });
@@ -45143,11 +44606,11 @@ async function openspecStatuses(root, changeName, env) {
     return `openspec status --change ${changeName} --json did not print JSON: ${output2(result)}`;
   }
 }
-function fileArtifact(relative, openspecArtifact) {
+function fileArtifact(relative2, openspecArtifact) {
   return {
     ...openspecArtifact === void 0 ? {} : { openspecArtifact },
-    found: (root, changeDir) => nonEmptyFile(join8(root, changeDir, relative)) ? [`${changeDir}/${relative}`] : [],
-    need: (changeDir) => `a non-empty ${changeDir}/${relative}`
+    found: (root, changeDir) => nonEmptyFile(join5(root, changeDir, relative2)) ? [`${changeDir}/${relative2}`] : [],
+    need: (changeDir) => `a non-empty ${changeDir}/${relative2}`
   };
 }
 var STEP_ARTIFACTS = {
@@ -45197,11 +44660,716 @@ async function missingForSteps(root, changeName, steps, env) {
   return [...missing, ...notDone.map((id) => `OpenSpec to report the ${id} artifact as done (${reported(id)})`)];
 }
 
+// src/gate.ts
+var Gate = class {
+  holding = false;
+  get held() {
+    return this.holding;
+  }
+  /**
+   * Runs `work` with the gate held. Check `held` just before calling this, with no await in between,
+   * so no other call can pass the same check before the gate closes.
+   */
+  async hold(work) {
+    this.holding = true;
+    try {
+      return await work();
+    } finally {
+      this.holding = false;
+    }
+  }
+};
+
+// src/reviewer.ts
+import { spawnSync } from "node:child_process";
+import { writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join7 } from "node:path";
+
+// src/reviewoutcome.ts
+import { createReadStream, readFileSync as readFileSync3 } from "node:fs";
+import { join as join6 } from "node:path";
+import { createInterface } from "node:readline";
+var MAX_ANSWER = 2e5;
+function parseEvent(line) {
+  try {
+    return JSON.parse(line) ?? void 0;
+  } catch {
+    return void 0;
+  }
+}
+function errorDetail(error62) {
+  const detail = error62.data?.details ?? error62.message;
+  return typeof detail === "string" ? detail : JSON.stringify(detail) ?? "";
+}
+var ReviewEvents = class {
+  current = "";
+  previous = "";
+  promptId;
+  matched;
+  fallback;
+  error = "";
+  add(event) {
+    if (event.method === "session/update") {
+      this.addUpdate(event.params?.update);
+    }
+    if (event.method === "session/prompt") {
+      this.promptId = event.id;
+    }
+    const stop = event.result?.stopReason;
+    if (typeof stop === "string") {
+      this.fallback = stop;
+      if (this.promptId !== void 0 && event.id === this.promptId) {
+        this.matched = stop;
+      }
+    }
+    if (event.error) {
+      this.error = errorDetail(event.error);
+    }
+  }
+  addUpdate(update) {
+    if (update?.sessionUpdate === "tool_call") {
+      this.previous = this.current.trim() || this.previous;
+      this.current = "";
+    }
+    if (update?.sessionUpdate === "agent_message_chunk" && update.content?.type === "text" && typeof update.content.text === "string") {
+      this.current += update.content.text;
+    }
+  }
+  output(stderr) {
+    const stop = this.matched ?? this.fallback;
+    return {
+      answer: this.current.trim() || this.previous,
+      ...stop === void 0 ? {} : { stop },
+      error: [this.error, stderr].filter(Boolean).join("\n")
+    };
+  }
+};
+async function readReview(dir) {
+  const input2 = createReadStream(join6(dir, "events.ndjson"));
+  const lines = createInterface({ input: input2, crlfDelay: Infinity });
+  const events = new ReviewEvents();
+  for await (const line of lines) {
+    const event = parseEvent(line);
+    if (event) {
+      events.add(event);
+    }
+  }
+  return events.output(tail(readFileSync3(join6(dir, "stderr.txt"), "utf8")));
+}
+function failed(code, message, detail) {
+  return { status: "failed", code, error: detail ? `${message}
+${detail}` : message };
+}
+function reviewOutcome(exit, review) {
+  if (exit.stopped === "timeout") {
+    return failed("timeout", "Crosscheck reached its time limit.");
+  }
+  if (exit.stopped === "canceled") {
+    return { status: "canceled" };
+  }
+  if (exit.launchError) {
+    return failed("launch_failed", exit.launchError);
+  }
+  if (exit.code === 3) {
+    return failed("timeout", "acpx timed out (exit 3).", review?.error);
+  }
+  if (exit.code !== 0) {
+    return failed("execution_failed", `acpx exited with ${exit.signal ?? exit.code}.`, review?.error);
+  }
+  if (!review?.stop) {
+    return failed("execution_failed", "acpx returned no stop reason.", review?.error);
+  }
+  if (review.stop !== "end_turn") {
+    return failed("stopped", `Reviewer stopped with ${review.stop}.`, review.error);
+  }
+  if (!review.answer) {
+    return failed("empty_answer", "Reviewer returned an empty answer.", review.error);
+  }
+  const response = review.answer.length > MAX_ANSWER ? `${review.answer.slice(0, MAX_ANSWER)}
+[Answer truncated at 200,000 characters.]` : review.answer;
+  return { status: "succeeded", response };
+}
+
+// src/reviewer.ts
+var KILL_GRACE_MS = 15e3;
+function processes(env) {
+  const result = spawnSync("ps", ["-A", "-o", "pid=,ppid=,pgid="], { encoding: "utf8", env, timeout: 2e3 });
+  return (result.stdout ?? "").trim().split("\n").flatMap((line) => {
+    const [pid, parent, group] = line.trim().split(/\s+/).map(Number);
+    return pid && parent !== void 0 && group ? [{ pid, parent, group }] : [];
+  });
+}
+function descendantGroups(pid, env) {
+  const all = processes(env);
+  const own2 = all.find((item) => item.pid === process.pid)?.group;
+  const children = /* @__PURE__ */ new Map();
+  for (const item of all) {
+    const siblings = children.get(item.parent) ?? [];
+    siblings.push(item);
+    children.set(item.parent, siblings);
+  }
+  const groups = /* @__PURE__ */ new Set([pid]);
+  const queue = [pid];
+  for (const parent of queue) {
+    for (const child of children.get(parent) ?? []) {
+      queue.push(child.pid);
+      groups.add(child.group);
+    }
+  }
+  if (own2 !== void 0) {
+    groups.delete(own2);
+  }
+  return [...groups];
+}
+function signal(pid, value) {
+  try {
+    process.kill(pid, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+var Reviewer = class {
+  constructor(entry, dir, context, launch) {
+    this.entry = entry;
+    this.dir = dir;
+    this.context = context;
+    this.startedAt = context.now();
+    this.done = this.run(launch.root, launch.prompt);
+  }
+  entry;
+  dir;
+  context;
+  startedAt;
+  done;
+  endedAt;
+  outcome;
+  child;
+  exit;
+  stopReason;
+  groups = /* @__PURE__ */ new Set();
+  killTimer;
+  killAt = Infinity;
+  finishCleanup;
+  async run(root, prompt) {
+    this.exit = await this.launch(root, prompt);
+    this.endedAt = this.context.now();
+    await this.waitForCleanup();
+    try {
+      const review = this.exit.launchError || this.stopReason ? void 0 : await readReview(this.dir);
+      this.outcome = reviewOutcome({ ...this.exit, stopped: this.stopReason }, review);
+    } catch (error62) {
+      this.outcome = { status: "failed", code: "execution_failed", error: String(error62) };
+    }
+    this.saveResponse();
+  }
+  saveResponse() {
+    try {
+      const response = this.outcome?.status === "succeeded" ? this.outcome.response : "";
+      writeFileSync2(join7(this.dir, "response.txt"), response, { mode: 384 });
+    } catch {
+    }
+  }
+  launch(root, prompt) {
+    return new Promise((resolve3) => {
+      try {
+        const command = prepareChild(this.dir, root, prompt, this.entry);
+        const { child, closeLogs } = spawnLogged(command, this.dir, root, this.context.env);
+        this.child = child;
+        let exit;
+        child.once("error", (error62) => {
+          exit = { code: null, launchError: `Could not start acpx: ${error62.message}` };
+        });
+        child.once("close", (code, closedSignal) => {
+          closeLogs();
+          resolve3(exit ?? { code, signal: closedSignal });
+        });
+      } catch (error62) {
+        resolve3({ code: null, launchError: `Could not start acpx: ${String(error62)}` });
+      }
+    });
+  }
+  stop(reason, grace = this.context.killGraceMs ?? KILL_GRACE_MS) {
+    const pid = this.child?.pid;
+    if (!pid || this.exit && !this.stopReason) {
+      return;
+    }
+    if (!this.stopReason) {
+      this.captureGroups(pid);
+      signal(pid, "SIGTERM");
+    }
+    if (!this.stopReason || reason === "timeout") {
+      this.stopReason = reason;
+    }
+    const deadline = Date.now() + grace;
+    if (deadline < this.killAt && this.groups.size > 0) {
+      clearTimeout(this.killTimer);
+      this.killAt = deadline;
+      this.killTimer = setTimeout(() => this.killGroups(pid), grace);
+    }
+  }
+  captureGroups(pid) {
+    for (const group of descendantGroups(pid, this.context.env)) {
+      this.groups.add(group);
+    }
+  }
+  killGroups(pid) {
+    if (!this.exit && signal(pid, 0)) {
+      this.captureGroups(pid);
+    }
+    for (const group of this.groups) {
+      signal(-group, "SIGKILL");
+    }
+    this.groups.clear();
+    this.finishCleanup?.();
+  }
+  waitForCleanup() {
+    if ([...this.groups].some((group) => signal(-group, 0))) {
+      return new Promise((resolve3) => {
+        this.finishCleanup = resolve3;
+      });
+    }
+    clearTimeout(this.killTimer);
+    this.groups.clear();
+    return void 0;
+  }
+};
+
+// src/state.ts
+import { existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync4, renameSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join8 } from "node:path";
+var STATE_FILE = ".define-openspec-change.json";
+var StateError = class extends Error {
+};
+function statePath(root, changeName) {
+  return join8(root, changeDirFor(changeName), STATE_FILE);
+}
+function newState(workflow2, changeName, at, lead) {
+  const first = firstStepId(workflow2);
+  return {
+    schema: 1,
+    workflow: workflow2.name,
+    change_name: changeName,
+    change_dir: changeDirFor(changeName),
+    status: "in_progress",
+    current_step: first,
+    steps: { [first]: { started_at: at } },
+    starts: [{ at, lead, mode: "new", step: first }],
+    crosschecks: [],
+    created_at: at,
+    updated_at: at,
+    completed_at: null
+  };
+}
+function stateSchema(workflow2, changeName) {
+  const ids = stepIds(workflow2);
+  const step = external_exports.string().refine((id) => ids.includes(id), { error: `must be one of ${ids.join(", ")}` });
+  const text = external_exports.string();
+  const times = external_exports.object({ started_at: text, completed_at: text.optional() });
+  const start = external_exports.object({ at: text, lead: text, mode: external_exports.enum(["new", "resume"]), step });
+  const call = external_exports.looseObject({
+    call_id: text,
+    step,
+    cli: text,
+    model: text.optional(),
+    effort: text,
+    status: text,
+    working_tree: text.optional(),
+    started_at: text,
+    ended_at: text
+  });
+  const reviewer = external_exports.object({
+    cli: text,
+    model: text.optional(),
+    effort: text,
+    effort_applied: external_exports.boolean(),
+    status: text,
+    code: text.optional()
+  });
+  const crosscheck = external_exports.object({
+    crosscheck_id: text,
+    step,
+    status: text,
+    working_tree: text,
+    started_at: text,
+    ended_at: text,
+    reviewers: external_exports.array(reviewer)
+  });
+  return external_exports.object({
+    schema: external_exports.literal(1),
+    workflow: external_exports.literal(workflow2.name),
+    change_name: external_exports.literal(changeName),
+    // The finish step commits this folder, so a saved state cannot point it anywhere else.
+    change_dir: external_exports.literal(changeDirFor(changeName)),
+    status: external_exports.enum(["in_progress", "complete"]),
+    current_step: step.nullable(),
+    steps: external_exports.record(step, times),
+    starts: external_exports.array(start),
+    calls: external_exports.array(call).optional(),
+    crosschecks: external_exports.array(crosscheck).default([]),
+    created_at: text,
+    updated_at: text,
+    completed_at: text.nullable()
+  }).refine((state) => state.status !== "in_progress" || state.current_step !== null, {
+    error: "an in-progress define needs a current_step",
+    path: ["current_step"]
+  });
+}
+function readState(workflow2, root, changeName) {
+  const path = statePath(root, changeName);
+  if (!existsSync3(path)) {
+    return void 0;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync4(path, "utf8"));
+  } catch (error62) {
+    throw new StateError(`${path} is not valid JSON: ${error62.message}`);
+  }
+  const checked = check2(stateSchema(workflow2, changeName), parsed);
+  if ("problem" in checked) {
+    throw new StateError(`${path} is not a define-openspec-change state file this version understands: ${checked.problem}`);
+  }
+  return checked.value;
+}
+function readStateText(root, changeName) {
+  const path = statePath(root, changeName);
+  return existsSync3(path) ? readFileSync4(path, "utf8") : void 0;
+}
+function writeStateText(root, changeName, text) {
+  const path = statePath(root, changeName);
+  const temporary = `${path}.tmp-${process.pid}`;
+  writeFileSync3(temporary, text);
+  renameSync(temporary, path);
+}
+function writeState(root, state, at) {
+  state.updated_at = at;
+  writeStateText(root, state.change_name, `${JSON.stringify(state, null, 2)}
+`);
+}
+function inProgressChanges(workflow2, root) {
+  const changes = join8(root, "openspec", "changes");
+  if (!existsSync3(changes)) {
+    return [];
+  }
+  const names = [];
+  for (const entry of readdirSync2(changes, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === "archive") {
+      continue;
+    }
+    try {
+      const state = readState(workflow2, root, entry.name);
+      if (state?.status === "in_progress") {
+        names.push(entry.name);
+      }
+    } catch {
+    }
+  }
+  return names.sort();
+}
+function completedSteps(workflow2, state) {
+  return stepIds(workflow2).filter((step) => state.steps[step]?.completed_at !== void 0);
+}
+
+// src/worktree.ts
+import { createHash as createHash2 } from "node:crypto";
+import { lstatSync, readFileSync as readFileSync5, readlinkSync } from "node:fs";
+import { join as join9 } from "node:path";
+function statusPaths(output3) {
+  const fields = output3.split("\0");
+  const paths = /* @__PURE__ */ new Map();
+  for (let index = 0; index < fields.length - 1; index += 1) {
+    const field = fields[index];
+    const status = field.slice(0, 2);
+    paths.set(field.slice(3), status);
+    if (/[RC]/.test(status)) {
+      index += 1;
+      paths.set(fields[index], status);
+    }
+  }
+  return paths;
+}
+function indexEntries(output3, paths) {
+  const entries = /* @__PURE__ */ new Map();
+  for (const field of output3.split("\0")) {
+    const tab = field.indexOf("	");
+    const path = field.slice(tab + 1);
+    if (tab >= 0 && paths.has(path)) {
+      entries.set(path, `${entries.get(path) ?? ""}${field.slice(0, tab)}
+`);
+    }
+  }
+  return entries;
+}
+function fileFingerprint(path) {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) {
+    return "missing";
+  }
+  const hash2 = createHash2("sha256").update(String(stat.mode));
+  if (stat.isSymbolicLink()) {
+    hash2.update(readlinkSync(path, { encoding: "buffer" }));
+  } else if (stat.isFile()) {
+    hash2.update(readFileSync5(path));
+  }
+  return hash2.digest("hex");
+}
+async function snapshotTree(options) {
+  const [head, status, index] = await Promise.all([
+    run("git", ["rev-parse", "HEAD"], options),
+    run("git", ["status", "--porcelain=v1", "-z", "-uall"], options),
+    run("git", ["ls-files", "-s", "-z"], options)
+  ]);
+  if (head.code !== 0 || status.code !== 0 || index.code !== 0) {
+    return void 0;
+  }
+  const paths = statusPaths(status.stdout);
+  const entries = indexEntries(index.stdout, paths);
+  try {
+    for (const [path, code] of paths) {
+      paths.set(path, JSON.stringify([code, entries.get(path), fileFingerprint(join9(options.cwd, path))]));
+    }
+    return { head: head.stdout.trim(), paths };
+  } catch {
+    return void 0;
+  }
+}
+async function committedPaths(oldHead, newHead, options) {
+  if (oldHead === newHead) {
+    return [];
+  }
+  const diff = await run("git", ["diff", "--name-only", "--no-renames", "-z", oldHead, newHead], options);
+  return diff.code === 0 ? ["HEAD", ...diff.stdout.split("\0").filter(Boolean)] : void 0;
+}
+async function compareTrees(before, after, options) {
+  if (!(before && after)) {
+    return { working_tree: "unknown" };
+  }
+  const committed = await committedPaths(before.head, after.head, options);
+  if (!committed) {
+    return { working_tree: "unknown" };
+  }
+  const changed = new Set(committed);
+  for (const path of /* @__PURE__ */ new Set([...before.paths.keys(), ...after.paths.keys()])) {
+    if (before.paths.get(path) !== after.paths.get(path)) {
+      changed.add(path);
+    }
+  }
+  return changed.size === 0 ? { working_tree: "unchanged" } : { working_tree: "changed", changed_paths: [...changed].sort() };
+}
+
+// src/crosscheck.ts
+var MAX_CALL_MS = 60 * 60 * 1e3;
+var SHUTDOWN_GRACE_MS = 3e3;
+function findOwner(context, root, name) {
+  if (isValidChangeName(name)) {
+    const state = readState(context.workflow, root, name);
+    if (state?.status === "in_progress" && state.current_step !== null) {
+      return { name, step: state.current_step };
+    }
+  }
+  return void 0;
+}
+function record2(context, plan, call) {
+  if (!(plan.owner && call.endedAt && call.tree)) {
+    return;
+  }
+  const { name, step } = plan.owner;
+  try {
+    const state = readState(context.workflow, plan.root, name);
+    if (!state) {
+      throw new StateError(`Define "${name}" no longer has a state file.`);
+    }
+    state.crosschecks.push({
+      crosscheck_id: call.id,
+      step,
+      status: call.status,
+      working_tree: call.tree.working_tree,
+      started_at: call.startedAt.toISOString(),
+      ended_at: call.endedAt.toISOString(),
+      reviewers: call.reviewers.map(({ entry, outcome }) => ({
+        ...entry,
+        effort_applied: effortApplied(entry.cli),
+        status: outcome?.status ?? "failed",
+        ...outcome?.status === "failed" ? { code: outcome.code } : {}
+      }))
+    });
+    writeState(plan.root, state, context.now().toISOString());
+  } catch (error62) {
+    logEvent(context, plan.root, "crosscheck_record_failed", { crosscheck_id: call.id, error: String(error62) });
+  }
+}
+var CrosscheckManager = class {
+  constructor(context) {
+    this.context = context;
+  }
+  context;
+  calls = /* @__PURE__ */ new Map();
+  active;
+  startingId;
+  shuttingDown = false;
+  stepGate = new Gate();
+  acpx = new AcpxVersion();
+  busyId() {
+    return this.startingId ?? this.running()?.id;
+  }
+  running() {
+    return this.active?.status === "running" ? this.active : void 0;
+  }
+  startRefusal(prompt) {
+    if (prompt.trim() === "") {
+      return errorText("invalid_request", "prompt is required.");
+    }
+    const busy = this.busyId();
+    if (busy) {
+      return errorText("crosscheck_in_progress", `Crosscheck ${busy} is starting or running.`, { crosscheck_id: busy });
+    }
+    if (this.stepGate.held) {
+      return errorText("step_in_progress", "next_step is still running. Call crosscheck again after it returns.");
+    }
+    return this.shuttingDown ? errorText("server_shutting_down", "The server is shutting down.") : void 0;
+  }
+  async start(prompt, cwd = this.context.cwd, changeName) {
+    const refusal = this.startRefusal(prompt);
+    if (refusal) {
+      return refusal;
+    }
+    this.startingId = newCrosscheckId();
+    try {
+      const plan = await this.planStart(cwd, changeName);
+      if ("text" in plan) {
+        return plan;
+      }
+      const reserved = reserveLogDir(this.context, plan.root, this.startingId);
+      this.startingId = reserved.id;
+      const before = await snapshotTree({ cwd: plan.root, env: this.context.env });
+      if (this.shuttingDown) {
+        return errorText("server_shutting_down", "The server is shutting down.");
+      }
+      return this.wait(this.launch(plan, reserved, prompt, before));
+    } finally {
+      this.startingId = void 0;
+    }
+  }
+  async planStart(cwd, changeName) {
+    const unavailable = await this.acpx.refusal(cwd ?? this.context.cwd, this.context.env);
+    if (unavailable) {
+      return errorText("crosscheck_not_configured", unavailable);
+    }
+    const entries = resolveCrosscheck(detectLead(this.context.clientName(), this.context.env), this.context.env);
+    if (typeof entries === "string") {
+      return errorText("crosscheck_not_configured", entries);
+    }
+    if (cwd === null) {
+      return errorText("session_folder_unavailable", "Crosscheck needs the session's working folder.");
+    }
+    return this.resolveFolder(cwd, entries, changeName);
+  }
+  async resolveFolder(cwd, entries, changeName) {
+    try {
+      const root = await repoRoot({ ...this.context, cwd });
+      if (changeName === void 0) {
+        return { root, entries };
+      }
+      const owner = findOwner(this.context, root, changeName.trim());
+      if (owner) {
+        return { root, entries, owner };
+      }
+    } catch (error62) {
+      if (!(error62 instanceof RepoError || error62 instanceof StateError)) {
+        throw error62;
+      }
+      if (changeName === void 0) {
+        return { root: cwd, entries };
+      }
+      return errorText("define_not_in_progress", error62.message);
+    }
+    return errorText("define_not_in_progress", `No define in progress named ${JSON.stringify(changeName)}.`);
+  }
+  launch(plan, { id, dir }, prompt, before) {
+    const startedAt = this.context.now();
+    const reviewers = plan.entries.map(
+      (entry, index) => new Reviewer(entry, join10(dir, `${index + 1}-${entry.cli}`), this.context, { root: plan.root, prompt })
+    );
+    const call = { id, startedAt, status: "running", canceled: false, reviewers, done: Promise.resolve() };
+    this.active = call;
+    this.calls.set(id, call);
+    logEvent(this.context, plan.root, "crosscheck_start", { crosscheck_id: id, change_name: plan.owner?.name });
+    const limit = setTimeout(() => {
+      for (const reviewer of reviewers) {
+        reviewer.stop("timeout");
+      }
+    }, this.context.maxCallMs ?? MAX_CALL_MS);
+    call.done = Promise.all(reviewers.map((reviewer) => reviewer.done)).then(() => {
+      clearTimeout(limit);
+      return this.settle(plan, call, before);
+    });
+    return call;
+  }
+  async settle(plan, call, before) {
+    call.endedAt = this.context.now();
+    const options = { cwd: plan.root, env: this.context.env };
+    call.tree = await compareTrees(before, await snapshotTree(options), options);
+    call.status = call.reviewers.every((reviewer) => reviewer.outcome?.status === "succeeded") ? "succeeded" : "failed";
+    if (call.canceled) {
+      call.status = "canceled";
+    }
+    record2(this.context, plan, call);
+    logEvent(this.context, plan.root, "crosscheck_end", { crosscheck_id: call.id, status: call.status, working_tree: call.tree.working_tree });
+  }
+  async get(id) {
+    const call = this.calls.get(id.trim());
+    return call ? this.wait(call) : unknown2(id);
+  }
+  async cancel(id) {
+    const call = this.calls.get(id.trim());
+    if (!call) {
+      return unknown2(id);
+    }
+    this.stop(call);
+    return this.wait(call);
+  }
+  stop(call, grace) {
+    if (call.status === "running") {
+      call.canceled = true;
+      for (const reviewer of call.reviewers) {
+        reviewer.stop("canceled", grace);
+      }
+    }
+  }
+  async killAll(grace = SHUTDOWN_GRACE_MS) {
+    this.shuttingDown = true;
+    const call = this.running();
+    if (call) {
+      this.stop(call, grace);
+      await call.done;
+    }
+  }
+  async wait(call) {
+    if (call.status === "running") {
+      let timer;
+      try {
+        await Promise.race([call.done, new Promise((resolve3) => timer = setTimeout(resolve3, this.context.waitMs))]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return snapshotOf(call, this.context.now());
+  }
+};
+function unknown2(id) {
+  return errorText("unknown_crosscheck", `No crosscheck with id ${JSON.stringify(id)} was started by this server.`);
+}
+
+// src/define.ts
+import { existsSync as existsSync4 } from "node:fs";
+import { join as join11 } from "node:path";
+
 // src/finish.ts
 function gitRunner(root, env) {
   return (...args) => run("git", args, { cwd: root, env: { ...env, GIT_TERMINAL_PROMPT: "0" } });
 }
-async function indexEntries(git, dir) {
+async function indexEntries2(git, dir) {
   const listed = await git("ls-files", "-s", "-z", "--", dir);
   const staged = [];
   const unmerged = /* @__PURE__ */ new Set();
@@ -45311,7 +45479,7 @@ async function validationRefusal(context, root, state) {
 async function commitChange(context, root, state, git) {
   const name = state.change_name;
   const dir = state.change_dir;
-  const { staged, unmerged } = await indexEntries(git, dir);
+  const { staged, unmerged } = await indexEntries2(git, dir);
   if (unmerged.length > 0) {
     return { failure: conflictRefusal(dir, unmerged) };
   }
@@ -45415,13 +45583,23 @@ function refuse(text) {
   return { text: `Refused: ${text}`, isError: true };
 }
 async function nextStep(context, calls2, args) {
+  const busy = calls2.busyId();
+  if (busy) {
+    return refuse(`Crosscheck ${busy} is starting or running. Collect it with get_crosscheck, or stop it with cancel_crosscheck, before calling next_step.`);
+  }
+  if (calls2.stepGate.held) {
+    return refuse("another next_step call is still running. Wait for it to return.");
+  }
+  return calls2.stepGate.hold(() => nextStepIn(context, calls2, args));
+}
+async function nextStepIn(context, calls2, args) {
   let root;
   try {
     root = await repoRoot(context);
   } catch (error62) {
     return refuse(error62.message);
   }
-  const result = await nextStepIn(context, calls2, root, args);
+  const result = await stepIn(context, calls2, root, args);
   logEvent(context, root, "next_step", {
     change_name: args.change_name,
     start: args.start === true,
@@ -45458,28 +45636,7 @@ function loadState(workflow2, root, name) {
     throw error62;
   }
 }
-function busyRefusal(calls2) {
-  if (calls2.isStarting()) {
-    return refuse(
-      "a crosscheck call is still starting. Wait for call_agent to return, then collect the call with get_agent_call or stop it with cancel_agent_call before calling next_step."
-    );
-  }
-  const busy = calls2.running();
-  if (busy) {
-    return refuse(
-      `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`
-    );
-  }
-  return calls2.stepGate.held ? refuse("another next_step call is still running. Wait for it to return.") : void 0;
-}
-function nextStepIn(context, calls2, root, args) {
-  const busy = busyRefusal(calls2);
-  if (busy) {
-    return Promise.resolve(busy);
-  }
-  return calls2.stepGate.hold(() => stepIn(context, root, args));
-}
-async function stepIn(context, root, args) {
+async function stepIn(context, calls2, root, args) {
   const name = resolveName(context.workflow, root, args);
   if (typeof name !== "string") {
     return name;
@@ -45488,7 +45645,11 @@ async function stepIn(context, root, args) {
   if ("refusal" in loaded) {
     return loaded.refusal;
   }
-  return args.start ? startDefine(context, root, name, loaded.state) : completeStep(context, root, name, loaded.state);
+  if (!args.start) {
+    return completeStep(context, root, name, loaded.state);
+  }
+  const unavailable = await calls2.acpx.refusal(root, context.env);
+  return unavailable ? refuse(unavailable) : startDefine(context, root, name, loaded.state);
 }
 async function startDefine(context, root, name, state) {
   const leadCli = detectLead(context.clientName(), context.env);
@@ -45506,21 +45667,21 @@ async function startDefine(context, root, name, state) {
   return resumeDefine(context, root, state, lead);
 }
 async function createDefine(context, root, name, lead) {
-  const absoluteDir = join9(root, changeDirFor(name));
-  if (existsSync5(absoluteDir)) {
+  const absoluteDir = join11(root, changeDirFor(name));
+  if (existsSync4(absoluteDir)) {
     return refuse(
       `OpenSpec change "${name}" already exists at ${absoluteDir}, and define-openspec-change did not start it. Choose another name.`
     );
   }
   const created = await run("openspec", ["new", "change", name], { cwd: root, env: context.env });
-  if (created.code !== 0 || !existsSync5(absoluteDir)) {
+  if (created.code !== 0 || !existsSync4(absoluteDir)) {
     return refuse(`openspec new change ${name} failed: ${output2(created)}`);
   }
   const at = context.now().toISOString();
   writeState(root, newState(context.workflow, name, at, lead), at);
   const step = firstStepId(context.workflow);
   return {
-    text: renderStep({ workflow: context.workflow, pluginRoot: context.pluginRoot, changeName: name, step, mode: "new", completed: [] })
+    text: renderStep({ workflow: context.workflow, changeName: name, step, mode: "new", completed: [] })
   };
 }
 function resumeDefine(context, root, state, lead) {
@@ -45534,7 +45695,6 @@ function resumeDefine(context, root, state, lead) {
   return {
     text: renderStep({
       workflow: context.workflow,
-      pluginRoot: context.pluginRoot,
       changeName: state.change_name,
       step,
       mode: "resume",
@@ -45543,7 +45703,7 @@ function resumeDefine(context, root, state, lead) {
   };
 }
 function refuseNoState(root, name) {
-  if (existsSync5(join9(root, changeDirFor(name)))) {
+  if (existsSync4(join11(root, changeDirFor(name)))) {
     return refuse(`OpenSpec change "${name}" was not started with define-openspec-change, so there is no step to complete.`);
   }
   return refuse(`no define is in progress for "${name}". Start it with change_name "${name}" and start: true.`);
@@ -45576,7 +45736,6 @@ function advance(context, root, state, move) {
   return {
     text: renderStep({
       workflow: context.workflow,
-      pluginRoot: context.pluginRoot,
       changeName: state.change_name,
       step: move.to,
       mode: "continue",
@@ -45642,45 +45801,47 @@ function registerNextStep({ server: server2, context, calls: calls2, cwdFor }) {
     async (args, extra) => guarded(() => nextStep({ ...context, cwd: cwdFor(extra) }, calls2, args))
   );
 }
-function registerCallAgent({ server: server2, context, calls: calls2, cwdFor }) {
+function registerCrosscheck({ server: server2, context, calls: calls2 }) {
   server2.registerTool(
-    "call_agent",
+    "crosscheck",
     {
       title: "Start a crosscheck",
-      description: `Starts one crosscheck review on the other vendor's CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to ` + waitText(context) + `: returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
+      description: "Use only when a review step or the crosscheck skill asks. Starts the configured reviewers together with your exact prompt. Make the prompt self-contained and strictly instruct reviewers to change nothing. Waits up to " + waitText(context) + " for the result or returns running and a crosscheck_id for get_crosscheck. One crosscheck runs at a time.",
       inputSchema: {
-        agent: external_exports.literal("crosscheck").describe('Must be "crosscheck".'),
-        prompt: external_exports.string().describe("The complete, standalone task for the child."),
-        change_name: external_exports.string().optional().describe("The change the review is for. Needed only when more than one define is in progress.")
+        prompt: external_exports.string().min(1).describe("The complete, standalone task for all reviewers."),
+        change_name: external_exports.string().optional().describe("Name an in-progress define to record the crosscheck there.")
       },
-      // Starts another agent that reads the repository and the web, and never writes.
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     },
-    async ({ agent, prompt, change_name }, extra) => guarded(() => calls2.start(agent, prompt, cwdFor(extra), change_name))
+    async ({ prompt, change_name }, extra) => guarded(() => {
+      const sessionCwd = sessionCwdFromMeta(extra._meta);
+      const fallback = resolve2(context.cwd) === resolve2(context.pluginRoot) ? null : context.cwd;
+      return calls2.start(prompt, sessionCwd ?? fallback, change_name);
+    })
   );
 }
-function registerGetAgentCall({ server: server2, context, calls: calls2 }) {
+function registerGetCrosscheck({ server: server2, context, calls: calls2 }) {
   server2.registerTool(
-    "get_agent_call",
+    "get_crosscheck",
     {
       title: "Wait for a crosscheck",
-      description: "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
-      inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") },
-      annotations: { readOnlyHint: true, openWorldHint: false }
+      description: `Waits up to ${waitText(context)} for the crosscheck result. Poll while the status is running.`,
+      inputSchema: { crosscheck_id: external_exports.string().describe("The ID returned by crosscheck.") },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     },
-    async ({ call_id }) => guarded(() => calls2.get(call_id))
+    async ({ crosscheck_id }) => guarded(() => calls2.get(crosscheck_id))
   );
 }
-function registerCancelAgentCall({ server: server2, calls: calls2 }) {
+function registerCancelCrosscheck({ server: server2, calls: calls2 }) {
   server2.registerTool(
-    "cancel_agent_call",
+    "cancel_crosscheck",
     {
       title: "Cancel a crosscheck",
-      description: "Stops a running call_agent child. It can return while the child is still stopping, so poll get_agent_call until the status is terminal before starting another call.",
-      inputSchema: { call_id: external_exports.string().describe("The call_id that call_agent returned.") },
+      description: "Stops the running reviewers. If still running, poll get_crosscheck until cancellation finishes.",
+      inputSchema: { crosscheck_id: external_exports.string().describe("The ID returned by crosscheck.") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     },
-    async ({ call_id }) => guarded(() => calls2.cancel(call_id))
+    async ({ crosscheck_id }) => guarded(() => calls2.cancel(crosscheck_id))
   );
 }
 function registerNoTools(server2) {
@@ -45693,21 +45854,21 @@ function createServer(makeContext) {
     { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } }
   );
   const context = makeContext(server2);
-  const calls2 = new CallManager(context);
+  const calls2 = new CrosscheckManager(context);
   if (context.env[CHILD_ENV_VAR]) {
     registerNoTools(server2);
     return { server: server2, calls: calls2 };
   }
   const deps = { server: server2, context, calls: calls2, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
   registerNextStep(deps);
-  registerCallAgent(deps);
-  registerGetAgentCall(deps);
-  registerCancelAgentCall(deps);
+  registerCrosscheck(deps);
+  registerGetCrosscheck(deps);
+  registerCancelCrosscheck(deps);
   return { server: server2, calls: calls2 };
 }
 
 // src/main.ts
-var pluginRoot = dirname(fileURLToPath2(import.meta.url));
+var pluginRoot = dirname3(fileURLToPath2(import.meta.url));
 var logBase = defaultLogBase();
 var workflow;
 try {
@@ -45723,7 +45884,7 @@ try {
 try {
   ensurePrivateDir(logBase);
   appendFileSync2(
-    join10(logBase, "server-starts.log"),
+    join12(logBase, "server-starts.log"),
     `${JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), pid: process.pid, ppid: process.ppid, cwd: process.cwd(), pluginRoot })}
 `,
     { mode: 384 }

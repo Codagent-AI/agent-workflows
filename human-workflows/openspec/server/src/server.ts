@@ -1,14 +1,15 @@
+import { resolve } from "node:path";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { CallManager } from "./agentcall.js";
-import { CHILD_ENV_VAR } from "./child.js";
+import { CHILD_ENV_VAR } from "./acpx.js";
 import type { Context } from "./context.js";
+import { CrosscheckManager } from "./crosscheck.js";
 import { nextStep } from "./define.js";
 import type { ToolText } from "./finish.js";
 import { CODEX_SANDBOX_META_CAPABILITY, sessionCwdFromMeta } from "./session.js";
-import { callAgentStepsText } from "./steps.js";
 
 export const SERVER_NAME = "define";
 
@@ -42,7 +43,7 @@ function waitText(context: Context): string {
 interface ToolDeps {
   server: McpServer;
   context: Context;
-  calls: CallManager;
+  calls: CrosscheckManager;
   /** The session directory for a call: from Codex's `_meta`, or where the server started. */
   cwdFor: (extra: { _meta?: unknown }) => string;
 }
@@ -75,60 +76,52 @@ function registerNextStep({ server, context, calls, cwdFor }: ToolDeps): void {
   );
 }
 
-/** Registers call_agent. */
-function registerCallAgent({ server, context, calls, cwdFor }: ToolDeps): void {
+function registerCrosscheck({ server, context, calls }: ToolDeps): void {
   server.registerTool(
-    "call_agent",
+    "crosscheck",
     {
       title: "Start a crosscheck",
       description:
-        'Starts one crosscheck review on the other vendor\'s CLI (Codex when Claude leads, Claude when Codex leads). agent must be "crosscheck". ' +
-        "The child is read-only and has no conversation context, so the prompt must be self-contained. Waits up to " + waitText(context) + ": " +
-        "returns the child's result if it finished, otherwise status running and a call_id to pass to get_agent_call. A running status " +
-        `is never the child's answer. One call at a time. Only available during ${callAgentStepsText(context.workflow)}.`,
+        "Use only when a review step or the crosscheck skill asks. Starts the configured reviewers together with your exact prompt. " +
+        "Make the prompt self-contained and strictly instruct reviewers to change nothing. Waits up to " + waitText(context) +
+        " for the result or returns running and a crosscheck_id for get_crosscheck. One crosscheck runs at a time.",
       inputSchema: {
-        agent: z.literal("crosscheck").describe('Must be "crosscheck".'),
-        prompt: z.string().describe("The complete, standalone task for the child."),
-        change_name: z
-          .string()
-          .optional()
-          .describe("The change the review is for. Needed only when more than one define is in progress."),
+        prompt: z.string().min(1).describe("The complete, standalone task for all reviewers."),
+        change_name: z.string().optional().describe("Name an in-progress define to record the crosscheck there."),
       },
-      // Starts another agent that reads the repository and the web, and never writes.
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ agent, prompt, change_name }, extra) => guarded(() => calls.start(agent, prompt, cwdFor(extra), change_name)),
+    async ({ prompt, change_name }, extra) => guarded(() => {
+      const sessionCwd = sessionCwdFromMeta(extra._meta);
+      const fallback = resolve(context.cwd) === resolve(context.pluginRoot) ? null : context.cwd;
+      return calls.start(prompt, sessionCwd ?? fallback, change_name);
+    }),
   );
 }
 
-/** Registers get_agent_call. */
-function registerGetAgentCall({ server, context, calls }: ToolDeps): void {
+function registerGetCrosscheck({ server, context, calls }: ToolDeps): void {
   server.registerTool(
-    "get_agent_call",
+    "get_crosscheck",
     {
       title: "Wait for a crosscheck",
-      description:
-        "Waits up to " + waitText(context) + " for a call started by call_agent and returns its result, or status running if it is still going. " +
-        "Call it again until the status is succeeded, failed, or canceled. Does not start another call.",
-      inputSchema: { call_id: z.string().describe("The call_id that call_agent returned.") },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      description: `Waits up to ${waitText(context)} for the crosscheck result. Poll while the status is running.`,
+      inputSchema: { crosscheck_id: z.string().describe("The ID returned by crosscheck.") },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ call_id }) => guarded(() => calls.get(call_id)),
+    async ({ crosscheck_id }) => guarded(() => calls.get(crosscheck_id)),
   );
 }
 
-/** Registers cancel_agent_call. */
-function registerCancelAgentCall({ server, calls }: ToolDeps): void {
+function registerCancelCrosscheck({ server, calls }: ToolDeps): void {
   server.registerTool(
-    "cancel_agent_call",
+    "cancel_crosscheck",
     {
       title: "Cancel a crosscheck",
-      description:
-        "Stops a running call_agent child. It can return while the child is still stopping, so poll get_agent_call until the status is terminal before starting another call.",
-      inputSchema: { call_id: z.string().describe("The call_id that call_agent returned.") },
+      description: "Stops the running reviewers. If still running, poll get_crosscheck until cancellation finishes.",
+      inputSchema: { crosscheck_id: z.string().describe("The ID returned by crosscheck.") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ call_id }) => guarded(() => calls.cancel(call_id)),
+    async ({ crosscheck_id }) => guarded(() => calls.cancel(crosscheck_id)),
   );
 }
 
@@ -139,21 +132,21 @@ function registerNoTools(server: McpServer): void {
 }
 
 /** Builds the MCP server. `context.clientName` should read the connected client's name. */
-export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CallManager } {
+export function createServer(makeContext: (server: McpServer) => Context): { server: McpServer; calls: CrosscheckManager } {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { experimental: { [CODEX_SANDBOX_META_CAPABILITY]: {} } } },
   );
   const context = makeContext(server);
-  const calls = new CallManager(context);
+  const calls = new CrosscheckManager(context);
   if (context.env[CHILD_ENV_VAR]) {
     registerNoTools(server);
     return { server, calls };
   }
   const deps: ToolDeps = { server, context, calls, cwdFor: (extra) => sessionCwdFromMeta(extra._meta) ?? context.cwd };
   registerNextStep(deps);
-  registerCallAgent(deps);
-  registerGetAgentCall(deps);
-  registerCancelAgentCall(deps);
+  registerCrosscheck(deps);
+  registerGetCrosscheck(deps);
+  registerCancelCrosscheck(deps);
   return { server, calls };
 }

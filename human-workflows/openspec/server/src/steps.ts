@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { parse } from "yaml";
 import { z } from "zod";
@@ -11,14 +11,10 @@ export type StepId = string;
 export interface WorkflowStep {
   id: StepId;
   prompt: string;
-  /** True when the step lists `call_agent` under `tools`. */
-  callAgent: boolean;
 }
 
 /** Text written once in the workflow file and added after a step's own prompt. */
 export interface SharedPrompts {
-  /** Added after the prompt of each step with `tools: [call_agent]`. */
-  callAgent?: string | undefined;
   /** Added after every step's prompt. */
   everyStep?: string | undefined;
 }
@@ -28,17 +24,19 @@ export interface Workflow {
   description: string;
   sharedPrompts: SharedPrompts;
   steps: WorkflowStep[];
+  reviewText: Map<string, string>;
 }
 
 export class WorkflowError extends Error {}
 
 /** The placeholders a step prompt may use. Anything else in double braces is refused. */
-const PLACEHOLDERS = ["{{change_name}}", "{{reviews_dir}}"];
+const placeholderPattern = /\{\{[^{}]*\}\}/g;
+const reviewPattern = /^\{\{review:([^/\\{}]+\.md)\}\}$/;
 
 const required = (what: string) => z.string({ error: `needs ${what}` }).refine((value) => value.trim() !== "", { error: `needs ${what}` });
 
 const promptSchema = required("a prompt").superRefine((prompt, context) => {
-  const unknown = (prompt.match(/\{\{[^}]*\}\}/g) ?? []).find((placeholder) => !PLACEHOLDERS.includes(placeholder));
+  const unknown = (prompt.match(placeholderPattern) ?? []).find((placeholder) => placeholder !== "{{change_name}}" && !reviewPattern.test(placeholder));
   if (unknown !== undefined) {
     context.addIssue({ code: "custom", message: `has an unknown placeholder ${unknown}` });
   }
@@ -49,23 +47,21 @@ const stepSchema = z
     {
       id: required("an id"),
       prompt: promptSchema,
-      tools: z.array(z.literal("call_agent", { error: "is not a supported tool. Only [call_agent] is supported" })).optional(),
     },
     { error: "must be a mapping with an id and a prompt" },
-  )
-  .transform((step): WorkflowStep => ({ id: step.id, prompt: step.prompt, callAgent: (step.tools ?? []).length > 0 }));
+  );
 
 const sharedPromptsSchema = z
   .strictObject(
-    { call_agent: promptSchema.optional(), every_step: promptSchema.optional() },
+    { every_step: promptSchema.optional() },
     {
       error: (issue) =>
         issue.code === "unrecognized_keys"
-          ? `has an unknown key ${issue.keys.join(", ")}. Only call_agent and every_step are supported`
-          : "must be a mapping with call_agent or every_step",
+          ? `has an unknown key ${issue.keys.join(", ")}. Only every_step is supported`
+          : "must be a mapping with every_step",
     },
   )
-  .transform((shared): SharedPrompts => ({ callAgent: shared.call_agent, everyStep: shared.every_step }));
+  .transform((shared): SharedPrompts => ({ everyStep: shared.every_step }));
 
 const workflowSchema = z
   .object(
@@ -92,6 +88,7 @@ const workflowSchema = z
       description: workflow.description.trim(),
       sharedPrompts: workflow.shared_prompts ?? {},
       steps: workflow.steps,
+      reviewText: new Map(),
     }),
   );
 
@@ -120,12 +117,35 @@ export function loadWorkflow(pluginRoot: string): Workflow {
     throw new WorkflowError(`Cannot read ${path}: ${(error as Error).message}`);
   }
   try {
-    return parseWorkflow(text);
+    const workflow = parseWorkflow(text);
+    loadReviewText(workflow, join(pluginRoot, "reviews"));
+    return workflow;
   } catch (error) {
     if (error instanceof WorkflowError) {
       throw new WorkflowError(`${path} ${error.message}`);
     }
     throw error;
+  }
+}
+
+function loadReviewText(workflow: Workflow, directory: string): void {
+  const prompts = [...workflow.steps.map((step) => step.prompt), workflow.sharedPrompts.everyStep ?? ""];
+  const placeholders = new Set(prompts.flatMap((prompt) => prompt.match(placeholderPattern) ?? []));
+  for (const placeholder of placeholders) {
+    const file = placeholder.match(reviewPattern)?.[1];
+    if (file === undefined) {
+      continue;
+    }
+    try {
+      const base = realpathSync(directory);
+      const path = realpathSync(join(base, file));
+      if (dirname(path) !== base) {
+        throw new WorkflowError("file must be inside the reviews folder");
+      }
+      workflow.reviewText.set(placeholder, readFileSync(path, "utf8"));
+    } catch (error) {
+      throw new WorkflowError(`cannot load ${placeholder}: ${(error as Error).message}`);
+    }
   }
 }
 
@@ -139,26 +159,6 @@ export function firstStepId(workflow: Workflow): StepId {
 
 export function lastStepId(workflow: Workflow): StepId {
   return workflow.steps[workflow.steps.length - 1]?.id ?? "";
-}
-
-/** The steps where call_agent may be used, in order. */
-export function callAgentSteps(workflow: Workflow): StepId[] {
-  return workflow.steps.filter((step) => step.callAgent).map((step) => step.id);
-}
-
-/** "the proposal and approach-review steps", for a message that says where call_agent works. */
-export function callAgentStepsText(workflow: Workflow): string {
-  const ids = callAgentSteps(workflow);
-  const last = ids.pop();
-  if (last === undefined) {
-    return "no steps";
-  }
-  return ids.length === 0 ? `the ${last} step` : `the ${ids.join(", ")} and ${last} steps`;
-}
-
-/** True when call_agent may be used at this step. */
-export function allowsCallAgent(workflow: Workflow, step: StepId): boolean {
-  return workflow.steps.some((candidate) => candidate.id === step && candidate.callAgent);
 }
 
 export function stepNumber(workflow: Workflow, step: StepId): number {
@@ -177,7 +177,6 @@ export type StepMode = "new" | "continue" | "resume";
 
 export interface RenderInput {
   workflow: Workflow;
-  pluginRoot: string;
   changeName: string;
   step: StepId;
   mode: StepMode;
@@ -185,15 +184,15 @@ export interface RenderInput {
 }
 
 /** A step's own prompt, then the shared text that applies to it, with the placeholders filled. */
-function stepBody(workflow: Workflow, pluginRoot: string, step: StepId, changeName: string): string {
+function stepBody(workflow: Workflow, step: StepId, changeName: string): string {
   const own = workflow.steps.find((candidate) => candidate.id === step);
-  const { callAgent, everyStep } = workflow.sharedPrompts;
-  return [own?.prompt, own?.callAgent ? callAgent : undefined, everyStep]
+  return [own?.prompt, workflow.sharedPrompts.everyStep]
     .filter((part): part is string => part !== undefined)
     .map((part) => part.trim())
     .join("\n\n")
-    .replaceAll("{{change_name}}", changeName)
-    .replaceAll("{{reviews_dir}}", join(pluginRoot, "reviews"));
+    .replace(placeholderPattern, (placeholder) =>
+      placeholder === "{{change_name}}" ? changeName : workflow.reviewText.get(placeholder) ?? placeholder,
+    );
 }
 
 /**
@@ -227,7 +226,7 @@ export function renderStep(input: RenderInput): string {
   }
 
   parts.push("Before doing anything else, announce that you are starting this step.");
-  parts.push(stepBody(workflow, input.pluginRoot, step, changeName));
+  parts.push(stepBody(workflow, step, changeName));
 
   let completion =
     `When you or the user determine this step is complete, call the \`next_step\` tool with change_name "${changeName}". ` +

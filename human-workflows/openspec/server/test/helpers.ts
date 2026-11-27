@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CallManager } from "../src/agentcall.js";
+import { CrosscheckManager } from "../src/crosscheck.js";
 import type { Context } from "../src/context.js";
 import { nextStep, type NextStepArgs } from "../src/define.js";
 import { loadWorkflow } from "../src/steps.js";
@@ -54,32 +54,65 @@ if (args[0] === "new" && args[1] === "change") {
 } else { console.error("fake openspec: unsupported " + args.join(" ")); process.exit(2); }
 `;
 
-const FAKE_CHILD = (cli: string) => `#!/usr/bin/env node
+const FAKE_ACPX = String.raw`#!/usr/bin/env node
 const fs = require("node:fs");
-const path = require("node:path");
+const { spawn } = require("node:child_process");
 const args = process.argv.slice(2);
-const keep = Object.keys(process.env).filter((k) => k.startsWith("CLAUDE") || k.startsWith("FAKE_") || k.startsWith("DEFINE_"));
+const log = (entry) => fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify(entry) + "\n");
+if (args[0] === "--version") {
+  if (process.env.FAKE_PROBE_LOG) log({ bin: "version", args });
+  console.log(process.env.FAKE_ACPX_VERSION ?? "0.23.0");
+  process.exit(0);
+}
+const agent = args.includes("--agent") ? "agy" : args[args.indexOf("exec") - 1];
+const options = JSON.parse(process.env.FAKE_REVIEWERS ?? "{}")[agent] ?? {};
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(CLAUDE|CODEX|FAKE_|DEFINE_)/.test(key)));
 const prompt = fs.readFileSync(0, "utf8");
-if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ bin: "${cli}", args, cwd: process.cwd(), env: keep, prompt }) + "\\n");
-const delay = Number(process.env.FAKE_CHILD_SLEEP_MS || 0);
-if (process.env.FAKE_CHILD_IGNORE_TERM) process.on("SIGTERM", () => {});
-setTimeout(() => {
-  if (process.env.FAKE_CHILD_WRITE) fs.writeFileSync(path.join(process.cwd(), process.env.FAKE_CHILD_WRITE), "written by child\\n");
-  const code = Number(process.env.FAKE_CHILD_EXIT || 0);
-  const response = process.env.FAKE_CHILD_RESPONSE || "${cli} review: no consequential findings.";
-  if ("${cli}" === "codex") {
-    const out = args[args.indexOf("-o") + 1];
-    console.log(JSON.stringify({ type: "thread.started", thread_id: "t-1" }));
-    if (code === 0) fs.writeFileSync(out, response);
-    else { console.log(JSON.stringify({ type: "error", message: "model overloaded" })); console.error("codex failed"); }
-  } else {
-    console.log(JSON.stringify(code === 0
-      ? { type: "result", subtype: "success", is_error: false, result: response, total_cost_usd: 0.25 }
-      : { type: "result", subtype: "error_during_execution", is_error: true, result: "claude failed" }));
+const started = Date.now();
+if (options.ignoreTerm) process.on("SIGTERM", () => {});
+const event = (message) => fs.writeSync(1, JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+const update = (sessionUpdate, content) => event({
+  method: "session/update", params: { sessionId: "session", update: { sessionUpdate, content } }
+});
+const chunk = (text) => update("agent_message_chunk", { type: "text", text });
+function answer() {
+  const code = options.code ?? 0;
+  event({ id: 4, method: "session/prompt", params: { sessionId: "session" } });
+  if (options.beforeTool) {
+    chunk("before the tool");
+    update("tool_call");
   }
+  chunk(options.length ? "a".repeat(options.length) : options.answer ?? agent + " review");
+  if (options.trailingUpdate) update("tool_call_update");
+  if (options.trailingCall) update("tool_call");
+  if (options.error) {
+    event({ id: 4, error: { message: "adapter error", data: { details: options.error } } });
+    fs.writeSync(2, "adapter stderr\n");
+  } else if (options.stop !== null) {
+    event({ id: 4, result: { stopReason: options.stop ?? "end_turn" } });
+  }
+  if (options.write) fs.writeFileSync(options.write, "written by reviewer\n");
+  log({ bin: "review-end", agent, ended: Date.now() });
   process.exit(code);
-}, delay);
+}
+function launch() {
+  log({ bin: "acpx", args, agent, cwd: process.cwd(), env, prompt, started, pids: [process.pid, ...children.map((child) => child.pid)] });
+  setTimeout(answer, options.delay ?? 0);
+}
+const children = [];
+if (options.descendants) {
+  for (const detached of [false, true]) {
+    children.push(spawn(process.execPath, ["-e",
+      "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)"
+    ], { detached, stdio: ["ignore", "pipe", "ignore"] }));
+  }
+  Promise.all(children.map((child) => new Promise((resolve) => child.stdout.once("data", resolve)))).then(launch);
+} else {
+  launch();
+}
 `;
+
+const FAKE_LOCAL_CLI = "#!/bin/sh\nexit 0\n";
 
 const FAKE_GH = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -152,17 +185,20 @@ export function makeFixture(options: { remote?: boolean; branch?: string; config
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "define-openspec-change-test-")));
   const bin = join(dir, "bin");
   mkdirSync(bin);
-  const scripts: Record<string, string> = { openspec: FAKE_OPENSPEC, codex: FAKE_CHILD("codex"), claude: FAKE_CHILD("claude"), gh: FAKE_GH };
+  const scripts: Record<string, string> = {
+    openspec: FAKE_OPENSPEC, acpx: FAKE_ACPX, codex: FAKE_LOCAL_CLI, claude: FAKE_LOCAL_CLI, agy: FAKE_LOCAL_CLI, gh: FAKE_GH,
+  };
   for (const [name, text] of Object.entries(scripts)) {
     writeFileSync(join(bin, name), text);
     chmodSync(join(bin, name), 0o755);
   }
+  symlinkSync(process.execPath, join(bin, "node"));
   const home = join(dir, "home");
   mkdirSync(home);
   writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n");
   const log = join(dir, "fake.log");
   const env: NodeJS.ProcessEnv = {
-    PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+    PATH: [bin, "/usr/bin", "/bin"].join(delimiter),
     HOME: home,
     GIT_CONFIG_GLOBAL: join(home, ".gitconfig"),
     GIT_CONFIG_NOSYSTEM: "1",
@@ -222,14 +258,14 @@ export function pathWithout(fixture: Fixture, missing: string[]): string {
   const bin = join(fixture.dir, `bin-without-${missing.join("-")}`);
   mkdirSync(bin, { recursive: true });
   symlinkSync(process.execPath, join(bin, "node"));
-  for (const name of ["openspec", "codex", "claude", "gh"].filter((candidate) => !missing.includes(candidate))) {
+  for (const name of ["openspec", "acpx", "codex", "claude", "agy", "gh"].filter((candidate) => !missing.includes(candidate))) {
     copyFileSync(join(fixture.dir, "bin", name), join(bin, name));
     chmodSync(join(bin, name), 0o755);
   }
   return [bin, "/usr/bin", "/bin"].join(delimiter);
 }
 
-export function fakeLog(fixture: Fixture): Array<{ bin: string; args: string[]; cwd?: string; env?: string[]; prompt?: string }> {
+export function fakeLog(fixture: Fixture): Array<{ bin: string; args: string[]; cwd?: string; env?: Record<string, string>; prompt?: string; agent?: string; started?: number; ended?: number; pids?: number[] }> {
   if (!existsSync(fixture.log)) return [];
   return readFileSync(fixture.log, "utf8")
     .split("\n")
@@ -254,7 +290,7 @@ export function makeContext(fixture: Fixture, overrides: Partial<Context> & { cl
 
 /** One server instance: its own call manager, like one MCP server process. */
 export function session(context: Context) {
-  const calls = new CallManager(context);
+  const calls = new CrosscheckManager(context);
   return {
     calls,
     next: (args: NextStepArgs = {}) => nextStep(context, calls, args),
