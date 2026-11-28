@@ -24,7 +24,7 @@ Two pages stay in the repository and never reach the site:
 - `development.md`, for people who change this repository.
 - `coming-from-agent-runner.md`, the comparison with the older engine.
 
-The sync workflow (`.github/workflows/sync-docs.yml`) drops them, along with `README.md`, `AGENTS.md` and `CLAUDE.md`. If you add a page that must stay private, add it to that list.
+The sync script (`scripts/sync-docs.sh`, run by `.github/workflows/sync-docs.yml`) drops them, along with `README.md`, `AGENTS.md` and `CLAUDE.md`. If you add a page that must stay private, add it to that list.
 
 A synced page never links to one of these two pages.
 

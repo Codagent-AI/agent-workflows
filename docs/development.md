@@ -20,6 +20,7 @@ Top-level folders are named by purpose. The folders under them are named by what
 | `factory-workflows/archon/` | The Codagent pack: the workflows Archon runs |
 | `openspec/` | The OpenSpec changes and specs for every project in the repository |
 | `docs/` | The user docs |
+| `scripts/` | Repository scripts, such as the docs sync |
 
 The rule, from the root [AGENTS.md](../AGENTS.md):
 
@@ -77,6 +78,6 @@ Two files name where code was copied from: `human-workflows/openspec/plugin/PROV
 
 ## The docs sync
 
-`.github/workflows/sync-docs.yml` copies `docs/` into the docs site when a change to `docs/` lands on `main`. It opens a pull request in `pacaplan/codagent-dot-dev`, which builds and merges automatically. It needs a `DOCS_SYNC_PAT` secret on this repository: a fine-grained token with contents and pull requests access to that repository.
+`.github/workflows/sync-docs.yml` runs when a change to `docs/` lands on `main`. It checks out this repository and `pacaplan/codagent-dot-dev`, runs `scripts/sync-docs.sh docs <dot-dev content folder>` to copy the pages, and runs `scripts/open-docs-sync-pr.sh` to open a pull request in dot-dev, which builds and merges automatically. It needs a `DOCS_SYNC_PAT` secret on this repository: a fine-grained token with contents and pull requests access to that repository.
 
-It drops this page, `coming-from-agent-runner.md`, `README.md`, `AGENTS.md` and `CLAUDE.md`. See [docs/AGENTS.md](AGENTS.md) for the page format.
+`scripts/sync-docs.sh` drops this page, `coming-from-agent-runner.md`, `README.md`, `AGENTS.md` and `CLAUDE.md`, and copies only the images the pages reference. You can run it into a temporary folder to see what would sync. See [docs/AGENTS.md](AGENTS.md) for the page format.

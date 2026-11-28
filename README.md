@@ -65,6 +65,7 @@ Top-level folders are named by purpose. The folders under them are named by what
 | [`factory-workflows/archon/`](factory-workflows/archon/) | Codagent's factory workflows for the Archon engine |
 | [`openspec/`](openspec/) | The OpenSpec changes for every project in this repository |
 | [`docs/`](docs/) | The user docs |
+| [`scripts/`](scripts/) | Repository scripts, such as the one that syncs the docs to codagent.dev |
 
 The repository root is also a plugin marketplace for both CLIs:
 
