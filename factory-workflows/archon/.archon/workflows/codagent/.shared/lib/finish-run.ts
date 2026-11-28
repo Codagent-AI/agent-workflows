@@ -73,7 +73,9 @@ function ciNode(input: FinishInputs, dir: string): unknown {
   if (input.op === 'end-ci-cycle') return endCiCycle(dir, latestCi(dir, input.status).status, cycle);
   if (input.op === 'ci-cycle-status') {
     const latest = latestCi(dir, input.status);
-    return { ...ciGate(latest.status, input.blocked || finalizationBlocked(dir), cycle), ci_report: latest.ciReport };
+    // The head CI ran on, where a review of the cycle's fix starts.
+    const head = runCommand('git', ['rev-parse', 'HEAD']).stdout.trim();
+    return { ...ciGate(latest.status, input.blocked || finalizationBlocked(dir), cycle), ci_report: latest.ciReport, head };
   }
   const tools = defaultTools();
   if (input.op === 'record-finalize') return recordFinalize(tools, dir);

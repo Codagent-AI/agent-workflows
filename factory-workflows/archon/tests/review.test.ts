@@ -19,10 +19,7 @@ function cycle(state: ReviewState, round = 0): void {
   startCycle(state, { place: round ? 'acceptance' : 'before-pr', round, start: 'base', end: 'head' });
 }
 function stateWithFinding(): ReviewState {
-  const state = emptyState();
-  cycle(state);
-  addFindings(state, [defect()]);
-  return state;
+  const state = emptyState(); cycle(state); addFindings(state, [defect()]); return state;
 }
 const act = (state: ReviewState, action: 'fixed' | 'declined' | 'replied') =>
   applyActions(state, [{ id: 'REVIEW-1', action, note: `fixer ${action}` }]);
@@ -184,9 +181,7 @@ describe('review rendering and handoff', () => {
 
 interface OutputSchema {
   type: 'object' | 'boolean' | 'string' | 'integer';
-  properties?: Record<string, OutputSchema>;
-  required?: string[];
-  additionalProperties?: boolean;
+  properties?: Record<string, OutputSchema>; required?: string[]; additionalProperties?: boolean;
 }
 interface ScriptNode { script?: string; output_format?: OutputSchema; loop_group?: { nodes: ScriptNode[] } }
 const workflow = Bun.YAML.parse(readFileSync(join(scripts, '../implement-change.yaml'), 'utf8')) as { nodes: ScriptNode[] };
@@ -217,8 +212,7 @@ test('review script output check permits optional fields and enforces required a
   expect(() => checkOutput(schema, { files: 'file.txt', unexpected: '' })).toThrow();
 });
 
-let box: Sandbox;
-let artifacts: string;
+let box: Sandbox; let artifacts: string;
 beforeEach(() => { box = createSandbox(); artifacts = join(box.binDir, 'artifacts'); mkdirSync(artifacts); });
 afterEach(() => box.dispose());
 function run(name: string, inputs: Record<string, unknown> = {}, fails = false): Record<string, unknown> {
@@ -230,10 +224,8 @@ function run(name: string, inputs: Record<string, unknown> = {}, fails = false):
   expect(output.stderr).toBe(''); expect(output.status).toBe(0);
   const parsed = JSON.parse(output.stdout) as Record<string, unknown>;
   expect(output.stdout.trim().split('\n')).toHaveLength(1);
-  const schema = outputSchemas.get(name);
-  if (!schema) throw new Error(`No output schema for ${name}`);
-  checkOutput(schema, parsed);
-  return parsed;
+  const schema = outputSchemas.get(name); if (!schema) throw new Error(`No output schema for ${name}`);
+  checkOutput(schema, parsed); return parsed;
 }
 const read = (file: string): string => readFileSync(join(artifacts, file), 'utf8');
 const persisted = (): ReviewState => JSON.parse(read('review/state.json')) as ReviewState;
@@ -314,8 +306,7 @@ describe('INT-009 review scripts against real git', () => {
     const start = box.head(); box.commitFix();
     record(prepare('initial', start), [defect({ severity: 'low' })]);
     run('hand-off-review');
-    const tail = prepare('tail');
-    expect(tail.needed).toBe(false);
+    expect(prepare('tail').needed).toBe(false);
     expect(persisted().cycles).toHaveLength(1);
   });
   test('fix and re-review scripts maintain incremental revision, blocked commits get tail review and handoff is idempotent', () => {
@@ -427,6 +418,15 @@ test('a review round answer starts the feedback review before the late commit it
   expect(pendingReviewRound(artifacts)).toEqual(['DECIDE-2', late]); const later = join(artifacts, 'review-answers-round-2.json');
   writeFileSync(later, JSON.stringify({ round: 2, answers: [{ item: late, option: 'keep' }] })); expect(pendingReviewRound(artifacts)).toEqual([]); rmSync(later); markReviewRoundDone(artifacts);
   expect([pendingReviewRound(artifacts), reviewedCommits(artifacts)]).toEqual([[], [late]]);
+});
+
+test('a finalize review covers only its cycle\'s fix and keeps what it reviewed off the late commits', () => {
+  const ran = box.head(); const fix = box.commitFix('ci fix\n'); const input = { place: 'finalize', mode: 'finalize', change_dir: 'openspec/changes/demo', round: 2 };
+  const prepared = run('prepare-review', { ...input, start: ran }); expect([prepared.start, prepared.end, prepared.files]).toEqual([ran, fix, 'file.txt']);
+  record({ ...prepared, place: 'finalize' }, [defect()], 'finalize'); expect(reviewedCommits(artifacts)).toEqual([fix]); const refix = box.commitFix('review fix\n');
+  const fixed = run('record-review-fixes', { review_name: 'fix-ci-fix-findings', result: { blocked: false, reason: '', actions: [{ id: 'REVIEW-1', action: 'fixed', note: 'done' }] } });
+  run('end-review-round', { place: 'finalize', blocked: false, end: fixed.end, review_name: 'ci-fix-re-review', result: { verdicts: [{ id: 'REVIEW-1', verdict: 'confirmed', reason: 'ok' }], findings: [] } });
+  expect(reviewedCommits(artifacts)).toEqual([fix, refix]);
 });
 
 test('late commits gain a review round option, follow-ups get the workflow wording, and yellow items that recommend work move to orange', () => {

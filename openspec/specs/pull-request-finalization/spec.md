@@ -29,7 +29,7 @@ The workflow SHALL run up to three cycles, each of which waits for CI on the pul
 
 #### Scenario: CI fails or comments need action
 - **WHEN** a cycle's wait reports failed checks or review comments to act on
-- **THEN** the implementor fixes them, commits and pushes, and the next cycle waits again
+- **THEN** the implementor fixes them and commits, the fix is reviewed when code review is on, the workflow pushes, and the next cycle waits again
 
 #### Scenario: CI is still running
 - **WHEN** a cycle's wait ends with checks still pending

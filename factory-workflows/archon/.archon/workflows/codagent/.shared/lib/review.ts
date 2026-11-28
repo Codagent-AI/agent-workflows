@@ -1,5 +1,5 @@
 // Finding IDs, transitions and bounded debate are owned by the workflow, never by agents.
-export type Place = 'before-pr' | 'acceptance' | 'feedback';
+export type Place = 'before-pr' | 'acceptance' | 'feedback' | 'finalize';
 export type FindingState = 'open' | 'fixed' | 'declined' | 'contested' | 'replied' | 'closed' | 'disputed';
 export interface Defect {
   title: string;

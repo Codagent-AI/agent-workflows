@@ -1,5 +1,54 @@
 ## MODIFIED Requirements
 
+### Requirement: A script checks the ranking
+A script SHALL build its own list of required items from files the ranking agent does not write, and SHALL reject a ranking that leaves one out or ranks it lower than its tier:
+- the checklist's failed and unverified rows and each failed step must be red;
+- an unverified row that names an existing test when finalize passed with checks must be at least yellow;
+- each other open dispute-log entry other than a pull request comment, spec-change disputes included, and the commits after the accepted head, must be at least orange;
+- each open decision-log entry and each open pull request comment dispute must be at least yellow.
+
+A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes.
+
+#### Scenario: Spec-change dispute in orange
+- **WHEN** the ranking puts a dispute that needs a spec change in orange
+- **THEN** the check accepts it
+
+#### Scenario: Ranking leaves out a required item
+- **WHEN** the ranking omits a failed checklist row
+- **THEN** the check rejects it, naming the row, and the ranking agent repairs the ranking once
+
+#### Scenario: Ranking leaves out an open decision
+- **WHEN** the ranking has no item for an open decision-log entry
+- **THEN** the check rejects it, naming the entry
+
+#### Scenario: Ranking leaves out a pull request comment dispute
+- **WHEN** the ranking has no item for an open pull request comment dispute
+- **THEN** the check rejects it, naming the entry
+
+#### Scenario: Decision settled in an earlier round
+- **WHEN** the reviewer answered a decision's item in round 1 and the response record marks it unchanged
+- **THEN** the round 2 ranking need not include it
+
+#### Scenario: Grouped answer
+- **WHEN** an item covering two decisions was answered in round 1 and the response record marks it fixed
+- **THEN** neither decision is required in round 2
+
+#### Scenario: Declined answer stays open
+- **WHEN** the response record marks a decision's answer declined
+- **THEN** the decision is still required in the next round
+
+#### Scenario: Disputes with questions of their own
+- **WHEN** an item covering two spec-change disputes asked one question for each, and the response record marks one fixed and the other declined
+- **THEN** only the fixed dispute is settled, and the declined one is still required in the next round
+
+#### Scenario: Ranking is still wrong after its repair
+- **WHEN** the repaired ranking still fails the check
+- **THEN** the script keeps every valid item the ranking agent gave, places each missing or underranked required item in its tier itself, and the package is written
+
+#### Scenario: Ranking agent's judgment
+- **WHEN** the ranking agent puts a required item above its minimum, such as an open decision in orange
+- **THEN** the check accepts the tier the ranking agent gave it
+
 ### Requirement: Every item is ranked in one tier
 The reviewer, in a fresh session after finalize, SHALL rank every item from the testing evidence, the decision log and the dispute log into exactly one of red, orange and yellow, by the Agent Factory's tier rules without their Agent Validator, task-compliance, resume and plan-revision parts. Every open decision-log and dispute-log entry SHALL be ranked. A decision SHALL be ranked by how costly it would be if it is wrong, whether or not it changes behavior. Items that share one root cause SHALL become one item, in the highest tier any of them reaches, listing each symptom. When finalize passed CI, a checklist row that is not verified but names an automated test a CI suite runs SHALL count as verified by that test. A spec behavior that acceptance tried and saw pass SHALL NOT be an item. A behavior that only automated tests checked, which acceptance never tried, SHALL be a Risk item. Those of one feature SHALL share one item, one item per feature, that says what a person has not yet seen working and which tests check it. A dispute asking for a spec change SHALL be at least orange, since it needs an answer, and red only when its gap should block the merge. An item SHALL be yellow only when its recommended option accepts it as it is, with no further work. An item that would otherwise be yellow but recommends a fix, a retest, a review round or any other work SHALL be orange. A red or orange item MAY recommend accepting it as it is.
 

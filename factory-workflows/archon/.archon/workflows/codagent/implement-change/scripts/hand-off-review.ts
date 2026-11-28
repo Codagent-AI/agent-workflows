@@ -11,7 +11,7 @@ script(() => {
     const changed = runCommand('git', ['status', '--porcelain', '--', ...logs]);
     if (changed.status !== 0) throw new Error(changed.stderr);
     if (changed.stdout.trim()) {
-      const commit = runCommand('git', ['commit', '--only', '-m', 'chore: record feedback review findings', '--', ...logs]);
+      const commit = runCommand('git', ['commit', '--only', '-m', `chore: record ${process.env.INPUTS_PLACE || 'feedback'} review findings`, '--', ...logs]);
       if (commit.status !== 0) throw new Error(commit.stderr);
     }
   }

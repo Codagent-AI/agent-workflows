@@ -1593,7 +1593,7 @@ nodes:
               runtime: "bun"
               timeout: 1200000
               with: {"change_name":"$INPUTS.change_name","change_folder":"$record-archive.output.change_folder","blocked":{"from":"$repair-ci-wait.output.blocked","if_skipped":false},"reason":"","result":"","previous":"$LOOP_PREV.end-ci-cycle.output.cycle","status":"","step":"ci-cycle-status","previous_blocked":false,"op":"ci-cycle-status"}
-              output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"},"ci_report":{"type":"string"}},"required":["done","fix","cycle","ci_report"],"additionalProperties":false}
+              output_format: {"type":"object","properties":{"done":{"type":"boolean"},"fix":{"type":"boolean"},"cycle":{"type":"integer"},"ci_report":{"type":"string"},"head":{"type":"string"}},"required":["done","fix","cycle","ci_report","head"],"additionalProperties":false}
 
             - id: "fix-pr"
               depends_on: ["ci-cycle-status"]
@@ -1606,9 +1606,116 @@ nodes:
 
               output_format: *implementor-result
 
+            # A fresh reviewer reviews the cycle's fix, with one fix round, before it is pushed,
+            # so a CI fix is not left to the person as a late commit.
+            - id: prepare-ci-fix-review
+              depends_on: [fix-pr]
+              when: "$validate-inputs.output.review == 'true' && $ci-cycle-status.output.fix == 'true' && $fix-pr.output.blocked == 'false'"
+              script: prepare-review
+              runtime: bun
+              with: &ci-fix-review
+                place: finalize
+                mode: finalize
+                answers_file: ""
+                start: $ci-cycle-status.output.head
+                change_dir: $record-archive.output.change_folder
+                round: $start-round.output.round
+              output_format: *review-range
+
+            - id: ci-fix-review
+              depends_on: [prepare-ci-fix-review]
+              when: "$prepare-ci-fix-review.output.needed == 'true'"
+              model: ['@reviewer', medium]
+              context: fresh
+              mutates_checkout: false
+              command: review-change
+              with:
+                place: finalize
+                requested: ""
+                feedback_revisions: ""
+                change_dir: $record-archive.output.change_folder
+                start: $prepare-ci-fix-review.output.start
+                end: $prepare-ci-fix-review.output.end
+                files: $prepare-ci-fix-review.output.files
+                handed_off: $prepare-ci-fix-review.output.handed_off
+              output_format: *review-output
+
+            - id: record-ci-fix-review
+              depends_on: [prepare-ci-fix-review, ci-fix-review]
+              trigger_rule: none_failed_min_one_success
+              script: record-review
+              runtime: bun
+              with:
+                <<: *ci-fix-review
+                needed: $prepare-ci-fix-review.output.needed
+                end: $prepare-ci-fix-review.output.end
+                review_name: ci-fix-review
+                result: { from: $ci-fix-review.output, if_skipped: "" }
+              output_format: *review-settled
+
+            - id: fix-ci-fix-findings
+              depends_on: [record-ci-fix-review]
+              when: "$record-ci-fix-review.output.settled == 'false'"
+              model: ['@implementor', large]
+              context: { resume: session-report }
+              command: fix-review-findings
+              with:
+                place: finalize
+                findings: $record-ci-fix-review.output.findings
+              output_format: *implementor-result
+
+            - id: record-ci-fix-fixes
+              depends_on: [fix-ci-fix-findings]
+              script: record-review-fixes
+              runtime: bun
+              with:
+                place: finalize
+                review_name: fix-ci-fix-findings
+                result: $fix-ci-fix-findings.output
+              output_format: *review-fix-range
+
+            - id: ci-fix-re-review
+              depends_on: [record-ci-fix-fixes]
+              when: "$record-ci-fix-fixes.output.blocked == 'false'"
+              model: ['@reviewer', medium]
+              context: { resume: ci-fix-review }
+              mutates_checkout: false
+              command: re-review
+              with:
+                place: finalize
+                change_dir: $record-archive.output.change_folder
+                start: $record-ci-fix-fixes.output.start
+                end: $record-ci-fix-fixes.output.end
+                findings: $record-ci-fix-fixes.output.findings
+              output_format: *review-output
+
+            - id: end-ci-fix-review
+              depends_on: [record-ci-fix-fixes, ci-fix-re-review]
+              trigger_rule: none_failed_min_one_success
+              script: end-review-round
+              runtime: bun
+              with:
+                place: finalize
+                blocked: $record-ci-fix-fixes.output.blocked
+                end: $record-ci-fix-fixes.output.end
+                review_name: ci-fix-re-review
+                result: { from: $ci-fix-re-review.output, if_skipped: "" }
+              output_format: *review-stop
+
+            - id: hand-off-ci-fix-review
+              depends_on: [record-ci-fix-review, end-ci-fix-review]
+              trigger_rule: none_failed_min_one_success
+              script: hand-off-review
+              runtime: bun
+              with:
+                place: finalize
+                change_dir: $record-archive.output.change_folder
+              output_format: *review-handoff
+
             - id: "push-ci-fix"
               when: "$ci-cycle-status.output.fix == 'true'"
-              depends_on: ["fix-pr"]
+              depends_on: ["fix-pr", "hand-off-ci-fix-review"]
+              trigger_rule: "none_failed_min_one_success"
               script: "finish"
               runtime: "bun"
               timeout: 2700000

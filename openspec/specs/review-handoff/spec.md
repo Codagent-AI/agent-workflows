@@ -224,12 +224,16 @@ The workflow SHALL add a red item of type Failure for each failed acceptance, re
 
 ### Requirement: A script checks the ranking
 A script SHALL build its own list of required items from files the ranking agent does not write, and SHALL reject a ranking that leaves one out or ranks it lower than its tier:
-- the checklist's failed and unverified rows, each failed step and each dispute that needs a spec change must be red;
+- the checklist's failed and unverified rows and each failed step must be red;
 - an unverified row that names an existing test when finalize passed with checks must be at least yellow;
-- each other open dispute-log entry other than a pull request comment, and the commits after the accepted head, must be at least orange;
+- each other open dispute-log entry other than a pull request comment, spec-change disputes included, and the commits after the accepted head, must be at least orange;
 - each open decision-log entry and each open pull request comment dispute must be at least yellow.
 
-A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry.
+A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes.
+
+#### Scenario: Spec-change dispute in orange
+- **WHEN** the ranking puts a dispute that needs a spec change in orange
+- **THEN** the check accepts it
 
 #### Scenario: Ranking leaves out a required item
 - **WHEN** the ranking omits a failed checklist row

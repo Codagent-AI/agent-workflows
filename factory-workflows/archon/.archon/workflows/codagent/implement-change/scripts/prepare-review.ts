@@ -10,8 +10,10 @@ import { activeFindings, findingText, handedOff, reopenRequested, startCycle, ty
 
 // The first range starts where the implementor checklist started, which Archon records as a checkout
 // observation; later ranges start at the last reviewed revision. A feedback range starts at the reviewed
-// page's head, or earlier when the reviewer sent late commits to a review round.
+// page's head, or earlier when the reviewer sent late commits to a review round. A finalize range starts
+// at the head CI ran on, so it covers only that cycle's fix.
 function startRevision(mode: string, dir: string, state: ReviewState): string {
+  if (mode === 'finalize') return required(process.env.INPUTS_START, 'start');
   if (mode === 'feedback') return reviewRoundStart(runCommand, dir, process.env.INPUTS_ANSWERS_FILE ?? '', process.env.INPUTS_START || state.last_reviewed);
   if (mode !== 'initial') return state.last_reviewed;
   const observed = checkoutStart(required(process.env.INPUTS_START, 'start'), dir, false);
