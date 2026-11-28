@@ -33,12 +33,16 @@ Paul changes the pack (`factory-workflows/archon`) in one Claude session, from d
 4. **Evals.** Run the reps Paul asks for (default 1) with the `archon-fly-eval` skill, setting `agent_workflows_ref` to the implementation branch. Paul rates reps first, and only then do you report scores.
 5. Paul merges the pack PR.
 
-**When the eval harness needs a change too.** Only the pack can be on a branch. agent-evals, the Fly launcher (`~/codagent/agent-factory`) and Archon (a commit on the fork's `dev`) run only merged code.
+**When the eval harness needs a change too.** Only the pack can be on a branch. agent-evals (which holds the Fly launcher, `evals/agent-runner/archon-fly/launcher/bin/fly-eval`) and Archon (a commit on the fork's `dev`) run only merged code.
 
 - Before the first rep, check the change for anything the harness depends on:
   - an artifact the judges read, renamed or moved;
   - a new role or pack setting;
   - a different end state for the branch, the PR or the change, which the delivery check would reject.
 - Make that harness change in the same session, as its own PR from a sibling worktree of that repo. Make it work with both the branch and pack main, for example by keying it off a setting the pack declares, so the baseline and the weekly eval don't change.
-- After Paul merges it, fast-forward that main checkout (for agent-factory, also run `uv sync --frozen`), then launch the reps.
+- After Paul merges it, fast-forward that main checkout (the launcher needs no install step), then launch the reps.
 - A rep that fails with owner `evaluation-harness`, or fails delivery verification, usually means a missed harness change. Fix it the same way, then rescore or rerun.
+
+## Design doc
+
+The design of Codagent on Archon as a whole, with the architecture of the factory, is a private claude.ai artifact: https://claude.ai/artifact/VoxywQB5VkgqcNDTHsaV1q. The pack's own design doc is named in `factory-workflows/archon/AGENTS.md`. Keep this one up to date as the repository changes. When you define a change that alters the big picture (the architecture, the layout, how the projects connect, or what Archon provides), update the doc during the define workflow, ideally at the proposal stage, and mark what the change adds until it merges. Don't update it while implementing a change, or list it as implementation work in a proposal: an implementation run, such as Archon's, can't open or republish a private claude.ai page. To update it, read it with the Artifact tool, edit that copy, and republish to the same URL. Don't make it more detailed: it should have all the important details, and everything in it should be accurate.

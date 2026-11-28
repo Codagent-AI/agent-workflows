@@ -52,3 +52,7 @@ No test or fixture may read these files, quote them, or check that a node's reso
 - Commit the decision and dispute logs before archive; later agent entries belong to the committed current change folder. Preserve unrelated index and worktree changes during archive commits.
 - PR state and description mutations use the forge. The finalize fixer may reply/resolve comment threads with gh; mark every reply with `<!-- codagent-reply -->`. Merge only on the reviewer’s current-page merge answer and only at the reviewed head when archive and finalize passed.
 - Ranking requirements are inventoried independently of the ranking agent. Preserve external PR text and verify the published generated body by reading it back.
+
+## Design doc
+
+The pack's high-level design is a private claude.ai artifact: https://claude.ai/artifact/MjJSm1v3iftyrPdrV4ZVLj. Keep it up to date as the pack changes. When you define a change to the pack, update the doc during the define workflow, ideally at the proposal stage, and mark what the change adds until it merges. Don't update it while implementing a change, or list it as implementation work in a proposal: an implementation run, such as Archon's, can't open or republish a private claude.ai page. To update it, read it with the Artifact tool, edit that copy, and republish to the same URL. Don't make it more detailed: it should have all the important details, and everything in it should be accurate.
