@@ -103,18 +103,22 @@ try {
     console.log(`Tarball starts with:\n${run("tar", ["-tzf", join(out, asset)]).split("\n").slice(0, 5).join("\n")}`);
     console.log(`checksums.txt:\n${readFileSync(join(out, "checksums.txt"), "utf8")}`);
   } else {
-    let draft = "";
-    try {
-      draft = run("gh", ["release", "view", tag, "--repo", repo, "--json", "isDraft", "--jq", ".isDraft"]).trim();
-    } catch {
-      // No release exists, which is the normal case.
-    }
-    if (draft === "true") run("gh", ["release", "delete", tag, "--repo", repo, "--yes"]);
+    // Drafts are found through the API: a draft has no tag, so the tag lookups of
+    // `gh release view` and `gh release edit` may not see it, and GitHub allows several
+    // drafts for one tag name. A failed lookup stops the run instead of being ignored.
+    const draftIds = () =>
+      run("gh", [
+        "api", "--paginate", `repos/${repo}/releases`,
+        "--jq", `.[] | select(.draft and .tag_name == "${tag}") | .id`,
+      ]).split("\n").filter(Boolean);
+    for (const id of draftIds()) run("gh", ["api", "-X", "DELETE", `repos/${repo}/releases/${id}`]);
     runShown("gh", [
       "release", "create", tag, "--repo", repo, "--draft", "--target", process.env.GITHUB_SHA, "--title", tag,
       "--notes-file", join(out, "notes.md"), join(out, asset), join(out, "checksums.txt"),
     ]);
-    runShown("gh", ["release", "edit", tag, "--repo", repo, "--draft=false"]);
+    const created = draftIds();
+    if (created.length !== 1) throw new Error(`Expected one draft release for ${tag}, found ${created.length}.`);
+    run("gh", ["api", "-X", "PATCH", `repos/${repo}/releases/${created[0]}`, "-F", "draft=false"]);
     console.log(`Released ${tag}.`);
   }
 } finally {
