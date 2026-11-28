@@ -74,4 +74,6 @@ Logs are in `$TMPDIR/define-openspec-change-<uid>/`.
 
 The server starts one `acpx exec` per reviewer, sends the lead's prompt on stdin and reads ACP events for the final answers. Claude and Codex use acpx's built-in profiles. The agy entry uses the local `agy acp` command. acpx honors its user and repository config, with command-line options supplying the working folder, model, timeout and approval policy.
 
+Run crosschecks only in repositories and checkouts you trust. A repository's `.acpxrc.json` can replace a reviewer command or add MCP servers. acpx can launch those commands with access to the reviewer's environment before the reviewer reads the prompt.
+
 The MCP tools `crosscheck`, `get_crosscheck`, and `cancel_crosscheck` supervise the batch. Only one batch runs at a time, and `next_step` waits for the batch to finish or be cancelled. When a call names a define, its result is recorded with that define's current step. Earlier state files continue to load.

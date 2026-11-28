@@ -44290,22 +44290,42 @@ function resolveCrosscheck(lead, env) {
 }
 
 // src/acpx-version.ts
-function supportedAcpxVersion(output3) {
-  const version2 = output3.trim().match(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[\w.-]+)?(?:\+[\w.-]+)?$/);
+function supportedAcpxVersion(versionText) {
+  const version2 = versionText.trim().match(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[\w.-]+)?(?:\+[\w.-]+)?$/);
   if (!version2) {
     return false;
   }
   const [, major, minor, patch, prerelease] = version2;
   return Number(major) > 0 || Number(minor) > 23 || Number(minor) === 23 && (Number(patch) > 0 || prerelease === void 0);
 }
+var REQUIREMENT = "Crosscheck requires acpx 0.23 or later on PATH.";
+function acpxProbeRefusal(result) {
+  if (result.code === 0) {
+    if (supportedAcpxVersion(result.stdout)) {
+      return void 0;
+    }
+    const version2 = tail(result.stdout);
+    const detail2 = version2 ? `Detected acpx version: ${version2}.` : "acpx --version returned no version.";
+    return `${REQUIREMENT} ${detail2} ${SETUP_HINT}`;
+  }
+  const exit = result.code === null ? "killed or timed out" : `exit ${result.code}`;
+  const status = result.launchError ? "could not start" : exit;
+  const detail = tail(output2(result));
+  return [`acpx --version failed (${status}).`, detail, SETUP_HINT].filter(Boolean).join(" ");
+}
 var AcpxVersion = class {
   usable = false;
   async refusal(cwd, env) {
-    if (!this.usable && onPath("acpx", env)) {
-      const result = await run("acpx", ["--version"], { cwd, env, timeoutMs: 5e3 });
-      this.usable = result.code === 0 && supportedAcpxVersion(result.stdout);
+    if (this.usable) {
+      return void 0;
     }
-    return this.usable ? void 0 : `Crosscheck requires acpx 0.23 or later on PATH. ${SETUP_HINT}`;
+    if (!onPath("acpx", env)) {
+      return `${REQUIREMENT} ${SETUP_HINT}`;
+    }
+    const result = await run("acpx", ["--version"], { cwd, env, timeoutMs: 5e3 });
+    const refusal = acpxProbeRefusal(result);
+    this.usable = refusal === void 0;
+    return refusal;
   }
 };
 
@@ -44317,6 +44337,12 @@ function formatElapsed(start, end) {
   const seconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1e3));
   const minutes = Math.floor(seconds / 60);
   return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+}
+function settledStatus(reviewers) {
+  if (reviewers.some(({ outcome }) => outcome?.status === "canceled")) {
+    return "canceled";
+  }
+  return reviewers.every(({ outcome }) => outcome?.status === "succeeded") ? "succeeded" : "failed";
 }
 function reviewerResult(reviewer, now, running) {
   const { cli, model, effort } = reviewer.entry;
@@ -44688,7 +44714,6 @@ import { join as join7 } from "node:path";
 // src/reviewoutcome.ts
 import { createReadStream, readFileSync as readFileSync3 } from "node:fs";
 import { join as join6 } from "node:path";
-import { createInterface } from "node:readline";
 var MAX_ANSWER = 2e5;
 function parseEvent(line) {
   try {
@@ -44744,11 +44769,20 @@ var ReviewEvents = class {
     };
   }
 };
+async function* eventLines(path) {
+  let pending = "";
+  for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
+    const lines = (pending + chunk).split("\n");
+    pending = lines.pop() ?? "";
+    yield* lines;
+  }
+  if (pending) {
+    yield pending;
+  }
+}
 async function readReview(dir) {
-  const input2 = createReadStream(join6(dir, "events.ndjson"));
-  const lines = createInterface({ input: input2, crlfDelay: Infinity });
   const events = new ReviewEvents();
-  for await (const line of lines) {
+  for await (const line of eventLines(join6(dir, "events.ndjson"))) {
     const event = parseEvent(line);
     if (event) {
       events.add(event);
@@ -45290,7 +45324,7 @@ var CrosscheckManager = class {
     const reviewers = plan.entries.map(
       (entry, index) => new Reviewer(entry, join10(dir, `${index + 1}-${entry.cli}`), this.context, { root: plan.root, prompt })
     );
-    const call = { id, startedAt, status: "running", canceled: false, reviewers, done: Promise.resolve() };
+    const call = { id, startedAt, status: "running", reviewers, done: Promise.resolve() };
     this.active = call;
     this.calls.set(id, call);
     logEvent(this.context, plan.root, "crosscheck_start", { crosscheck_id: id, change_name: plan.owner?.name });
@@ -45309,10 +45343,7 @@ var CrosscheckManager = class {
     call.endedAt = this.context.now();
     const options = { cwd: plan.root, env: this.context.env };
     call.tree = await compareTrees(before, await snapshotTree(options), options);
-    call.status = call.reviewers.every((reviewer) => reviewer.outcome?.status === "succeeded") ? "succeeded" : "failed";
-    if (call.canceled) {
-      call.status = "canceled";
-    }
+    call.status = settledStatus(call.reviewers);
     record2(this.context, plan, call);
     logEvent(this.context, plan.root, "crosscheck_end", { crosscheck_id: call.id, status: call.status, working_tree: call.tree.working_tree });
   }
@@ -45330,7 +45361,6 @@ var CrosscheckManager = class {
   }
   stop(call, grace) {
     if (call.status === "running") {
-      call.canceled = true;
       for (const reviewer of call.reviewers) {
         reviewer.stop("canceled", grace);
       }

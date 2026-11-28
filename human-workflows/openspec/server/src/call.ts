@@ -13,7 +13,6 @@ export interface Crosscheck {
   reviewers: Reviewer[];
   tree?: TreeResult;
   done: Promise<void>;
-  canceled: boolean;
 }
 
 export function errorText(code: string, message: string, extra: Record<string, unknown> = {}): ToolText {
@@ -27,7 +26,14 @@ function formatElapsed(start: Date, end: Date): string {
 }
 
 type ReviewerDetails = Pick<Reviewer, "entry" | "outcome" | "startedAt" | "endedAt">;
-type BatchDetails = Omit<Crosscheck, "reviewers" | "done" | "canceled"> & { reviewers: readonly ReviewerDetails[] };
+type BatchDetails = Omit<Crosscheck, "reviewers" | "done"> & { reviewers: readonly ReviewerDetails[] };
+
+export function settledStatus(reviewers: readonly Pick<Reviewer, "outcome">[]): Exclude<Status, "running"> {
+  if (reviewers.some(({ outcome }) => outcome?.status === "canceled")) {
+    return "canceled";
+  }
+  return reviewers.every(({ outcome }) => outcome?.status === "succeeded") ? "succeeded" : "failed";
+}
 
 function reviewerResult(reviewer: ReviewerDetails, now: Date, running: boolean) {
   const { cli, model, effort } = reviewer.entry;

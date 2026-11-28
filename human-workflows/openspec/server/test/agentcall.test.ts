@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -271,8 +272,9 @@ test("result formatting omits interim answers and sets MCP error only for no suc
   assert.equal(snapshotOf({ ...batch, status: "failed", reviewers: [failure] }, now).isError, true);
 });
 
-test("review parser matches the prompt response, skips malformed lines, and falls back to any stop reason", async () => {
-  const { dir } = makeFixture();
+test("review parser matches the prompt response, skips malformed lines, and falls back to any stop reason", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "crosscheck-parser-"));
+  t.after(() => rmSync(dir, { recursive: true }));
   const chunk = (text: string) => ({
     method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
   });
@@ -282,13 +284,13 @@ test("review parser matches the prompt response, skips malformed lines, and fall
   const events = join(dir, "events.ndjson");
   writeFileSync(join(dir, "stderr.txt"), `${"padding ".repeat(500)}error tail`);
   const log = [
-    prompt, chunk("first"), chunk(" and "), chunk("last"),
+    prompt, chunk("first\u2028second\u2029third"), chunk(" and "), chunk("last"),
     { id: 6, error: { message: "recovered error", data: { details: "recovered detail" } } },
     response, other, { id: 9, error: { message: "fallback error" } },
   ];
-  writeFileSync(events, `not json\n${log.map((event) => JSON.stringify(event)).join("\n")}`);
+  writeFileSync(events, `not json\n${log.map((event) => JSON.stringify(event)).join("\r\n")}`);
   const matched = await readReview(dir);
-  assert.equal(matched.answer, "first and last");
+  assert.equal(matched.answer, "first\u2028second\u2029third and last");
   assert.equal(matched.stop, "end_turn");
   assert.doesNotMatch(matched.error, /recovered/);
   assert.match(matched.error, /^fallback error\n\.\.\..*error tail$/);

@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { acpxProbeRefusal } from "../src/acpx-version.js";
+import { settledStatus } from "../src/call.js";
 import { newState, STATE_FILE } from "../src/state.js";
 import { loadWorkflow, parseWorkflow, renderStep, stepIds, WorkflowError } from "../src/steps.js";
 import {
@@ -468,4 +470,23 @@ test("INTEG-5: unnamed reviews run outside git and invalid named reviews never l
     assert.equal(JSON.parse(refused.text).error.code, "define_not_in_progress");
   }
   assert.equal(fakeLog(fixture).filter(({ bin }) => bin === "acpx").length, 1);
+});
+
+
+test("acpx probe refusals distinguish launch errors, exits, signals, and old versions", () => {
+  const empty = { stdout: "", stderr: "" };
+  assert.match(acpxProbeRefusal({ ...empty, code: null, launchError: "spawn ENOENT" }) ?? "", /could not start.*spawn ENOENT/);
+  assert.match(acpxProbeRefusal({ ...empty, code: null }) ?? "", /killed or timed out/);
+  assert.match(acpxProbeRefusal({ ...empty, code: 7, stderr: "Node is too old" }) ?? "", /exit 7.*Node is too old/);
+  assert.match(acpxProbeRefusal({ ...empty, code: 0, stdout: "0.22.9\n" }) ?? "", /requires acpx 0\.23.*0\.22\.9.*setup/);
+  assert.equal(acpxProbeRefusal({ ...empty, code: 0, stdout: "0.23.0\n" }), undefined);
+});
+
+test("settled batch status reflects completed reviewer outcomes", () => {
+  const success = { outcome: { status: "succeeded", response: "review" } } as const;
+  const failure = { outcome: { status: "failed", code: "timeout", error: "timed out" } } as const;
+  const canceled = { outcome: { status: "canceled" } } as const;
+  assert.equal(settledStatus([success]), "succeeded");
+  assert.equal(settledStatus([success, failure]), "failed");
+  assert.equal(settledStatus([success, canceled]), "canceled");
 });

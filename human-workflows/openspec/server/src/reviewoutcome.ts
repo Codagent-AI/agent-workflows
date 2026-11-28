@@ -1,6 +1,5 @@
 import { createReadStream, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 
 import { tail } from "./proc.js";
 
@@ -80,11 +79,21 @@ class ReviewEvents {
   }
 }
 
+async function* eventLines(path: string): AsyncGenerator<string> {
+  let pending = "";
+  for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
+    const lines = (pending + chunk).split("\n");
+    pending = lines.pop() ?? "";
+    yield* lines;
+  }
+  if (pending) {
+    yield pending;
+  }
+}
+
 export async function readReview(dir: string): Promise<ReviewOutput> {
-  const input = createReadStream(join(dir, "events.ndjson"));
-  const lines = createInterface({ input, crlfDelay: Infinity });
   const events = new ReviewEvents();
-  for await (const line of lines) {
+  for await (const line of eventLines(join(dir, "events.ndjson"))) {
     const event = parseEvent(line);
     if (event) {
       events.add(event);

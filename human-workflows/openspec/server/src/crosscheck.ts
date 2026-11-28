@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { detectLead, effortApplied } from "./acpx.js";
 import { AcpxVersion } from "./acpx-version.js";
-import { type Crosscheck, errorText, snapshotOf } from "./call.js";
+import { type Crosscheck, errorText, settledStatus, snapshotOf } from "./call.js";
 import { newCrosscheckId, reserveLogDir } from "./callchild.js";
 import { isValidChangeName } from "./checks.js";
 import { type CrosscheckChoice, resolveCrosscheck } from "./config.js";
@@ -170,7 +170,7 @@ export class CrosscheckManager {
     const reviewers = plan.entries.map((entry, index) =>
       new Reviewer(entry, join(dir, `${index + 1}-${entry.cli}`), this.context, { root: plan.root, prompt }),
     );
-    const call: Crosscheck = { id, startedAt, status: "running", canceled: false, reviewers, done: Promise.resolve() };
+    const call: Crosscheck = { id, startedAt, status: "running", reviewers, done: Promise.resolve() };
     this.active = call;
     this.calls.set(id, call);
     logEvent(this.context, plan.root, "crosscheck_start", { crosscheck_id: id, change_name: plan.owner?.name });
@@ -190,10 +190,7 @@ export class CrosscheckManager {
     call.endedAt = this.context.now();
     const options = { cwd: plan.root, env: this.context.env };
     call.tree = await compareTrees(before, await snapshotTree(options), options);
-    call.status = call.reviewers.every((reviewer) => reviewer.outcome?.status === "succeeded") ? "succeeded" : "failed";
-    if (call.canceled) {
-      call.status = "canceled";
-    }
+    call.status = settledStatus(call.reviewers);
     record(this.context, plan, call);
     logEvent(this.context, plan.root, "crosscheck_end", { crosscheck_id: call.id, status: call.status, working_tree: call.tree.working_tree });
   }
@@ -214,7 +211,6 @@ export class CrosscheckManager {
 
   private stop(call: Crosscheck, grace?: number): void {
     if (call.status === "running") {
-      call.canceled = true;
       for (const reviewer of call.reviewers) {
         reviewer.stop("canceled", grace);
       }
