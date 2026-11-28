@@ -7,7 +7,7 @@ A script SHALL build its own list of required items from files the ranking agent
 - each other open dispute-log entry other than a pull request comment, spec-change disputes included, and the commits after the accepted head, must be at least orange;
 - each open decision-log entry and each open pull request comment dispute must be at least yellow.
 
-A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes. An item that repeats an earlier answer SHALL be required only at yellow.
+A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled, and SHALL be open again once it changes after its latest answer. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes. An item that repeats an earlier answer SHALL be required only at yellow.
 
 #### Scenario: Spec-change dispute in orange
 - **WHEN** the ranking puts a dispute that needs a spec change in orange

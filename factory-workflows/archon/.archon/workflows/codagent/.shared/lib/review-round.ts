@@ -4,8 +4,8 @@ import { retainedChangeFolder } from './archive.ts';
 import { fail } from './check.ts';
 import { OPS, type PrView } from './forge.ts';
 import type { Tools } from './pull-request.ts';
-import { description, type PageEntry, type PageItem, pagesPath, publishedItems, readPages, sentBlock, updateDescription, viewNumber } from './review-pages.ts';
-import { followUp } from './review-questions.ts';
+import { description, type PageEntry, type PageItem, pagesPath, publishedItems, readPages, sentBlock, sharedSources, updateDescription, viewNumber } from './review-pages.ts';
+import { asksNoWork, followUp } from './review-questions.ts';
 import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
 export interface Choice {
@@ -158,10 +158,10 @@ function followUpIssue(input: RoundInput, page: PageEntry, choice: Choice, item?
 }
 
 // Each follow-up answer files an issue for its item. The marker lets a resumed round find the issue it filed instead of filing another.
-function fileFollowUps(tools: Tools, input: RoundInput, page: PageEntry): void {
+function filePageFollowUps(tools: Tools, input: RoundInput, page: PageEntry): string[] {
   const file = answersPath(input.dir, page.round);
   const saved = readJson<SavedAnswer | null>(file, null);
-  if (!saved?.answers?.some(choice => choice.option === followUp.id && !choice.issue)) return;
+  if (!saved?.answers?.some(choice => choice.option === followUp.id && !choice.issue)) return [];
   const items = publishedItems(input.dir, page);
   const problems: string[] = [];
   const answers = saved.answers.map(choice => {
@@ -173,6 +173,20 @@ function fileFollowUps(tools: Tools, input: RoundInput, page: PageEntry): void {
     return choice;
   });
   writeJson(file, { ...saved, answers });
+  return problems;
+}
+
+/** Whether a page after this round answered the follow-up failure without asking for work, leaving its missing issues to the person. */
+function followUpsLeft(dir: string, pages: PageEntry[], round: number): boolean {
+  return pages.some(page => page.round > round && (readJson<SavedAnswer | null>(answersPath(dir, page.round), null)?.answers ?? []).some(choice =>
+    (sharedSources(dir, page).get(choice.item) ?? [choice.item]).includes('failure:follow-up') && asksNoWork([choice])));
+}
+
+// A follow-up that could not be filed is tried again each round, until it is filed or the person takes it on, so its failure stays on the page.
+function fileFollowUps(tools: Tools, input: RoundInput, page: PageEntry): void {
+  const pages = readPages(input.dir).filter(entry => entry.round <= page.round);
+  const pending = pages.filter(entry => entry.round === page.round || !followUpsLeft(input.dir, pages, entry.round));
+  const problems = pending.flatMap(entry => filePageFollowUps(tools, input, entry));
   if (problems.length > 0) recordStep(input.dir, 'follow-up', { ...fail(problems.join('\n')), remaining: 'File the missing follow-up issues by hand.' });
 }
 

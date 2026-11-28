@@ -70,7 +70,7 @@ Choosing the spec edit SHALL make the next round make the edit the dispute's ent
 ## ADDED Requirements
 
 ### Requirement: Settled and answered items stay off later pages
-A failure the round fixed, a dispute the reviewer settled, and an item the reviewer answered that needed no further work MUST NOT appear on the next page as items. A settled dispute SHALL stay in the dispute log. An item whose answer asked for no work, by keeping, leaving, dropping or following it up with no note or Other text, SHALL stay off later pages, failed steps and failed checklist rows included, until its text changes or, for a failed step, the problems behind it.
+A failure the round fixed, a dispute the reviewer settled, and an item the reviewer answered that needed no further work MUST NOT appear on the next page as items. A settled dispute SHALL stay in the dispute log. An item whose answer asked for no work, by keeping, leaving, dropping or following it up with no note or Other text, SHALL stay off later pages, failed steps and failed checklist rows included, until its text changes, or a failed step's problems, whatever the response said.
 
 #### Scenario: Failure fixed
 - **WHEN** the round fixes a failure that was a red item
@@ -84,6 +84,10 @@ A failure the round fixed, a dispute the reviewer settled, and an item the revie
 #### Scenario: Answered row changes
 - **WHEN** the reviewer leaves a checklist row that was not verified, and a later retest fails it
 - **THEN** the next page shows the row again, as failed
+
+#### Scenario: Kept dispute changes
+- **WHEN** the reviewer keeps a dispute as it is, the round's response says it needed no change, and a later round renames the dispute
+- **THEN** the next page shows the dispute again
 
 ### Requirement: A follow-up answer files an issue
 When a feedback round starts, the workflow SHALL file one GitHub issue for each answer that chose a follow-up, titled with the item's title as the page showed it, with the item's text, its decision or dispute log entry and the answer's note. It SHALL record the issue's link on the saved answer, and the round's implementor SHALL name the issue in its response and in the entry's Settled line.
@@ -101,7 +105,7 @@ Each follow-up option SHALL read "File a follow-up issue" and say that the next 
 - **THEN** the page shows "File a follow-up issue" with the workflow's wording
 
 ### Requirement: A follow-up issue is filed once
-An issue that cannot be filed SHALL be a red Failure item on the next page. A resumed round SHALL file only the issues still missing, and SHALL find an issue it already filed instead of filing it again.
+An issue that cannot be filed SHALL be a red Failure item on the next page, and each later round SHALL try to file it again until it is filed or the reviewer answers that failure without asking for work. A resumed round SHALL file only the issues still missing, and SHALL find an issue it already filed instead of filing it again.
 
 #### Scenario: Issue cannot be filed
 - **WHEN** the forge refuses the issue
@@ -110,3 +114,11 @@ An issue that cannot be filed SHALL be a red Failure item on the next page. A re
 #### Scenario: Resumed round
 - **WHEN** a round is resumed after it filed its issues
 - **THEN** no issue is filed twice
+
+#### Scenario: Filed in a later round
+- **WHEN** an issue cannot be filed in round 2, and the reviewer answers page 2's failure item with "Fix it in the next round"
+- **THEN** round 3 files the issue
+
+#### Scenario: Reviewer takes it on
+- **WHEN** the reviewer answers the failure item with "Leave it for me to handle"
+- **THEN** later rounds do not try to file that issue again

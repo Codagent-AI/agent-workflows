@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { tableBlocks, rawCells, isSeparatorRow } from './checklist.ts';
 import { readText, readJson, type StepResult } from './run-files.ts';
-import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
+import { asksNoWork, disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
 import { baseRevisions, commitParents, pendingReviewRound, reviewedCommits, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
@@ -190,8 +190,6 @@ export function responseStatuses(dir: string): Map<string, string> {
   return statuses;
 }
 
-// Answers that ask the next round for no work. An item answered only with these stays off later pages until it changes.
-const restingOptions = new Set(['leave', 'keep', 'drop', 'follow-up']);
 export const printsPath = (dir: string, round: number) => join(dir, 'review', `prints-round-${round}.json`);
 
 function stepProblems(dir: string, step: string | undefined): unknown {
@@ -208,7 +206,6 @@ export function itemPrint(dir: string, item: Item): string {
 
 export const itemPrints = (dir: string, items: Item[]) => Object.fromEntries(items.flatMap(item => item.source.map(source => [source, itemPrint(dir, item)])));
 
-const asksNoWork = (choices: Choice[]) => choices.every(choice => restingOptions.has(choice.option) && !choice.other?.trim() && !choice.note?.trim());
 
 /** Each source a page's answers covered, with the choices made for it. */
 function sourceChoices(dir: string, page: PageEntry): Map<string, Choice[]> {
@@ -242,19 +239,26 @@ export function answeredItems(dir: string): Answered[] {
   return [...answered.values()];
 }
 
-/** The sources among these items that the latest answer to them asked no work for, and that have not changed since. */
-export function restingSources(dir: string, items: Item[]): Set<string> {
+interface AnswerState { rests: boolean; same: boolean; changed: boolean }
+/** Each source whose latest answer came from a page that saved its text: whether that answer asked no work, and whether the item, among these items, is the same now or changed. */
+function answerStates(dir: string, items: Item[]): Map<string, AnswerState> {
   const now = itemPrints(dir, items);
-  const resting = new Set<string>();
+  const states = new Map<string, AnswerState>();
   for (const page of readPages(dir)) {
     const then = readJson<Record<string, string>>(printsPath(dir, page.round), {});
     for (const [source, rests] of answeredSources(dir, page)) {
-      if (rests && then[source] !== undefined && then[source] === now[source]) resting.add(source);
-      else resting.delete(source);
+      if (then[source] === undefined) states.delete(source);
+      else states.set(source, { rests, same: then[source] === now[source], changed: now[source] !== undefined && then[source] !== now[source] });
     }
   }
-  return resting;
+  return states;
 }
+const sourcesWhere = (states: Map<string, AnswerState>, test: (state: AnswerState) => boolean) =>
+  new Set([...states].filter(([, state]) => test(state)).map(([source]) => source));
+const rested = (state: AnswerState) => state.rests && state.same;
+
+/** The sources among these items that the latest answer to them asked no work for, and that have not changed since. */
+export const restingSources = (dir: string, items: Item[]) => sourcesWhere(answerStates(dir, items), rested);
 
 function dismissedSource(source: string, status: string): boolean {
   if (['no-change', 'unchanged', 'settled'].includes(status)) return true;
@@ -274,9 +278,11 @@ export function inventory(input: InventoryInput): Inventory {
   // Failed rows, step failures and commits still waiting for their review round stay whatever the response says,
   // but not after the person reviewing asked for no work on them and nothing about them changed.
   const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
-  const resting = restingSources(dir, required.map(row => row.item));
-  const dismissed = [...new Set([...resting, ...[...statuses]
-    .filter(([id, status]) => !(kept.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id)])];
+  // An item that changed since its latest answer shows again, whatever the response to that answer said.
+  const states = answerStates(dir, required.map(row => row.item));
+  const changed = sourcesWhere(states, state => state.changed);
+  const dismissed = [...new Set([...sourcesWhere(states, rested), ...[...statuses]
+    .filter(([id, status]) => !(kept.has(id) || changed.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id)])];
   const commands = media.commands.map(command => command.file);
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),

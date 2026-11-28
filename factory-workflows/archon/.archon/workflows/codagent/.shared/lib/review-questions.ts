@@ -3,6 +3,11 @@ export interface Question { source?: string; prompt: string; options: Option[] }
 export interface KeyEvidence { file: string; title: string; shows: string }
 export interface LateJourney { code: string; title: string; commit: string }
 
+// Answers that ask the next round for no work. An item answered only with these stays off later pages until it changes.
+const restingOptions = new Set(['leave', 'keep', 'drop', 'follow-up']);
+export const asksNoWork = (choices: { option: string; other?: string; note?: string }[]) =>
+  choices.every(choice => restingOptions.has(choice.option) && !choice.other?.trim() && !choice.note?.trim());
+
 export function validQuestion(question: Question): boolean {
   if (typeof question?.prompt !== 'string' || !question.prompt.trim() || !Array.isArray(question.options)) return false;
   const { options, source } = question;

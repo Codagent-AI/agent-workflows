@@ -118,8 +118,7 @@ const dataBlock = (html: string, id = 'page-data') => JSON.parse(new RegExp(`id=
 const publisher = () => reviewPublisher(box);
 
 test('INT-010 publishes numbered pages, relative screenshots, cloc data and merged description entries', () => {
-  steps({ logs: failedStep });
-  const forge = publisher();
+  steps({ logs: failedStep }); const forge = publisher();
   const rank = emptyRanking();
   rank.red = [item('Risk', 'CHECK-2')];
   box.write('artifacts/pr-body.md', 'Summary <img onerror=x> </script> &');
@@ -163,13 +162,16 @@ test('INT-010 publishes numbered pages, relative screenshots, cloc data and merg
 });
 const choice = (code: string, option: string) => ({ item: code, question: 0, option, other: '', note: '' });
 const feedback = (...answers: ReturnType<typeof choice>[]) => JSON.stringify({ action: 'feedback', round: 1, head: box.head(), answers, screenshotComments: [] });
-test('a follow-up answer files one issue for its item, retried on resume, and the next page lists it', () => {
-  steps(); const forge = publisher();
-  const rank = emptyRanking();
+// Round 1 answers a dispute with follow-up while the forge refuses to file issues.
+function unfiledFollowUp() {
+  steps(); const forge = publisher(); const rank = emptyRanking();
   rank.orange = [{ ...item('Dispute', 'DP-01'), title: 'Unsafe default', questions: [{ ...disputeQuestion(''), source: 'DP-01' }] }];
-  publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, options);
-  forge.refuseIssues('rate limited');
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, options); forge.refuseIssues('rate limited');
   startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('DP-01', 'follow-up')) });
+  return forge;
+}
+test('a follow-up answer files one issue for its item, retried on resume, and the next page lists it', () => {
+  const forge = unfiledFollowUp();
   const saved = () => JSON.parse(box.read('artifacts/review-answers-round-1.json')).answers[0].issue;
   expect([JSON.parse(box.read('artifacts/step-results.json'))['follow-up'].problems, saved()]).toEqual(['DP-01: rate limited', undefined]);
   forge.refuseIssues('');
@@ -182,16 +184,25 @@ test('a follow-up answer files one issue for its item, retried on resume, and th
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
   expect(dataBlock(box.read(pageFile(2))).recap).toEqual([{ note: 'Filed a follow-up issue:', label: 'Unsafe default', href: saved() }]);
 });
+test.each(['fix', 'leave'])('a follow-up that could not be filed is tried again next round until the person takes it on (%s)', answer => {
+  const forge = unfiledFollowUp();
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 }); forge.refuseIssues('');
+  startRound(forge.tools, { dir: dir(), folder, text: JSON.stringify({ action: 'feedback', round: 2, head: box.head(), answers: [choice('failure:follow-up', answer)], screenshotComments: [] }) });
+  const issue = JSON.parse(box.read('artifacts/review-answers-round-1.json')).answers[0].issue;
+  expect([issue, JSON.parse(box.read('artifacts/step-results.json'))['follow-up']]).toEqual([answer === 'fix' ? 'https://github.com/owner/repo/issues/31' : undefined, undefined]);
+});
 test('an item answered with no work stays off later pages until it changes, and a new decision or dispute may repeat it', () => {
   steps({ retest: failedStep }); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   box.write('artifacts/review/prints-round-1.json', JSON.stringify(itemPrints(dir(), inv().required.map(row => row.item))));
-  startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('failure:retest', 'leave'), choice('I-1', 'keep'), choice('I-2', 'fix')) });
-  expect(inv().required.map(row => row.item.source[0])).toEqual(['I-2', 'D-01', 'DP-01', 'DP-02']);
-  const answered = inv().context.answered; expect(answered.map(entry => entry.source)).toEqual(['failure:retest', 'I-1']);
+  startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('failure:retest', 'leave'), choice('I-1', 'keep'), choice('I-2', 'fix'), choice('DP-02', 'keep')) });
+  box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'DP-02', status: 'no-change', note: 'Kept the style' }]));
+  expect(inv().required.map(row => row.item.source[0])).toEqual(['I-2', 'D-01', 'DP-01']);
+  const answered = inv().context.answered; expect(answered.map(entry => entry.source)).toEqual(['failure:retest', 'I-1', 'DP-02']);
   const repeat = (repeats: string, tier: 'orange' | 'yellow' = 'yellow') => ({ ...emptyRanking(), [tier]: [{ ...item('Dispute', 'DP-01'), repeats }] });
   expect(['I-1', 'I-2'].map(code => checkRanking(repeat(code), inv().required, { ...inv().context, links: undefined }).problems.includes('under-ranked DP-01'))).toEqual([false, true]);
   expect([settleRepeats(repeat('I-1', 'orange'), answered).yellow[0].answered, settleRepeats(repeat('I-2', 'orange'), answered).orange[0].answered]).toEqual([{ round: 1, answer: 'keep' }, undefined]);
+  box.write(`${folder}/dispute-log.md`, box.read(`${folder}/dispute-log.md`).replace('PR comment: style', 'PR comment: naming')); expect(inv().required.at(-1)?.item.source).toEqual(['DP-02']);
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 }); expect(dataBlock(box.read(pageFile(2))).red).toEqual([]);
   steps({ retest: { ...failedStep, problems: 'a new failure' } }); expect(inv().required.map(row => row.item.source[0])).toContain('failure:retest');
 });
@@ -206,8 +217,7 @@ test.each(['archive', 'finalize'])('INT-010 %s failure hides Merge and wait-off 
   expect(data.red[0].questions[0].options[0].id).toBe('fix');
 });
 test('INT-010 later description refusal reports a red item while a first refusal throws', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   forge.denyDescription();
   expect(() => publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options)).toThrow('Description edit refused');
   expect(box.exists(pageFile(1))).toBe(false);
@@ -215,8 +225,7 @@ test('INT-010 later description refusal reports a red item while a first refusal
   expect(dataBlock(box.read(pageFile(2))).red[0].source).toEqual(['failure:description']);
 });
 test('INT-010 stale publish returns the current wait and preserves page and index', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   const html = box.read(pageFile(1));
   const saved = readPages(dir());
@@ -231,8 +240,7 @@ function started(forge: ReturnType<typeof publisher>, text: string) {
 }
 
 test('INT-007 feedback is escaped on the correct page and resumed from a single snapshot', () => {
-  steps({ 'merge-base': failedStep, logs: failedStep });
-  const forge = publisher();
+  steps({ 'merge-base': failedStep, logs: failedStep }); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   box.write('artifacts/finalize-results.json', '{"terminal":true}');
   const answer = { action: 'feedback', round: 1, head: accepted, answers: [{ item: 'I-1', question: 0, option: 'fix', note: '</script>' }], screenshotComments: [], commandComments: [{ ref: 'acceptance-commands/round-0/export.txt', round: 0, comment: 'Which option was used?' }] };
@@ -261,8 +269,7 @@ test('INT-007 feedback is escaped on the correct page and resumed from a single 
 });
 
 test.each(['', '{"action":"merge","round":0,"head":"old"}'])('INT-007 ignores stale round or empty answer %j', answer => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   const page = box.read(pageFile(1));
   expect(started(forge, answer)).toMatchObject({ mode: 'stale', round: 1 });
@@ -272,8 +279,7 @@ test.each(['', '{"action":"merge","round":0,"head":"old"}'])('INT-007 ignores st
 });
 
 test('INT-007 plain text is one note and mixed-case merge is pinned to the page head', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   expect(started(forge, '  MeRgE ')).toMatchObject({ mode: 'merged' });
   const call = forge.seen.find(entry => entry.op === 'pr.merge');
@@ -288,8 +294,7 @@ test.each([
   ['forge pr.merge refused: required approval', 'stale'],
   ['forge pr.merge outcome_unknown: no response', 'stale'],
 ])('INT-007 classifies merge failure %s as %s', (why, mode) => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   forge.refused(why);
   expect(started(forge, 'merge')).toMatchObject({ mode, reason: why });
@@ -302,16 +307,14 @@ test.each([
 });
 
 test.each(['finalize', 'archive'])('INT-007 never reaches forge merge when %s failed', blocked => {
-  steps({ [blocked]: failedStep });
-  const forge = publisher();
+  steps({ [blocked]: failedStep }); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   expect(started(forge, 'merge')).toMatchObject({ mode: 'stale', reason: expect.stringContaining(blocked) });
   expect(forge.seen.some(call => call.op === 'pr.merge')).toBe(false);
 });
 
 test.each(['closed', 'merged'])('INT-007 ends when PR was %s outside the run', state => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   if (state === 'closed') forge.close();
   else forge.merged();
@@ -319,8 +322,7 @@ test.each(['closed', 'merged'])('INT-007 ends when PR was %s outside the run', s
   expect(JSON.parse(box.read('artifacts/review/outcome.json')).mode).toBe(state);
 });
 test('INT-009 response check drops invalid entries and settled codes stay out of later rankings', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   const rank = emptyRanking();
   rank.red = [{ ...item('Risk', 'I-2'), source: ['I-2', 'CHECK-2'] }];
   publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, options);
@@ -396,8 +398,7 @@ test.each([true, false])('INT-009 spec-change fallback offers a targeted edit on
   expect(checkRanking({ ...emptyRanking(), red: [plain] }, requiredRows).problems).not.toContain('exactly the allowed options');
 });
 test('INT-007 reads the PR back after an ambiguous merge that landed', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   forge.refused('forge pr.merge verification_failed: unreadable result', true);
   expect(started(forge, 'merge')).toMatchObject({ mode: 'merged' });
@@ -407,16 +408,14 @@ test('INT-007 reads the PR back after an ambiguous merge that landed', () => {
 });
 
 test('INT-010 an unwritable review page fails publication', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   mkdirSync(box.path(pageFile(1)), { recursive: true });
   expect(() => publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options)).toThrow();
   expect(box.exists('artifacts/review/pages.json')).toBe(false);
 });
 
 test.each(['match', 'lag', 'mismatch'])('publishes only a forge-matching head with %s', scenario => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   const old = 'a'.repeat(40);
   if (scenario === 'lag') forge.heads(old, old, box.head());
   if (scenario === 'mismatch') forge.heads(old);
@@ -446,8 +445,7 @@ test('INT-009 a cited file in passing finalize CI changes an unverified row floo
   expect(inv().required.filter(row => row.item.source[0].startsWith('CHECK-')).map(row => row.tier)).toEqual(['red', 'red', 'red', 'red', 'red']);
 });
 test('INT-007 Retest selects journeys from a red Late commit and ignores an unselected orange one', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   const first = box.commitFix('journey one');
   const second = box.commitFix('journey two');
   const retest = [{ prompt: 'Rerun?', options: [{ id: 'retest', label: 'Retest' }, { id: 'leave', label: 'Leave' }] }];
@@ -462,8 +460,7 @@ test('INT-007 Retest selects journeys from a red Late commit and ignores an unse
   expect(JSON.parse(round.journeys)).toEqual([expect.objectContaining({ code: 'JOURNEY-1', scenario, repeat, artifact: 'acceptance-journeys/round-0.json' })]);
 });
 test('ranked step failures keep their details and fallback supplies a plain linked-or-linkless failure', () => {
-  steps({ finalize: failedStep, acceptance: { ...failedStep, push: true } });
-  const forge = publisher();
+  steps({ finalize: failedStep, acceptance: { ...failedStep, push: true } }); const forge = publisher();
   const ranked = { ...item('Failure', 'failure:acceptance'), title: 'Acceptance stopped', links: [], detail: 'Testing stopped before the last case.' };
   const ranking = { ...emptyRanking(), red: [ranked] };
   const failures = inv().required.filter(row => row.item.type === 'Failure' && row.item.failLine);
@@ -489,8 +486,7 @@ test('ranked step failures keep their details and fallback supplies a plain link
   expect(forge.body).toContain('2 red items');
 });
 test('rules refusal stays in the description after same-round CLI feedback and a new publish', () => {
-  steps();
-  const forge = publisher();
+  steps(); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   forge.refused('forge pr.merge refused: required approval');
   expect(started(forge, 'merge').mode).toBe('stale');
