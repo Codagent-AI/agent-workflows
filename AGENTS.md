@@ -47,7 +47,7 @@ Paul changes the pack (`factory-workflows/archon`) in one Claude session, from d
 
 - The repository has one version, in the root `VERSION` file. It covers both plugins and the Archon pack. Do not edit a version anywhere else: `node scripts/sync-versions.mjs` writes it into the plugin manifests, the define plugin's `server/package.json` and lockfile, and the Claude Code marketplace entries, and `--check` fails when any differs. The Agent Validator runs the check.
 - A release is a pull request that bumps `VERSION` and adds a `CHANGELOG.md` section, made with the `release` skill in `.claude/skills/release/`. Nobody tags by hand. Merging to `main` runs `.github/workflows/release.yml`, which runs `node scripts/release.mjs`. The script does nothing when the tag `v<version>` exists. Otherwise it creates the tag and a GitHub release, with the changelog section as notes and the pack (`factory-workflows/archon/.archon/`) attached as `agent-workflows-pack_<version>.tar.gz` with a `checksums.txt`.
-- Only the release PR changes `VERSION`. A merge that does not change it releases nothing.
+- Only the release PR changes `VERSION`. The workflow passes the push's before and after commits, and `release.mjs` releases only when the push changed `VERSION`, so a merge that does not change it releases nothing.
 
 ## Design doc
 

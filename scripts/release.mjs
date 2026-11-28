@@ -1,5 +1,10 @@
 // Makes the release for the version in VERSION. Run from the repository root by
-// the release workflow, which needs GH_TOKEN with contents: write and GITHUB_SHA.
+// the release workflow, which needs GH_TOKEN with contents: write and GITHUB_SHA,
+// and passes the push's commits as BEFORE_SHA and AFTER_SHA (a full-history checkout).
+// It releases only when that push changed VERSION, so adding this workflow, or any
+// other merge, releases nothing. A push without both variables fails. A local run, or
+// a manual workflow_dispatch run to recover from a failed release, passes neither and
+// relies on the tag check alone.
 //
 //   node scripts/release.mjs            checks, builds the assets, creates the release
 //   node scripts/release.mjs --dry-run  does everything except create the tag and release
@@ -22,12 +27,36 @@ const run = (cmd, args, options = {}) =>
 const runShown = (cmd, args, options = {}) =>
   execFileSync(cmd, args, { stdio: "inherit", ...options });
 
+function versionUnchanged(from, to) {
+  try {
+    execFileSync("git", ["diff", "--quiet", from, to, "--", "VERSION"], { stdio: ["ignore", "ignore", "inherit"] });
+    return true;
+  } catch (error) {
+    if (error.status === 1) return false;
+    throw new Error(`Cannot compare ${from} with ${to}. Check that the full history is checked out.`, { cause: error });
+  }
+}
+
 const version = readFileSync("VERSION", "utf8").trim();
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
   console.error(`VERSION must be MAJOR.MINOR.PATCH, but it is "${version}".`);
   process.exit(1);
 }
 const tag = `v${version}`;
+
+const { BEFORE_SHA: before, AFTER_SHA: after } = process.env;
+if (process.env.GITHUB_EVENT_NAME === "push" && !(before && after)) {
+  console.error("BEFORE_SHA and AFTER_SHA are required for a push.");
+  process.exit(1);
+}
+if (before && after) {
+  // An all-zero before means a new branch, which has no earlier VERSION to compare.
+  const changed = /^0+$/.test(before) || !versionUnchanged(before, after);
+  if (!changed) {
+    console.log("The push did not change VERSION, so there is nothing to release.");
+    process.exit(0);
+  }
+}
 
 if (run("git", ["ls-remote", "--tags", "origin", `refs/tags/${tag}`]).trim() !== "") {
   console.log(`Tag ${tag} exists, so there is nothing to release.`);
