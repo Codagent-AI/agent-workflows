@@ -9,3 +9,5 @@ Finding as given:
 Requirement: The current proposal's Impact section requires updates to the repository README, the plugin's `AGENTS.md`, and PROVENANCE. It explicitly assigns the two private Claude pages to work outside this implementation.
 
 Disposition: The finding described the proposal at audit time. Paul's commit `a7a892e` changed that scope. Leaving the private pages for the separate update is consistent with the current definition. See `evidence/design-artifact-scope.log` for the proposal diff and `evidence/resolve-findings-openspec.log` for validation of the revised change.
+
+Settled in review round 1. Dropped the finding and kept the two private design pages separate from the implementation.
