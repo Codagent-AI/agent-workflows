@@ -156,3 +156,38 @@ Settled in review round 2. Recorded a follow-up to detect further edits inside a
 - Evidence: `evidence/fix-pr-targeted.log`.
 
 Settled in review round 2. Kept reporting denied process-group signals to server stderr without adding a cleanup warning to the crosscheck result.
+
+## DECIDE-14: Review finding REVIEW-7, feedback round 3: Edits inside an already-dirty submodule are reported as unchanged
+
+- Question: Is this a defect that must be fixed before the change is accepted? Precondition: a submodule already shows ` M` when the crosscheck starts, because its HEAD has moved or it has uncommitted edits. During the review, something edits or adds files inside it without committing.
+
+Trace: the parent's `git status --porcelain=v1` still shows ` M nested`, and the gitlink index entry is the same. For the directory, `fileFingerprint` hashes only its mode and the value from `submoduleHead`. Neither changes.
+
+Failure: `compareTrees` returns `unchanged` although the reviewer changed files in the checkout. That answer is returned to the caller and saved in the define state. It should be `changed` or `unknown`. In a temporary repo, the parent status, index entry and submodule HEAD were identical before and after a second edit and a new untracked file inside an already-dirty submodule. The new `addDirtySubmodule` tests cover an untouched submodule and a HEAD advance, but not a content-only change. (human-workflows/openspec/server/src/worktree.ts:65, medium quality)
+- Requirement: the quality review instructions.
+- Step: feedback round 3 review handoff.
+- Decision: Declined to fix: Confirmed that edits inside an already-dirty submodule can be missed when its HEAD and dirty status stay the same. The reviewer chose to record this exact gap as a follow-up and keep it out of this PR. The reviewer accepted it.
+- Alternatives: fix or leave the finding open.
+- What breaks if wrong: Precondition: a submodule already shows ` M` when the crosscheck starts, because its HEAD has moved or it has uncommitted edits. During the review, something edits or adds files inside it without committing.
+
+Trace: the parent's `git status --porcelain=v1` still shows ` M nested`, and the gitlink index entry is the same. For the directory, `fileFingerprint` hashes only its mode and the value from `submoduleHead`. Neither changes.
+
+Failure: `compareTrees` returns `unchanged` although the reviewer changed files in the checkout. That answer is returned to the caller and saved in the define state. It should be `changed` or `unknown`. In a temporary repo, the parent status, index entry and submodule HEAD were identical before and after a second edit and a new untracked file inside an already-dirty submodule. The new `addDirtySubmodule` tests cover an untouched submodule and a HEAD advance, but not a content-only change.
+- Rationale: Precondition: a submodule already shows ` M` when the crosscheck starts, because its HEAD has moved or it has uncommitted edits. During the review, something edits or adds files inside it without committing.
+
+Trace: the parent's `git status --porcelain=v1` still shows ` M nested`, and the gitlink index entry is the same. For the directory, `fileFingerprint` hashes only its mode and the value from `submoduleHead`. Neither changes.
+
+Failure: `compareTrees` returns `unchanged` although the reviewer changed files in the checkout. That answer is returned to the caller and saved in the define state. It should be `changed` or `unknown`. In a temporary repo, the parent status, index entry and submodule HEAD were identical before and after a second edit and a new untracked file inside an already-dirty submodule. The new `addDirtySubmodule` tests cover an untouched submodule and a HEAD advance, but not a content-only change.; suggested fix: Fingerprint the submodule's working tree as well as its HEAD, using the same snapshot logic recursively:
+
+async function submoduleState(path: string, options: RunOptions): Promise<string> {
+  if (!lstatSync(join(path, ".git"), { throwIfNoEntry: false })) {
+    return "";
+  }
+  const inner = await snapshotTree({ ...options, cwd: path });
+  if (!inner) {
+    throw new Error(`Could not snapshot submodule at ${path}`);
+  }
+  return JSON.stringify([inner.head, [...inner.paths].sort(([a], [b]) => a.localeCompare(b))]);
+}
+
+In the gitlink branch, call `hash.update(await submoduleState(path, options))`. Add a test case that starts with a dirty submodule, changes a file inside it without committing, and expects `["nested"]`.; fixer declined: Confirmed that edits inside an already-dirty submodule can be missed when its HEAD and dirty status stay the same. The reviewer chose to record this exact gap as a follow-up and keep it out of this PR.; reviewer accepted: The gap is still there: further uncommitted edits inside an already-dirty submodule can be reported as `unchanged`. The decline is a deliberate scope decision, and the record supports it. Line 146 of the change's decision-log.md says review round 2 settled this exact gap as a follow-up. It covers tracked and untracked edits when the submodule commit, parent gitlink and dirty status stay the same. It also says this PR keeps only the commit fingerprint and can still miss these edits. The follow-up requires the result to name the affected submodule or report that the change couldn't be determined. The same entry shows that recursive fingerprinting was considered as an alternative and left out.. Result: review/feedback.md
