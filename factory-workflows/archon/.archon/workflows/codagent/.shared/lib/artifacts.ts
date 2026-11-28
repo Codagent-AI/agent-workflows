@@ -1,5 +1,5 @@
 // The files a run shares under `$ARTIFACTS_DIR`, by name, in one place. Agents write and read
-// the same names in their prompts and .shared/*.md, and README.md lists them: rename one
+// the same names in their prompts and .shared/*.md, and AGENTS.md lists them: rename one
 // only everywhere at once.
 import { existsSync, statSync } from 'node:fs';
 

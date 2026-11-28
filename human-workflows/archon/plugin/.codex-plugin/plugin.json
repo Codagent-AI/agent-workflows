@@ -1,6 +1,6 @@
 {
   "name": "codagent-archon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run the Codagent pack's Archon workflows from your own session: implement an approved OpenSpec change with Archon and follow the run to the end.",
   "author": {
     "name": "Codagent-AI",
