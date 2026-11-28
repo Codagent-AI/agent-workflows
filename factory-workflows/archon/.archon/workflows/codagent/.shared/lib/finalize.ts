@@ -9,6 +9,8 @@ import { readJson, writeJson, writeText, recordStep } from './run-files.ts';
 export function ciGate(status: string, blocked: boolean, cycle: number): { done: boolean; fix: boolean; cycle: number } {
   return { done: blocked || ['passed', 'error'].includes(status) || cycle >= 3, fix: !blocked && ['failed', 'comments'].includes(status), cycle };
 }
+// CodeRabbit skips draft pull requests and registers its check about a minute after one is marked ready.
+const FINALIZE_SETTLE_SECONDS = 180;
 export interface FinalizeWait { tools: Tools; sleep: Sleep; dir: string; report: string; options?: WaitOptions; }
 export function waitFinalize(input: FinalizeWait): CiResult {
   const found = lookupPr(input.tools);
@@ -17,7 +19,7 @@ export function waitFinalize(input: FinalizeWait): CiResult {
   const invalid = !found.ok || found.value.view?.pr.is_draft || !upstream || ahead !== '0';
   const invalidReason = found.ok ? 'CI wait requires a ready pull request and an upstream not ahead of this branch' : found.problem;
   const result = invalid ? blank(invalidReason) :
-    waitForCi(input.tools, input.sleep, input.options ?? { maxMinutes: 15, intervalSeconds: 30 });
+    waitForCi(input.tools, input.sleep, input.options ?? { maxMinutes: 15, intervalSeconds: 30, settleSeconds: FINALIZE_SETTLE_SECONDS });
   writeText(join(input.dir, input.report), renderReport(result));
   writeJson(join(input.dir, `${input.report}.json`), result);
   writeJson(join(input.dir, 'ci/latest.json'), result);

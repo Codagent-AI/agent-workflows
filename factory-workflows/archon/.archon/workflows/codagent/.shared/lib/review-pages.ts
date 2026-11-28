@@ -23,14 +23,19 @@ export const pagesPath = (dir: string) => join(dir, 'review/pages.json');
 export const readPages = (dir: string) => readJson<PageEntry[]>(pagesPath(dir), []);
 export const prefix = (round: number) => `Review round ${round}:`;
 
-interface PageItem { source: string[]; unlinkedSources?: string[]; questions?: { source?: string }[] }
+export interface PageItem { title: string; detail: string; source: string[]; unlinkedSources?: string[]; questions?: { source?: string }[] }
+
+/** The items a published page asked about, in every tier. */
+export function publishedItems(dir: string, page: PageEntry): PageItem[] {
+  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(readText(join(dir, page.file)))?.[1];
+  const data = JSON.parse(block ?? '{}') as Record<string, PageItem[] | undefined>;
+  return ['red', 'orange', 'yellow'].flatMap(tier => data[tier] ?? []);
+}
 
 /** Each source behind an item's shared question on a published page, with all the sources that question answers for. A question of its own source answers for that source only. */
 export function sharedSources(dir: string, page: PageEntry): Map<string, string[]> {
-  const block = /<script type="application\/json" id="page-data">([^<]*)<\/script>/.exec(readText(join(dir, page.file)))?.[1];
-  const data = JSON.parse(block ?? '{}') as Record<string, PageItem[] | undefined>;
   const shared = new Map<string, string[]>();
-  for (const item of ['red', 'orange', 'yellow'].flatMap(tier => data[tier] ?? [])) {
+  for (const item of publishedItems(dir, page)) {
     if (!item.questions?.some(question => !question.source)) continue;
     const own = new Set(item.questions?.map(question => question.source).filter(Boolean));
     const sources = item.source.filter(source => !(own.has(source) || item.unlinkedSources?.includes(source)));

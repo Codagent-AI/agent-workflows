@@ -224,8 +224,8 @@ test('publication rebuilds missing ranking from required items and refuses an un
     box.commit('commit the review sources');
     const commit = box.commitFix();
     const ranking = rankingForPublication(input);
-    expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2', 'DISPUTE-1']);
-    expect(ranking.orange.flatMap(item => item.source)).toEqual([commit]);
+    expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2']);
+    expect(ranking.orange.flatMap(item => item.source)).toEqual(['DISPUTE-1', commit]);
     box.write(`${input.changeFolder}/checklist.md`, '| No status column |');
     expect(() => rankingForPublication(input)).toThrow('checklist with Status column is missing');
   } finally {

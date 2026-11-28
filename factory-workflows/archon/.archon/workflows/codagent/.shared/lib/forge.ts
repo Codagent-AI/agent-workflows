@@ -23,9 +23,12 @@ export const OPS = {
   reviews: 'pr.reviews',
   mergeState: 'pr.merge-state',
   merge: 'pr.merge',
+  createIssue: 'workitem.create',
 } as const;
 
-export const FORGE_OPERATIONS: string[] = Object.values(OPS).filter(op => op !== OPS.merge);
+/** Only a run that waits for review merges and files follow-up issues, so only it checks for those operations. */
+const REVIEW_OPERATIONS: string[] = [OPS.merge, OPS.createIssue];
+export const FORGE_OPERATIONS: string[] = Object.values(OPS).filter(op => !REVIEW_OPERATIONS.includes(op));
 
 export interface Repo {
   host: string;
@@ -219,7 +222,7 @@ export function checkForgeAccess(exec: Exec, env: NodeJS.ProcessEnv, reviewWait 
   const host = remoteHost(remote.value.url);
   if (host === undefined) return { ...fail(`cannot read a host from the git remote '${remote.value.name}'`), message: '' };
   const forge = createForge(exec, cli);
-  const checked = forge.call<Access>('check', { host, operations: reviewWait ? [...FORGE_OPERATIONS, OPS.merge] : FORGE_OPERATIONS });
+  const checked = forge.call<Access>('check', { host, operations: reviewWait ? [...FORGE_OPERATIONS, ...REVIEW_OPERATIONS] : FORGE_OPERATIONS });
   if (!checked.ok) return { ...fail(checked.problem), message: '' };
   const mergeProblem = reviewWait ? mergeConditionProblem(forge, host) : undefined;
   if (mergeProblem) return { ...fail(mergeProblem), message: '' };

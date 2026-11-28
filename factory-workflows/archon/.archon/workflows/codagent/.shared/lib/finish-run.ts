@@ -12,7 +12,7 @@ import { evidenceRows } from './evidence.ts';
 import { acceptancePush, checkPush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type InventoryInput, type Ranking } from './review-inventory.ts';
+import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type InventoryInput, itemPrints, printsPath, type Ranking } from './review-inventory.ts';
 import { reviewMedia } from './review-media.ts';
 import { refreshBase } from './review-revisions.ts';
 import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
@@ -20,6 +20,7 @@ import { settleQuestions } from './review-questions.ts';
 import { currentPage, publishPackage } from './publish-review.ts';
 import { flagItems, pageItems, passingRewrite, readerItems, readerNotes, type Flag } from './review-reader.ts';
 import { outcomesPath, startRound } from './review-round.ts';
+import { readPages } from './review-pages.ts';
 import { abortMerge, checkResponse, finishMerge, mergeBase, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, type StepResult, writeText } from './run-files.ts';
 interface FinishInputs {
@@ -102,6 +103,8 @@ function prepareRanking(input: FinishInputs, dir: string) {
   writeJson(join(dir, 'review/evidence.json'), [...media.shots, ...media.commands]);
   writeJson(join(dir, 'review/media-problems.json'), media.problems);
   writeJson(join(dir, 'review/required.json'), inv.required);
+  // What each item says on the page this round publishes, for telling later whether an answered item changed.
+  writeJson(printsPath(dir, (readPages(dir).at(-1)?.round ?? 0) + 1), itemPrints(dir, inv.required.map(row => row.item)));
   writeJson(join(dir, 'review/human-checks.json'), humanChecks(input.folder));
   return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
 }

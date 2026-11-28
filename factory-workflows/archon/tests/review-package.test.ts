@@ -3,15 +3,15 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { Script } from 'node:vm';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { inventory, emptyRanking, stepFailures, type Item, type Ranking, type RequiredItem } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
+import { inventory, emptyRanking, itemPrints, stepFailures, type Item, type Ranking, type RequiredItem } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
 import { publishPackage } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 import { readPages } from '../.archon/workflows/codagent/.shared/lib/review-pages.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { checkResponse, recordRetest } from '../.archon/workflows/codagent/.shared/lib/review-work.ts';
 import { resolveTarget } from '../.archon/workflows/codagent/.shared/lib/review-links.ts';
-import { standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
-import { createSandbox, type Sandbox, rule, ok, failed, prView, } from './helpers.ts';
+import { disputeQuestion, standardQuestion } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
+import { createSandbox, type Sandbox, rule, ok, failed, prView, reviewPublisher } from './helpers.ts';
 let box: Sandbox; let accepted: string;
 const folder = 'openspec/changes/demo';
 const item = (type = 'Failure', source = 'I-1'): Item => ({ type, title: `Concern for ${source}`, detail: 'specific evidence', links: [{ label: 'Source', target: type === 'Late commit' ? `commit:${source}` : 'file.txt' }], source: [source], questions: [standardQuestion(type)] });
@@ -115,40 +115,7 @@ const options = { round: 1, wait: true, run: 'review-run', archonUrl: 'http://ar
 const pageFile = (round: number) => `artifacts/review-page-round-${round}.html`;
 const dataBlock = (html: string, id = 'page-data') => JSON.parse(new RegExp(`id="${id}">([^<]*)</script>`).exec(html)?.[1] ?? 'null');
 
-function publisher() {
-  let body = 'Before\n<!-- codagent:generated-body:start -->\nold\n<!-- codagent:generated-body:end -->\nAfter';
-  const seen: { op: string; request: object }[] = [];
-  let state: 'open' | 'closed' | 'merged' = 'open';
-  let refuse = '';
-  let reportedHeads: string[] = [];
-  let mergeProblem = '';
-  let mergedOnError = false;
-  const tools = box.forgeTools([]);
-  const original = tools.forge.call.bind(tools.forge);
-  const edit = <T>(request: object) => {
-    if (refuse) return { ok: false as const, problem: refuse };
-    body = (request as { body: string }).body;
-    return { ok: true as const, value: {} as T };
-  };
-  const merge = <T>() => {
-    if (mergeProblem) {
-      if (mergedOnError) state = 'merged';
-      return { ok: false as const, problem: mergeProblem };
-    }
-    state = 'merged';
-    return { ok: true as const, value: {} as T };
-  };
-  tools.forge.call = <T>(op: string, request: object) => {
-    seen.push({ op, request });
-    if (op === 'pr.view') return { ok: true, value: prView({ state, head_revision: reportedHeads.length > 1 ? reportedHeads.shift() : reportedHeads[0] ?? box.head() }, { body }) as T };
-    if (op === 'pr.edit-body') return edit<T>(request);
-    if (op === 'pr.merge') return merge<T>();
-    return original<T>(op, request);
-  };
-  return { tools, seen, heads: (...values: string[]) => { reportedHeads = values; }, get body() { return body; }, close: () => { state = 'closed'; },
-    merged: () => { state = 'merged'; }, refused: (reason: string, wasMerged = false) => { mergeProblem = reason; mergedOnError = wasMerged; },
-    denyDescription: () => { refuse = 'Description edit refused'; } };
-}
+const publisher = () => reviewPublisher(box);
 
 test('INT-010 publishes numbered pages, relative screenshots, cloc data and merged description entries', () => {
   steps({ logs: failedStep });
@@ -178,21 +145,54 @@ test('INT-010 publishes numbered pages, relative screenshots, cloc data and merg
   expect(box.calls('cloc')[0]?.args.some(arg => arg.startsWith('--not-match-f='))).toBe(true);
   startRound(forge.tools, { dir: dir(), folder, text: 'Preserve the summary' });
   const answered = box.read(pageFile(1));
-  box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'CHECK-2', status: 'fixed', note: 'Kept the summary', commit: accepted }]));
+  box.commitFix();
+  box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'CHECK-2', status: 'fixed', note: 'Kept the summary', commit: accepted }, { item: 'note', status: 'no-change', note: 'Kept the rest' }]));
   steps({ 'merge-base': { ...passedStep, remaining: 'Merged the current base.' } });
   recordRetest(dir(), 2, false, 'Retest needs work');
   publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, { ...options, round: 2, archonUrl: '' });
   expect(box.read(pageFile(1))).toBe(answered);
   expect(box.read('artifacts/review-page.html')).toBe(box.read(pageFile(2)));
   expect(dataBlock(box.read(pageFile(2))).recap).toMatchObject([
-    { note: 'Kept the summary' },
-    { note: 'Merged the current base.' },
+    { note: 'Kept the summary' }, { note: 'Committed', label: 'fix' }, { note: 'Merged the current base.' },
   ]);
   expect(forge.body).toStartWith('Before\n');
   expect(forge.body).toEndWith('\nAfter');
   expect(forge.body.indexOf('round-1.html')).toBeLessThan(forge.body.indexOf('Review round 2'));
   expect(forge.body).toContain('feedback sent');
   expect(forge.body).toContain('Review round 2 (run review-run)');
+});
+const choice = (code: string, option: string) => ({ item: code, question: 0, option, other: '', note: '' });
+const feedback = (...answers: ReturnType<typeof choice>[]) => JSON.stringify({ action: 'feedback', round: 1, head: box.head(), answers, screenshotComments: [] });
+test('a follow-up answer files one issue for its item, retried on resume, and the next page lists it', () => {
+  steps(); const forge = publisher();
+  const rank = emptyRanking();
+  rank.orange = [{ ...item('Dispute', 'DP-01'), title: 'Unsafe default', questions: [{ ...disputeQuestion(''), source: 'DP-01' }] }];
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, options);
+  forge.refuseIssues('rate limited');
+  startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('DP-01', 'follow-up')) });
+  const saved = () => JSON.parse(box.read('artifacts/review-answers-round-1.json')).answers[0].issue;
+  expect([JSON.parse(box.read('artifacts/step-results.json'))['follow-up'].problems, saved()]).toEqual(['DP-01: rate limited', undefined]);
+  forge.refuseIssues('');
+  for (const _ of [1, 2]) startRound(forge.tools, { dir: dir(), folder, text: '' });
+  const filed = forge.seen.filter(call => call.op === 'workitem.create').map(call => call.request);
+  expect(filed).toHaveLength(2);
+  expect(filed[1]).toEqual({ repo: { host: 'github.com', path: 'owner/repo' }, title: 'Unsafe default', marker: '<!-- codagent follow-up: owner/repo#7 DP-01 -->',
+    body: expect.stringMatching(/^<!-- codagent follow-up: owner\/repo#7 DP-01 -->\n\nLeft for later in review round 1 of owner\/repo#7\.\n\nspecific evidence\n\n## DP-01: Defect\nReviewer: unsafe/) });
+  expect(saved()).toBe('https://github.com/owner/repo/issues/31');
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
+  expect(dataBlock(box.read(pageFile(2))).recap).toEqual([{ note: 'Filed a follow-up issue:', label: 'Unsafe default', href: saved() }]);
+});
+test('an item answered with no work stays off later pages until it changes', () => {
+  steps({ retest: failedStep });
+  const forge = publisher();
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
+  box.write('artifacts/review/prints-round-1.json', JSON.stringify(itemPrints(dir(), inv().required.map(row => row.item))));
+  startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('failure:retest', 'leave'), choice('I-1', 'keep'), choice('I-2', 'fix')) });
+  expect(inv().required.map(row => row.item.source[0])).toEqual(['I-2', 'D-01', 'DP-01', 'DP-02']);
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
+  expect(dataBlock(box.read(pageFile(2))).red).toEqual([]);
+  steps({ retest: { ...failedStep, problems: 'a new failure' } });
+  expect(inv().required.map(row => row.item.source[0])).toContain('failure:retest');
 });
 test.each(['archive', 'finalize'])('INT-010 %s failure hides Merge and wait-off hides sending', step => {
   steps({ [step]: failedStep });

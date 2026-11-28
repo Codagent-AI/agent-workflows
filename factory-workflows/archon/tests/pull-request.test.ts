@@ -373,7 +373,7 @@ describe('forge.ts', () => {
       for (const match of readFileSync(join(lib, file), 'utf8').matchAll(/OPS\.(\w+)/g)) named.add(match[1]);
     }
     expect([...named].sort()).toEqual(Object.keys(OPS).sort());
-    expect(new Set(FORGE_OPERATIONS)).toEqual(new Set(Object.values(OPS).filter(op => op !== OPS.merge)));
+    expect(new Set(FORGE_OPERATIONS)).toEqual(new Set(Object.values(OPS).filter(op => op !== OPS.merge && op !== OPS.createIssue)));
   });
 
   test.each([
@@ -476,4 +476,5 @@ test.each([false, true])('wait-enabled forge preflight checks declared merge con
   expect(result.ok).toBe(conditions.includes('head'));
   if (!result.ok) expect(result.problems).toContain('head condition for pr.merge');
   expect(box.calls('archon').map(call => call.args[1])).toEqual(['check', 'metadata']);
+  expect(requestOf(box.calls('archon')[0])).toMatchObject({ operations: [...FORGE_OPERATIONS, 'pr.merge', 'workitem.create'] });
 });

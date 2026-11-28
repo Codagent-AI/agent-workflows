@@ -287,6 +287,18 @@ describe('waitForCi', () => {
     expect(result.blockingReviews).toEqual([{ login: 'alice', state: 'CHANGES_REQUESTED', body: 'fix it' }]);
   });
 
+  test('a check that registers during the settle time is waited for', () => {
+    const tools = installForge({ mergeable: 'clean', overrides: [rule(['forge', 'checks.state'],
+      ok('checks.state', { units: [unit('build', 'green', 'success')] }),
+      ok('checks.state', { units: [unit('build', 'green', 'success'), unit('CodeRabbit', 'pending')] }),
+      ok('checks.state', { units: [unit('build', 'green', 'success'), unit('CodeRabbit', 'green', 'success')] }))] });
+    installGh({ mergeable: 'clean' });
+    let clock = 0;
+    const result = waitForCi(tools, ms => { clock += ms; }, { maxMinutes: 15, intervalSeconds: 30, settleSeconds: 60, now: () => clock });
+    expect(result.passedChecks.map(entry => entry.name)).toEqual(['build', 'CodeRabbit']);
+    expect(clock).toBe(60_000);
+  });
+
   test('a pull request with no checks is a valid empty state', () => {
     const { result } = wait({ mergeable: 'clean', units: [] });
     expect(result.status).toBe('passed');

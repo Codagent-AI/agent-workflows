@@ -8,6 +8,8 @@ Each answer names the chosen option by ID, label and detail. The detail says wha
 - `settled` when the reviewer resolved a dispute, including by dropping it or choosing a follow-up.
 - `spec-change` when approved behavior needs to change and the reviewer has yet to decide the resulting dispute.
 
+The workflow files a GitHub issue for each follow-up answer and records its link as the answer's issue. Name that issue in the note and in the entry's Settled line. A follow-up answer without an issue could not be filed; say so in the note.
+
 A Run a review round answer asks nothing of you here: this round's code review covers that commit after you finish. Record it as `no-change` with a note saying the commit went to this round's review.
 
 Keep failed checklist rows visible until verified. Choosing to leave a failure for the reviewer does not close the row. Report yourself blocked if the remaining work cannot proceed.

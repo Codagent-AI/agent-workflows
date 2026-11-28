@@ -9,7 +9,7 @@ import {
 import { collectReview, initialChoice, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { applyRewrite, flagItems, passingRewrite, readerItems, readerNotes } from '../.archon/workflows/codagent/.shared/lib/review-reader.ts';
 import { markReviewRoundDone, pendingReviewRound, reviewedCommits } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
-import { settleQuestions } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
+import { followUp, settleQuestions } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 
 const scripts = resolve(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts');
@@ -429,13 +429,13 @@ test('a review round answer starts the feedback review before the late commit it
   expect([pendingReviewRound(artifacts), reviewedCommits(artifacts)]).toEqual([[], [late]]);
 });
 
-test('late commits gain a review round option and yellow items that recommend work move to orange', () => {
+test('late commits gain a review round option, follow-ups get the workflow wording, and yellow items that recommend work move to orange', () => {
   const ask = (...codes: string[]) => ({ prompt: codes.join(' '), options: codes.map(id => ({ id, label: id })) }); const { orange, yellow } = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('keep', 'fix')] }, { type: 'Late commit, Agent decision', questions: [ask('a', 'b', 'c', 'd'), ask('retest', 'leave')] }],
     yellow: [{ type: 'Risk', questions: [ask('accept', 'try')] }, { type: 'Risk', questions: [ask('fix', 'accept')] }] });
   const ids = (items: typeof orange) => items.map(item => item.questions?.map(question => question.options.map(option => option.id).join(' ')));
   expect([ids(orange), ids(yellow)]).toEqual([[['keep fix review-round'], ['a b c d', 'review-round keep', 'retest leave'], ['fix accept']], [['accept try']]]);
   const off = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('review-round', 'keep'), ask('a', 'review-round', 'b')] }], yellow: [{ type: 'Late commit', questions: [ask('accept', 'leave')] }] }, false);
-  expect([ids(off.orange), ids(off.yellow)]).toEqual([[['keep leave', 'a b']], [['accept leave']]]);
+  expect([ids(off.orange), ids(off.yellow)]).toEqual([[['keep leave', 'a b']], [['accept leave']]]); const later = { prompt: 'Later?', options: [{ id: 'follow-up', label: 'Define a follow-up change', detail: 'Records it' }, { id: 'drop', label: 'Drop it' }] }; expect(settleQuestions({ red: [{ type: 'Dispute', questions: [later] }], orange: [], yellow: [] }).red[0].questions?.[0].options).toEqual([followUp, later.options[1]]);
 });
 
 test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
@@ -486,7 +486,7 @@ test('the reader check renders page items, flags unclear ones and rewrites only 
   expect(readerNotes(flags)).toBe('Item 1: Checker floor\n- Could not understand: "floor"\n- Could not tell what each option would do\n- Could not tell what happens if the choice is wrong');
   const wording = { prompt: 'Keep the minimum?', options: [{ id: 'keep', label: 'Keep it', detail: 'Plain' }, { id: 'follow-up', label: 'Later', detail: 'After merge' }] };
   const next = applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['Why it was argued'] }, { number: 2, title: 'Not flagged', detail: 'x', questions: [wording] }], [1]);
-  expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });
+  expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, options: [wording.options[0], question.options[1]], source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });
   expect(applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['a', 'b'] }], [1]).orange[0].links).toEqual(item.links);
   expect(next.yellow[0].title).toBe('Clear item');
   const reordered = { ...wording, options: [...wording.options].reverse() };

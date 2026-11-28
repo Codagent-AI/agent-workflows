@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { type Exec, runCommand } from '../.archon/workflows/codagent/.shared/lib/exec.ts';
-import { createForge } from '../.archon/workflows/codagent/.shared/lib/forge.ts';
+import { createForge, type Reply } from '../.archon/workflows/codagent/.shared/lib/forge.ts';
 import type { Tools } from '../.archon/workflows/codagent/.shared/lib/pull-request.ts';
 
 export interface FakeResponse {
@@ -274,3 +274,41 @@ export const pr = (options: { threads?: { isResolved: boolean; comments: RawComm
   reviewThreads: { nodes: (options.threads ?? []).map(t => ({ isResolved: t.isResolved, comments: { nodes: t.comments } })) },
   comments: { nodes: options.comments ?? [] },
 });
+
+/** Forge answers for publishing review pages: the description it was last given, merges that can be refused, and filed issues. */
+export function reviewPublisher(box: Sandbox) {
+  let body = 'Before\n<!-- codagent:generated-body:start -->\nold\n<!-- codagent:generated-body:end -->\nAfter';
+  const seen: { op: string; request: object }[] = [];
+  let state: 'open' | 'closed' | 'merged' = 'open';
+  let refuse = '';
+  let reportedHeads: string[] = [];
+  let mergeProblem = '';
+  let mergedOnError = false;
+  let issueProblem = '';
+  const tools = box.forgeTools([]);
+  const original = tools.forge.call.bind(tools.forge);
+  const edit = <T>(request: object) => {
+    if (refuse) return { ok: false as const, problem: refuse };
+    body = (request as { body: string }).body;
+    return { ok: true as const, value: {} as T };
+  };
+  const merge = <T>() => {
+    if (mergeProblem) {
+      if (mergedOnError) state = 'merged';
+      return { ok: false as const, problem: mergeProblem };
+    }
+    state = 'merged';
+    return { ok: true as const, value: {} as T };
+  };
+  const issue = <T>() => issueProblem ? { ok: false as const, problem: issueProblem }
+    : { ok: true as const, value: { workitem: { url: 'https://github.com/owner/repo/issues/31' } } as T };
+  const view = <T>() => ({ ok: true as const, value: prView({ state, head_revision: reportedHeads.length > 1 ? reportedHeads.shift() : reportedHeads[0] ?? box.head() }, { body }) as T });
+  tools.forge.call = <T>(op: string, request: object) => {
+    seen.push({ op, request });
+    const answers: Record<string, () => Reply<T>> = { 'pr.view': view, 'pr.edit-body': () => edit<T>(request), 'pr.merge': merge, 'workitem.create': issue };
+    return answers[op]?.() ?? original<T>(op, request);
+  };
+  return { tools, seen, heads: (...values: string[]) => { reportedHeads = values; }, get body() { return body; }, close: () => { state = 'closed'; },
+    merged: () => { state = 'merged'; }, refused: (reason: string, wasMerged = false) => { mergeProblem = reason; mergedOnError = wasMerged; },
+    denyDescription: () => { refuse = 'Description edit refused'; }, refuseIssues: (problem: string) => { issueProblem = problem; } };
+}

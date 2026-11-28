@@ -112,6 +112,7 @@ export function finalStatus(
 export interface WaitOptions {
   maxMinutes: number;
   intervalSeconds: number;
+  settleSeconds?: number; // The wait settles no sooner, so a check that registers late, like a review app starting when a PR leaves draft, is seen.
   now?: () => number;
 }
 
@@ -149,13 +150,12 @@ interface Waiter {
   deadline: number;
   /** When no check has appeared by now, the branch has no CI. */
   noChecksBy: number;
+  settleBy: number; // The wait does not settle before this.
   target: Target;
 }
 
 /** The result being filled in. */
-interface Run {
-  result: CiResult;
-}
+interface Run { result: CiResult }
 
 const failure = (result: CiResult, error: string): CiResult => ({ ...result, status: 'error', error });
 // Checks register within seconds of a push; none after this long means the branch has no CI.
@@ -223,7 +223,7 @@ function pollUntilSettled(waiter: Waiter, run: Run): string | undefined {
   for (;;) {
     const polled = pollOnce(waiter, run);
     if (typeof polled === 'string') return polled;
-    if (isSettled(run.result, polled, waiter.now() >= waiter.noChecksBy) || waiter.now() + waitMs > waiter.deadline) return undefined;
+    if ((isSettled(run.result, polled, waiter.now() >= waiter.noChecksBy) && waiter.now() >= waiter.settleBy) || waiter.now() + waitMs > waiter.deadline) return undefined;
     waiter.sleep(waitMs);
   }
 }
@@ -283,7 +283,7 @@ export function waitForCi(tools: Tools, sleep: Sleep, options: WaitOptions): CiR
   const { pr } = target.view;
   const result: CiResult = { ...blank(''), prUrl: pr.url, headSha: pr.head_revision ?? '' };
   const run: Run = { result };
-  const waiter: Waiter = { tools, sleep, options, now, deadline: started + options.maxMinutes * 60_000, noChecksBy: started + NO_CHECKS_MINUTES * 60_000, target };
+  const waiter: Waiter = { tools, sleep, options, now, deadline: started + options.maxMinutes * 60_000, noChecksBy: started + NO_CHECKS_MINUTES * 60_000, settleBy: started + (options.settleSeconds ?? 0) * 1000, target };
 
   const problem = pollUntilSettled(waiter, run);
   if (problem !== undefined) return failure(result, problem);

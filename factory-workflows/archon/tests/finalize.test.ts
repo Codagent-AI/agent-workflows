@@ -484,7 +484,7 @@ test('shared answers settle every grouped source while separate declined dispute
   ]));
   const result = inventory({ exec: box.exec, dir, changeFolder: folder });
   expect(result.required.map(row => [row.tier, ...row.item.source])).toEqual([
-    ['yellow', 'DECIDE-4'], ['red', 'DISPUTE-3'], ['yellow', 'DISPUTE-4'],
+    ['yellow', 'DECIDE-4'], ['orange', 'DISPUTE-3'], ['yellow', 'DISPUTE-4'],
   ]);
   expect(checkRanking(emptyRanking(), result.required, result.context).problems).toContain('DISPUTE-4');
   const placed = placeRanking(emptyRanking(), result.required, result.context);

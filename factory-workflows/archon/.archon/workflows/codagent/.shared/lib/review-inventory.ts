@@ -8,7 +8,8 @@ import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, sta
 import { baseRevisions, commitParents, pendingReviewRound, reviewedCommits, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
-import { readPages, sharedSources } from './review-pages.ts';
+import { type PageEntry, readPages, sharedSources } from './review-pages.ts';
+import { answersPath, type Choice } from './review-round.ts';
 import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
@@ -49,8 +50,9 @@ function checklistItems(input: InventoryInput): RequiredItem[] {
   });
 }
 
+// A spec-change dispute needs an answer, so it is at least orange. The ranking raises it to red only when the gap should block the merge.
 function logTier(kind: string, title: string, specChange: boolean): Tier {
-  if (specChange) return 'red';
+  if (specChange) return 'orange';
   if (kind === 'decision' || title.startsWith('PR comment')) return 'yellow';
   return 'orange';
 }
@@ -83,6 +85,7 @@ const failures: Record<string, [string, string]> = {
   finalize: ['Finalize did not pass', 'Resolve the final checks before merging.'],
   retest: ['The retest did not pass', 'Review the behavior the retest could not verify.'],
   'merge-base': ['Merging in the base branch needs a person', 'Merge the current base before proceeding.'],
+  'follow-up': ['A follow-up issue could not be filed', 'File the issue by hand for each follow-up answer without one.'],
   'address-feedback': ['Addressing the feedback was blocked', 'Review which feedback still needs action.'],
   'check-response': ['The response to the feedback failed its check', 'Correct the rejected responses.'],
   description: ['The pull request description was not updated', 'Retry updating the pull request description.'],
@@ -127,10 +130,12 @@ export function acceptedHead(input: InventoryInput): string {
   if (!sha || output(input.exec, 'git', ['rev-parse', '--verify', `${sha}^{commit}`]) === undefined) throw new Error('accepted revision is missing or invalid');
   return sha;
 }
+/** The branch's own commits after start that change more than openspec/, as late commit items. */
+export function branchCommits(input: InventoryInput, start: string, skip = new Set<string>()): Item[] {
+  return reviewRevisions(input.exec, input.dir, start, 'HEAD').filter(sha => !skip.has(sha)).flatMap(sha => lateCommit(input.exec, sha));
+}
 export function laterCommits(input: InventoryInput, start: string): Item[] {
-  const revisions = reviewRevisions(input.exec, input.dir, start, 'HEAD');
-  const done = new Set([...readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []), ...reviewedCommits(input.dir)]);
-  return revisions.filter(sha => !done.has(sha)).flatMap(sha => lateCommit(input.exec, sha));
+  return branchCommits(input, start, new Set([...readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []), ...reviewedCommits(input.dir)]));
 }
 function lateCommit(exec: Exec, sha: string): Item[] {
     const parents = commitParents(exec, sha);
@@ -181,6 +186,52 @@ export function responseStatuses(dir: string): Map<string, string> {
   return statuses;
 }
 
+// Answers that ask the next round for no work. An item answered only with these stays off later pages until it changes.
+const restingOptions = new Set(['leave', 'keep', 'drop', 'follow-up']);
+export const printsPath = (dir: string, round: number) => join(dir, 'review', `prints-round-${round}.json`);
+
+function stepProblems(dir: string, step: string | undefined): unknown {
+  if (!step) return '';
+  if (step === 'review-media') return reviewMedia(dir).problems;
+  return readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {})[step]?.problems ?? '';
+}
+
+/** What an item says, with the problems behind a failed step. A later page shows an item answered with no work again only when this changes. */
+export function itemPrint(dir: string, item: Item): string {
+  const problems = stepProblems(dir, /^failure:(.+)$/.exec(item.source[0] ?? '')?.[1]);
+  return JSON.stringify([item.type, item.title, item.detail, item.failLine ?? '', problems]);
+}
+
+export const itemPrints = (dir: string, items: Item[]) => Object.fromEntries(items.flatMap(item => item.source.map(source => [source, itemPrint(dir, item)])));
+
+const asksNoWork = (choices: Choice[]) => choices.every(choice => restingOptions.has(choice.option) && !choice.other?.trim() && !choice.note?.trim());
+
+/** Each source a page's answers covered, and whether they asked for no work on it. */
+function answeredSources(dir: string, page: PageEntry): Map<string, boolean> {
+  const choices = readJson<{ answers?: Choice[] } | null>(answersPath(dir, page.round), null)?.answers ?? [];
+  const shared = sharedSources(dir, page);
+  const answered = new Map<string, boolean>();
+  for (const code of new Set(choices.map(choice => choice.item))) {
+    const rests = asksNoWork(choices.filter(choice => choice.item === code));
+    for (const source of shared.get(code) ?? [code]) answered.set(source, rests);
+  }
+  return answered;
+}
+
+/** The sources among these items that the latest answer to them asked no work for, and that have not changed since. */
+export function restingSources(dir: string, items: Item[]): Set<string> {
+  const now = itemPrints(dir, items);
+  const resting = new Set<string>();
+  for (const page of readPages(dir)) {
+    const then = readJson<Record<string, string>>(printsPath(dir, page.round), {});
+    for (const [source, rests] of answeredSources(dir, page)) {
+      if (rests && then[source] !== undefined && then[source] === now[source]) resting.add(source);
+      else resting.delete(source);
+    }
+  }
+  return resting;
+}
+
 function dismissedSource(source: string, status: string): boolean {
   if (['no-change', 'unchanged', 'settled'].includes(status)) return true;
   return status === 'fixed' && /^(?:D|DECIDE|DP|DISPUTE)-\d+$/.test(source);
@@ -193,12 +244,15 @@ export function inventory(input: InventoryInput): Inventory {
   const statuses = responseStatuses(dir);
   const media = reviewMedia(dir);
   const checklist = checklistItems(input);
-  // Failed rows, step failures and commits still waiting for their review round stay whatever the response says.
-  const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
-  const dismissed = [...statuses].filter(([id, status]) => !(kept.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id);
   const legacy = readText(join(changeFolder, 'test-plan.md')).match(/\bAT-\d+\b/g) ?? [];
   const required = [...checklist, ...logItems(changeFolder, 'decision'), ...logItems(changeFolder, 'dispute'),
     ...commits.map(item => ({ tier: 'orange' as const, item })), ...stepFailures(dir, media.problems).map(item => ({ tier: 'red' as const, item }))];
+  // Failed rows, step failures and commits still waiting for their review round stay whatever the response says,
+  // but not after the person reviewing asked for no work on them and nothing about them changed.
+  const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
+  const resting = restingSources(dir, required.map(row => row.item));
+  const dismissed = [...new Set([...resting, ...[...statuses]
+    .filter(([id, status]) => !(kept.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id)])];
   const commands = media.commands.map(command => command.file);
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),
