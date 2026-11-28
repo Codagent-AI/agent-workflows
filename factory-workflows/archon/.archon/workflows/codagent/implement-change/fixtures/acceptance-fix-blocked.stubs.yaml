@@ -19,6 +19,7 @@ session-report: {"blocked":false,"reason":"","actions":[]}
 reset-round-evidence: {"round":0,"last":false}
 acceptance-test: {"ready":true,"reason":""}
 wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
+check-round-evidence: {"problems":"- acceptance-commands/round-0/out.txt: excerpt must match up to 20 whole lines of the saved output"}
 acceptance-handoff: {"ready":true,"reason":""}
 acceptance-gate: {"ready":false,"fix":true,"reasons":"- the tester's round status is 'NOT_READY'"}
 verify-clean-for-pr: {"ok":true,"problems":""}
@@ -55,6 +56,8 @@ fixture:
   expect: completed
   reached:
     - acceptance-fix
+  resolved-text-contains:
+    acceptance-handoff: "round-0/out.txt: excerpt must match"
   inputs:
     review_wait: "false"
     change_name: valid-change

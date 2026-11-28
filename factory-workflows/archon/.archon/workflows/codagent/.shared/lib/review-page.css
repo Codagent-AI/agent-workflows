@@ -270,7 +270,7 @@ footer.inner { color: var(--faint); font: 400 12.5px/1.5 var(--mono); padding-bl
 .viewer-info p { color: var(--muted); font-size: 15px; max-width: var(--measure); }
 .viewer-info label { margin-top: 8px; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
 
-/* Command evidence: what the tester ran, as it ran it, and a verbatim excerpt of what it printed. */
+/* Command evidence: what the tester ran, as it ran it, and an excerpt of what it printed, verbatim but for wide JSON lines shown indented. Long lines wrap. */
 .cmd { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .cmd.has-comment, .cmd-row.has-comment { border-color: var(--accent); }
 .cmd-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: start; padding: 14px 18px 12px; }
@@ -281,7 +281,7 @@ footer.inner { color: var(--faint); font: 400 12.5px/1.5 var(--mono); padding-bl
 .cmd-line { display: flex; gap: 10px; align-items: baseline; padding: 10px 18px; border-top: 1px solid var(--line); font: 500 13px/1.5 var(--mono); overflow-x: auto; }
 .cmd-line .prompt { color: var(--faint); user-select: none; }
 .cmd-line code { background: none; padding: 0; font-size: inherit; white-space: pre; overflow-wrap: normal; }
-.excerpt { margin: 0; padding: 12px 18px 14px; background: var(--code-bg); color: var(--ink); font: 400 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto; }
+.excerpt { margin: 0; padding: 12px 18px 14px; background: var(--code-bg); color: var(--ink); font: 400 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cmd > .shot-note { margin: 12px 18px 14px; }
 @media (max-width: 560px) { .cmd-head { grid-template-columns: minmax(0, 1fr); } }
 
