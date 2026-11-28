@@ -44715,6 +44715,7 @@ import { join as join7 } from "node:path";
 import { createReadStream, readFileSync as readFileSync3 } from "node:fs";
 import { join as join6 } from "node:path";
 var MAX_ANSWER = 2e5;
+var TRUNCATION_NOTE = "\n[Answer truncated at 200,000 characters.]";
 function parseEvent(line) {
   try {
     return JSON.parse(line) ?? void 0;
@@ -44825,8 +44826,7 @@ function reviewOutcome(exit, review) {
   if (!review.answer) {
     return failed("empty_answer", "Reviewer returned an empty answer.", review.error);
   }
-  const response = review.answer.length > MAX_ANSWER ? `${review.answer.slice(0, MAX_ANSWER)}
-[Answer truncated at 200,000 characters.]` : review.answer;
+  const response = review.answer.length > MAX_ANSWER ? review.answer.slice(0, MAX_ANSWER - TRUNCATION_NOTE.length) + TRUNCATION_NOTE : review.answer;
   return { status: "succeeded", response };
 }
 

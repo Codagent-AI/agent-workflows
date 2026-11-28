@@ -271,35 +271,35 @@ test("result formatting omits interim answers and sets MCP error only for no suc
   assert.deepEqual(parse(mixed).changed_paths, ["changed.md"]);
   assert.equal(snapshotOf({ ...batch, status: "failed", reviewers: [failure] }, now).isError, true);
 });
-test("review parser joins multi-chunk records and matches the prompt response", async (t) => {
+test("review parser joins multi-chunk records and the returned answer stays within its cap", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "crosscheck-parser-"));
   t.after(() => rmSync(dir, { recursive: true }));
   const chunk = (text: string) => ({
     method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
   });
-  const prompt = { id: 7, method: "session/prompt" };
-  const response = { id: 7, result: { stopReason: "end_turn" } };
   const other = { id: 8, result: { stopReason: "max_tokens" } };
-  const events = join(dir, "events.ndjson");
   writeFileSync(join(dir, "stderr.txt"), `${"padding ".repeat(500)}error tail`);
   const answer = `first\u2028${"second".repeat(200_000)}\u2029third`;
   const log = [
-    prompt, chunk(answer), chunk(" and "), chunk("last"),
+    { id: 7, method: "session/prompt" }, chunk(answer), chunk(" and "), chunk("last"),
     { id: 6, error: { message: "recovered error", data: { details: "recovered detail" } } },
-    response, other, { id: 9, error: { message: "fallback error" } },
+    { id: 7, result: { stopReason: "end_turn" } }, other, { id: 9, error: { message: "fallback error" } },
   ];
-  writeFileSync(events, `not json\n${log.map((event) => JSON.stringify(event)).join("\r\n")}`);
+  writeFileSync(join(dir, "events.ndjson"), `not json\n${log.map((event) => JSON.stringify(event)).join("\r\n")}`);
   const matched = await readReview(dir);
   assert.equal(matched.answer, `${answer} and last`);
   assert.equal(matched.stop, "end_turn");
+  const capped = reviewOutcome({ code: 0 }, matched);
+  assert.equal(capped.status, "succeeded");
+  assert.equal(capped.response.length, 200_000);
+  assert.match(capped.response, /\n\[Answer truncated.*\]$/);
+  assert.deepEqual(reviewOutcome({ code: 0 }, { ...matched, answer: "x".repeat(200_000) }), { status: "succeeded", response: "x".repeat(200_000) });
   assert.doesNotMatch(matched.error, /recovered/);
   assert.match(matched.error, /^fallback error\n\.\.\..*error tail$/);
-  writeFileSync(events, JSON.stringify(other));
+  writeFileSync(join(dir, "events.ndjson"), JSON.stringify(other));
   assert.equal((await readReview(dir)).stop, "max_tokens");
   assert.equal(reviewOutcome({ code: 3, stopped: "canceled" }).status, "canceled");
-  assert.deepEqual(reviewOutcome({ code: 0, stopped: "timeout" }), {
-    status: "failed", code: "timeout", error: "Crosscheck reached its time limit.",
-  });
+  assert.deepEqual(reviewOutcome({ code: 0, stopped: "timeout" }), { status: "failed", code: "timeout", error: "Crosscheck reached its time limit." });
 });
 
 test("INTEG-2: acpx failures and successful answers survive together", async () => {
@@ -338,7 +338,7 @@ test("INTEG-2: acpx failures and successful answers survive together", async () 
   assert.equal(reviews.delayed.status, "succeeded");
   assert.equal(reviews.delayed.response, "final review");
   assert.equal(reviews.lastcall.response, "before last call");
-  assert.equal(reviews.long.response.split("\n")[0].length, 200_000);
+  assert.equal(reviews.long.response.length, 200_000);
   assert.match(reviews.long.response, /truncated/);
 });
 

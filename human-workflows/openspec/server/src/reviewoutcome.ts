@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tail } from "./proc.js";
 
 const MAX_ANSWER = 200_000;
+const TRUNCATION_NOTE = "\n[Answer truncated at 200,000 characters.]";
 
 interface Event {
   id?: string | number;
@@ -149,6 +150,8 @@ export function reviewOutcome(exit: Exit, review?: ReviewOutput): Outcome {
   if (!review.answer) {
     return failed("empty_answer", "Reviewer returned an empty answer.", review.error);
   }
-  const response = review.answer.length > MAX_ANSWER ? `${review.answer.slice(0, MAX_ANSWER)}\n[Answer truncated at 200,000 characters.]` : review.answer;
+  const response = review.answer.length > MAX_ANSWER
+    ? review.answer.slice(0, MAX_ANSWER - TRUNCATION_NOTE.length) + TRUNCATION_NOTE
+    : review.answer;
   return { status: "succeeded", response };
 }
