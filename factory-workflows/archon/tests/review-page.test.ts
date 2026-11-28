@@ -9,7 +9,7 @@ import { numberLog } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 import { runInNewContext } from 'node:vm';
-import { collectReview, sendReview } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
+import { collectReview, displayExcerpt, sendReview } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { pageHtml } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 
@@ -402,7 +402,7 @@ test('promoted yellow late commits preserve journeys and gain a Retest choice', 
 
 test('mixed evidence renders a safe, ordered page and mirrors command comments', async () => {
   const file = 'acceptance-commands/round-1/output.txt';
-  const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: '  line 1\n    line 2' };
+  const command = { kind: 'command', file, round: 1, revision: 'decafbad1234', command: 'tool verify', title: 'Check export', shows: 'Evidence', excerpt: `  line 1\n    line 2\n${JSON.stringify({ response: 'x'.repeat(100) })}` };
   const forgeBase = 'https://github.com/owner/repo';
   const head = '0123456789abcdef0123456789abcdef01234567';
   const href = `${forgeBase}/blob/${head}/file.txt#L2`;
@@ -451,7 +451,7 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(concern?.find('prose')?.byTag('a').map(anchor => anchor.href)).toEqual([href]);
   expect(concern?.find('prose')?.byTag('strong')).toHaveLength(1);
   expect(page('.rail > ol').byTag('code').map(code => code.textContent)).toEqual(['verify']);
-  expect(main.byTag('pre').map(entry => entry.textContent)).toEqual(Array(3).fill(command.excerpt));
+  expect(main.byTag('pre').map(entry => entry.textContent)).toEqual(Array(3).fill(displayExcerpt(command.excerpt)));
   expect(main.byTag('details')).toHaveLength(1);
   const key = main.children[1];
   const gallery = key.find('all-shots');

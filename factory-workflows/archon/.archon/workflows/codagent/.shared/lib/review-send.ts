@@ -67,6 +67,24 @@ export function collectReview(input: {
     commandComments: comments(input.commands ?? []).map(({ file, round, comment }) => ({ ref: file, round, comment })) };
 }
 
+// A line of compact JSON wider than this is shown indented, since the excerpt box can't show it whole.
+const excerptWidth = 100;
+
+export function displayExcerpt(excerpt: string): string {
+  return excerpt.split('\n').map(line => {
+    if (line.length <= excerptWidth) return line;
+    try {
+      const value: unknown = JSON.parse(line);
+      // Only spacing may change: a line that doesn't re-serialize to itself is shown as printed.
+      if (!value || typeof value !== 'object' || JSON.stringify(value) !== line.trim()) return line;
+      const indent = /^\s*/.exec(line)?.[0] ?? '';
+      return JSON.stringify(value, null, 2).replace(/^/gm, indent);
+    } catch {
+      return line;
+    }
+  }).join('\n');
+}
+
 export function sizeTotals(rows: { files: number; added: number; modified: number; removed: number }[]) {
   return rows.reduce((sum, row) => ({
     files: sum.files + row.files, added: sum.added + row.added,

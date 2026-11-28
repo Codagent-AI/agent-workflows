@@ -255,6 +255,8 @@ describe('merged workflow contracts', () => {
     context?: string | { resume: string };
     output_format?: unknown;
     depends_on?: string[];
+    script?: string;
+    with?: Record<string, unknown>;
     loop_group?: { max_iterations: number; on_exhausted?: string; nodes: WorkflowNode[] };
   }
   const load = (name: string) => Bun.YAML.parse(readFileSync(join(pack, name, `${name}.yaml`), 'utf8')) as {
@@ -327,6 +329,19 @@ describe('merged workflow contracts', () => {
     expect(node('finalize-push').depends_on).toContain('sync-logs');
     expect(node('rank-review').output_format).toEqual(node('repair-ranking').output_format);
     expect(node('rank-review').output_format).toMatchObject({ required: ['red', 'orange', 'yellow', 'evidence', 'keyEvidence'] });
+  });
+
+  test('each handoff reads the evidence problems of the round its tester just ran', () => {
+    const checks = [
+      ['acceptance-handoff', 'check-round-evidence', '$reset-round-evidence.output.round'],
+      ['handoff-retest', 'check-retest-evidence', '$prepare-retest.output.round'],
+    ];
+    for (const [handoff = '', check = '', round] of checks) {
+      const tester = (node(handoff).context as { resume: string }).resume;
+      expect(node(handoff).depends_on).toContain(check);
+      expect(node(handoff).with?.evidence_problems).toBe(`$${check}.output.problems`);
+      expect(node(check)).toMatchObject({ script: 'check-round-evidence', depends_on: [tester], with: { round } });
+    }
   });
 
   test('review exhaustion completes at three and acceptance uses one plain fixer', () => {

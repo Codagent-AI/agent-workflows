@@ -819,8 +819,23 @@ nodes:
             required: [status, had_checks, head_moved, report]
             additionalProperties: false
 
+        # Reads the round's evidence records as the review page will, so the handoff can
+        # correct one the page would leave out.
+        - id: check-round-evidence
+          depends_on: [acceptance-test]
+          script: check-round-evidence
+          runtime: bun
+          with:
+            round: $reset-round-evidence.output.round
+          output_format: &evidence-problems
+            type: object
+            properties:
+              problems: { type: string }
+            required: [problems]
+            additionalProperties: false
+
         - id: acceptance-handoff
-          depends_on: [acceptance-test, wait-ci]
+          depends_on: [acceptance-test, wait-ci, check-round-evidence]
           trigger_rule: none_failed_min_one_success
           model: ['@tester', medium]
           context: { resume: acceptance-test }
@@ -829,6 +844,7 @@ nodes:
             ci_status: { from: $wait-ci.output.status, if_skipped: "not run" }
             ci_report: { from: $wait-ci.output.report, if_skipped: "none" }
             ci_reason: $acceptance-test.output.reason
+            evidence_problems: $check-round-evidence.output.problems
           output_format: *tester-result
 
         - id: acceptance-gate
@@ -1380,14 +1396,23 @@ nodes:
         with: {"round":"$prepare-retest.output.round","max_minutes":15,"interval_seconds":30}
         output_format: {"type":"object","properties":{"status":{"type":"string"},"had_checks":{"type":"boolean"},"head_moved":{"type":"boolean"},"report":{"type":"string"}},"required":["status","had_checks","head_moved","report"],"additionalProperties":false}
 
+      - id: check-retest-evidence
+        depends_on: ["retest-journeys"]
+        trigger_rule: none_failed_min_one_success
+        when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
+        script: check-round-evidence
+        runtime: bun
+        with: {"round":"$prepare-retest.output.round"}
+        output_format: *evidence-problems
+
       - id: handoff-retest
-        depends_on: ["retest-journeys","wait-retest-ci"]
+        depends_on: ["retest-journeys","wait-retest-ci","check-retest-evidence"]
         trigger_rule: none_failed_min_one_success
         when: "$start-round.output.work == 'true' && $start-round.output.retest == 'true'"
         model: ["@tester","medium"]
         context: {"resume":"retest-journeys"}
         command: acceptance-handoff
-        with: {"ci_status":{"from":"$wait-retest-ci.output.status","if_skipped":"not run"},"ci_report":{"from":"$wait-retest-ci.output.report","if_skipped":"none"},"ci_reason":"$retest-journeys.output.reason"}
+        with: {"ci_status":{"from":"$wait-retest-ci.output.status","if_skipped":"not run"},"ci_report":{"from":"$wait-retest-ci.output.report","if_skipped":"none"},"ci_reason":"$retest-journeys.output.reason","evidence_problems":"$check-retest-evidence.output.problems"}
         output_format: *tester-result
 
       - id: gate-retest

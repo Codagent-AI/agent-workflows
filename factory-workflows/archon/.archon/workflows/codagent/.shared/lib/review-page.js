@@ -324,7 +324,7 @@
     else header.append(edit);
     const command = node('div', '', 'cmd-line');
     command.append(node('span', '$', 'prompt'), node('code', entry.command));
-    card.append(header, command, node('pre', entry.excerpt, 'excerpt'), footer);
+    card.append(header, command, node('pre', displayExcerpt(entry.excerpt), 'excerpt'), footer);
     return card;
   }
 

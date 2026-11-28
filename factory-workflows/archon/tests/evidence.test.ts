@@ -1,10 +1,11 @@
-import { commands, reviewMedia } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
+import { commands, reviewMedia, roundProblems } from '../.archon/workflows/codagent/.shared/lib/review-media.ts';
 import { humanChecks } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { checkEvidence, evidenceRows, manualTestIds } from '../.archon/workflows/codagent/.shared/lib/evidence.ts';
 import { planProblems, namedByFinding } from '../.archon/workflows/codagent/.shared/lib/checklist-plan.ts';
 import { rawCells } from '../.archon/workflows/codagent/.shared/lib/checklist.ts';
+import { displayExcerpt } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { type Sandbox, createSandbox } from './helpers.ts';
 
 let box: Sandbox;
@@ -365,6 +366,36 @@ test('command manifests validate whole lines, normalize excerpts, and reach rank
   expect(evidence.map((value: { round: number }) => value.round)).toEqual([2, 1, 1]);
   expect(JSON.parse(box.read('artifacts/review/media-problems.json'))).toHaveLength(6);
   expect(reviewMedia(box.path('empty'))).toMatchObject({ commands: [], shots: [], problems: [] });
+});
+
+test("a round's evidence problems name only that round's bad records, and the check reports them", () => {
+  const dir = box.path('artifacts');
+  const entry = { title: 'Check', shows: 'Exit', revision: 'abc', command: 'test', excerpt: 'reworded', output: 'run.txt' };
+  for (const round of [1, 10]) {
+    box.write(`artifacts/acceptance-commands/round-${round}/run.txt`, 'printed\n');
+    box.write(`artifacts/acceptance-commands/round-${round}/manifest.json`, JSON.stringify([entry]));
+    box.write(`artifacts/acceptance-journeys/round-${round}.json`, '{}');
+  }
+  const problems = [
+    `- ${box.path('artifacts/acceptance-commands/round-1/run.txt')}: Error: excerpt must match up to 20 whole lines of the saved output`,
+    `- ${box.path('artifacts/acceptance-journeys/round-1.json')}: Error: expected an array`,
+  ].join('\n');
+  expect(roundProblems(dir, 1)).toBe(problems);
+  expect(roundProblems(dir, 2)).toBe('none');
+  const script = '../.archon/workflows/codagent/implement-change/scripts/check-round-evidence.ts';
+  const result = Bun.spawnSync([process.execPath, new URL(script, import.meta.url).pathname], {
+    cwd: box.dir, env: { ...process.env, ARTIFACTS_DIR: dir, INPUTS_ROUND: '1' },
+  });
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout.toString())).toEqual({ problems });
+});
+
+test('a wide line of compact JSON is shown indented, and every other line as printed', () => {
+  const wide = JSON.stringify({ final: { status: 'succeeded', reviewers: [{ cli: 'claude', response: 'x'.repeat(100) }] } });
+  const spaced = `{"status": "failed", "error": "${'y'.repeat(100)}"}`;
+  const text = `MCP error -32602: ${'z'.repeat(100)}`;
+  const indented = JSON.stringify(JSON.parse(wide), null, 2).split('\n').map(line => `  ${line}`);
+  expect(displayExcerpt(['{"ok":true}', `  ${wide}`, spaced, text].join('\n')).split('\n')).toEqual(['{"ok":true}', ...indented, spaced, text]);
 });
 
 test('duplicate command outputs keep the first valid entry and report the colliding ID', () => {

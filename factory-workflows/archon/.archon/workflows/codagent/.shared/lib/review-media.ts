@@ -118,6 +118,15 @@ export function reviewMedia(dir: string) {
   return { shots: screenshots(dir, problems), commands: commands(dir, problems), journeys: journeys(dir, problems), problems };
 }
 
+// The problems the review page would report in one round's evidence, listed while its tester can still fix them.
+export function roundProblems(dir: string, round: number): string {
+  const name = `round-${round}`;
+  const places = [join(dir, 'acceptance-commands', name), join(dir, 'acceptance-screenshots', name), join(dir, 'acceptance-journeys', `${name}.json`)];
+  return reviewMedia(dir).problems
+    .filter(problem => places.some(place => problem.path === place || problem.path.startsWith(`${place}/`)))
+    .map(problem => `- ${problem.path}: ${problem.detail}`).join('\n') || 'none';
+}
+
 interface ClocCount { nFiles?: number; code?: number }
 type ClocDiff = Record<'added' | 'modified' | 'removed', Record<string, ClocCount>>;
 const lockFiles = '(^|/)([^/]+\\.lockb?|[^/]+-lock\\.[^/]+|npm-shrinkwrap\\.json|Cargo\\.lock|go\\.sum)$';

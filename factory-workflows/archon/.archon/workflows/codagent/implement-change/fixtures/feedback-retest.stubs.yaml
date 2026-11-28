@@ -19,6 +19,7 @@ session-report: {"blocked":false,"reason":"","actions":[]}
 reset-round-evidence: {"round":0,"last":false}
 acceptance-test: {"ready":true,"reason":""}
 wait-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
+check-round-evidence: {"problems":"none"}
 acceptance-handoff: {"ready":true,"reason":""}
 acceptance-gate: {"ready":true,"fix":false,"reasons":""}
 check-acceptance-progress: {"progressed":true,"push":false}
@@ -65,6 +66,7 @@ hand-off-feedback-review: {"ok":true}
 prepare-retest: {"round":3}
 retest-journeys: {"ready":true,"reason":""}
 wait-retest-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/round-0.md"}
+check-retest-evidence: {"problems":"none"}
 handoff-retest: {"ready":true,"reason":""}
 gate-retest: {"ready":true,"fix":false,"reasons":""}
 record-retest: {"ok":true,"problems":""}

@@ -114,7 +114,7 @@ The checklist is `<change_dir>/checklist.md`, committed with the change. Agents 
 | `archive/state.json`, `archive/before.json`, `archive/specs-before.json`, `archive/local-specs.json` | archive scripts | Owned archive paths and preexisting changes used to verify the isolated commit. |
 | `ci/finalize-<n>.md`, `ci/final.md`, accompanying JSON and `ci/latest.json` | finalize scripts | Per-cycle CI reports and final-head reuse state. |
 | `step-results.json`, `finalize-results.json`, `acceptance-stop.txt` | finish scripts | Outcomes, blockers and work remaining. |
-| `acceptance-commands/round-<n>/manifest.json` and output files | tester | Per-round command evidence. The review page shows validated excerpts of up to 20 lines and keeps full output in the run. |
+| `acceptance-commands/round-<n>/manifest.json` and output files | tester | Per-round command evidence. The round's handoff corrects an entry that fails validation. The review page shows validated excerpts of up to 20 lines and keeps full output in the run. |
 | `review/evidence.json`, `review/media-problems.json` | package scripts | Accepted screenshots and commands available to the ranker, and any manifest errors. |
 | `review/required.json`, `review/log-state.json` | package scripts | Independently inventoried minimum tiers and counts of run-log entries copied to the committed logs. |
 | `review-attention.json`, `review-package.md` | package scripts | Checked red, orange and yellow ranking with labeled links and generated PR description block. |

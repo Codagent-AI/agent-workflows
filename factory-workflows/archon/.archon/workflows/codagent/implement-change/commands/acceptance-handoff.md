@@ -5,6 +5,12 @@ The workflow has finished the CI step of this acceptance round.
 
 Finish the pass now by following the instructions below. The report stands in for a CI wait's result: it lists failed checks with their logs, merge conflicts, blocking reviews, actionable PR comments, deferred threads, informational bot comments, passing checks, and checks still running. The script that wrote it did not judge comment meaning. If an informational bot comment says its review of the current head is still pending or in progress, read the pull request's comments again once with `gh pr view --comments`; if that review is still unfinished, treat the status as `pending`, unless failed checks, a conflict or blocking reviews make it `failed`, or actionable feedback makes it `comments`.
 
+## Fix evidence records
+
+The workflow read this round's screenshot, command and journey records as the review page will. Problems it found: $INPUTS.evidence_problems
+
+The review page leaves out each record with a problem. Unless the list is `none`, correct each one now. For a command entry, copy its excerpt as a verbatim run of at most 20 whole lines from its saved output. Never change a saved output to fit its excerpt.
+
 ## Wait for CI and hand off
 
 If the workflow did not wait for CI, record why in the handoff; the round is not ready. After CI
