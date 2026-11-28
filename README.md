@@ -21,20 +21,24 @@ Agent Workflows builds on OpenSpec and Archon. This is what each one provides, a
 
 | Feature | OpenSpec | Archon | Agent Workflows |
 |---|:-:|:-:|:-:|
-| Change documents: a proposal, spec deltas, and a design | ✓ | | |
+| Change documents: a proposal, spec deltas, a design, and tasks | ✓ | | |
 | Validate a change, and archive it into the living specs | ✓ | | |
 | Define a change one step at a time, in an order code enforces | | | ✓ |
 | A test plan for each change | | | ✓ |
-| An agent from the other vendor reviews the proposal and the approach | | | ✓ |
+| Agents from other vendors review the proposal and the approach | | | ✓ |
 | YAML workflows that run their steps in a fixed order, with loops and gates | | ✓ | |
 | An isolated worktree for each run | | ✓ | |
 | Claude Code, Codex, and Pi, on your own subscription | | ✓ | |
 | Resume a failed run | | ✓ | |
-| An event log, transcript, and cost for every run, and a web UI | | ✓ | |
+| An event log, transcript, and cost for every run, and a web console | | ✓ | |
 | Implement a spec against a checklist of how each behavior is verified | | | ✓ |
+| An agent reviews the code before the pull request opens, and after each fix | | | ✓ |
 | Acceptance testing by an independent agent, in rounds | | | ✓ |
-| Log the agents' decisions and unsettled disagreements, and rank them with the results in a review package | | | ✓ |
 | Archive the change when the build finishes, so the living specs stay current | | | ✓ |
+| CI failures fixed before you see the pull request | | | ✓ |
+| Log the agents' decisions and unsettled disagreements, and rank them on a review page | | | ✓ |
+| Answer the review page's questions, comment on evidence, and send feedback for another round | | | ✓ |
+| Merge only when you choose | | | ✓ |
 
 ## Documentation
 

@@ -22,6 +22,10 @@ fi
 SRC_REAL="$(cd "$SRC" && pwd -P)"
 mkdir -p "$DEST"
 DEST_REAL="$(cd "$DEST" && pwd -P)"
+if [ "$DEST_REAL" = "/" ] || [ "$DEST_REAL" = "$HOME" ] || [ -e "$DEST_REAL/.git" ]; then
+  echo "refusing to empty $DEST_REAL" >&2
+  exit 1
+fi
 case "$SRC_REAL/" in
   "$DEST_REAL"/*) echo "destination must not contain the source" >&2; exit 1 ;;
 esac
