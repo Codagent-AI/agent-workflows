@@ -12,14 +12,16 @@ import { evidenceRows } from './evidence.ts';
 import { acceptancePush, checkPush, markReady } from './pull-request.ts';
 import { blank, type CiResult } from './ci.ts';
 import { waitFinalize, finalCi, ciGate, recordFinalize, recordFinalizeCheck, finalizationBlocked, endCiCycle } from './finalize.ts';
-import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type InventoryInput, type Ranking } from './review-inventory.ts';
+import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type InventoryInput, itemPrints, printsPath, type Ranking } from './review-inventory.ts';
 import { reviewMedia } from './review-media.ts';
 import { refreshBase } from './review-revisions.ts';
 import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
+import { settleRepeats } from './review-repeats.ts';
 import { settleQuestions } from './review-questions.ts';
 import { currentPage, publishPackage } from './publish-review.ts';
 import { flagItems, pageItems, passingRewrite, readerItems, readerNotes, type Flag } from './review-reader.ts';
 import { outcomesPath, startRound } from './review-round.ts';
+import { readPages } from './review-pages.ts';
 import { abortMerge, checkResponse, finishMerge, mergeBase, recordRetest } from './review-work.ts';
 import { readJson, writeJson, recordStep, readText, type StepResult, writeText } from './run-files.ts';
 interface FinishInputs {
@@ -72,7 +74,9 @@ function ciNode(input: FinishInputs, dir: string): unknown {
   if (input.op === 'end-ci-cycle') return endCiCycle(dir, latestCi(dir, input.status).status, cycle);
   if (input.op === 'ci-cycle-status') {
     const latest = latestCi(dir, input.status);
-    return { ...ciGate(latest.status, input.blocked || finalizationBlocked(dir), cycle), ci_report: latest.ciReport };
+    // The head CI ran on, where a review of the cycle's fix starts.
+    const head = runCommand('git', ['rev-parse', 'HEAD']).stdout.trim();
+    return { ...ciGate(latest.status, input.blocked || finalizationBlocked(dir), cycle), ci_report: latest.ciReport, head };
   }
   const tools = defaultTools();
   if (input.op === 'record-finalize') return recordFinalize(tools, dir);
@@ -102,7 +106,10 @@ function prepareRanking(input: FinishInputs, dir: string) {
   writeJson(join(dir, 'review/evidence.json'), [...media.shots, ...media.commands]);
   writeJson(join(dir, 'review/media-problems.json'), media.problems);
   writeJson(join(dir, 'review/required.json'), inv.required);
+  // What each item says on the page this round publishes, for telling later whether an answered item changed.
+  writeJson(printsPath(dir, (readPages(dir).at(-1)?.round ?? 0) + 1), itemPrints(dir, inv.required.map(row => row.item)));
   writeJson(join(dir, 'review/human-checks.json'), humanChecks(input.folder));
+  writeJson(join(dir, 'review/answered.json'), inv.context.answered);
   return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
 }
 
@@ -110,10 +117,10 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
   const ranking = JSON.parse(input.result) as Ranking;
   if (input.op === 'place-ranking') {
-    writeJson(join(dir, 'review-attention.json'), settleQuestions(placeRanking(ranking, inv.required, inv.context), input.review)); return pass();
+    writeJson(join(dir, 'review-attention.json'), settleQuestions(settleRepeats(placeRanking(ranking, inv.required, inv.context), inv.context.answered), input.review)); return pass();
   }
   const checked = checkRanking(ranking, inv.required, inv.context);
-  if (checked.ok) writeJson(join(dir, 'review-attention.json'), settleQuestions(bindDisputeQuestions(ranking, inv.required), input.review));
+  if (checked.ok) writeJson(join(dir, 'review-attention.json'), settleQuestions(settleRepeats(bindDisputeQuestions(ranking, inv.required), inv.context.answered), input.review));
   return checked;
 }
 // The reader check never fails its node: without a usable result the page publishes the ranking it has.

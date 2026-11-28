@@ -3,17 +3,20 @@ import { join } from 'node:path';
 import { output, sleep as pause } from './exec.ts';
 import { remoteOf } from './forge.ts';
 import { type Tools, lookupPr } from './pull-request.ts';
-import { stepFailures, type Item, type Ranking } from './review-inventory.ts';
+import { branchCommits, restingSources, stepFailures, type Item, type Ranking } from './review-inventory.ts';
 import { forgeBase, type LinkContext, logUrl, resolveTarget, urlPath } from './review-links.ts';
 import { changeSize, journeys, reviewMedia } from './review-media.ts';
-import { description, embeddedJson, type PageEntry, pagesPath, prefix, readPages, sentBlock, updateDescription } from './review-pages.ts';
+import { description, embeddedJson, type PageEntry, pagesPath, prefix, publishedItems, readPages, sentBlock, updateDescription } from './review-pages.ts';
 import { standardQuestion } from './review-questions.ts';
+import { readState } from './review-files.ts';
+import { answersPath, type Choice } from './review-round.ts';
+import { roundReview } from './review.ts';
 import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
 export interface PublishOptions {
   round: number; wait: boolean; run: string; archonUrl: string; reason?: string; stale?: boolean;
 }
-interface ResponseEntry { item: string; status: string; commit?: string; note: string }
+interface ResponseEntry { item: string; status: string; commit?: string; note: string; label?: string; href?: string }
 
 const asset = (name: string) => readFileSync(join(import.meta.dir, name), 'utf8');
 const script = () => new Bun.Transpiler({ loader: 'ts' }).transformSync(asset('review-send.ts').replaceAll('export function', 'function').replaceAll('export async function', 'async function'));
@@ -40,13 +43,31 @@ export function stateLine(failures: Item[], red: number, blocked: string[]): str
   return `${state}${reason} ${red} red ${red === 1 ? 'item needs' : 'items need'} your call.`;
 }
 
-function recap(dir: string, round: number, reason: string) {
+/** Step failures still on the page: not those answered with no work that have not changed since. */
+function openFailures(dir: string, failures: Item[]): Item[] {
+  const resting = restingSources(dir, failures);
+  return failures.filter(item => !resting.has(item.source[0]));
+}
+
+// What happened since the last page: the work its answers got, the issues filed for them, the round's
+// other commits, what its code reviews found, its merge and its retest. Answers that needed nothing done are left out.
+function recap(links: LinkContext, round: number, reason: string): ResponseEntry[] {
   if (round === 1) return [];
-  const responses = readJson<ResponseEntry[]>(join(dir, `review-response-round-${round - 1}.json`), []);
+  const { dir, exec } = links;
+  const done = readJson<ResponseEntry[]>(join(dir, `review-response-round-${round - 1}.json`), []).filter(entry => entry.status === 'fixed');
+  const page = readPages(dir).find(entry => entry.round === round - 1);
+  const items = page ? publishedItems(dir, page) : [];
+  const answers = readJson<{ answers?: Choice[] }>(answersPath(dir, round - 1), {}).answers ?? [];
+  const issues = answers.flatMap(choice => choice.issue ? [{ item: choice.item, status: '', note: 'Filed a follow-up issue:',
+    label: items.find(item => item.source.includes(choice.item))?.title || choice.issue, href: choice.issue }] : []);
+  const named = done.flatMap(entry => entry.commit ? [entry.commit] : []);
+  const commits = page ? branchCommits({ exec, dir, changeFolder: links.folder }, page.head)
+    .filter(item => !named.some(sha => item.source[0].startsWith(sha))) : [];
   const steps = readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {});
   const results = [steps['merge-base'], steps.retest?.round === round ? steps.retest : undefined];
   const notes = results.flatMap(result => result?.ok ? [result.remaining] : []);
-  return [...responses, ...[reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))] as ResponseEntry[];
+  return [...done, ...issues, ...commits.map(item => ({ item: '', status: '', note: 'Committed', commit: item.source[0] })),
+    ...[...roundReview(readState(dir), round), reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))];
 }
 
 export function currentPage(dir: string, reason = '') {
@@ -87,7 +108,7 @@ export function publishPackage(tools: Tools, source: PackageSource,
   const links = { base: forgeBase(repo), head, dir, folder, exec: tools.exec };
   const blocked = blockedSteps(dir);
   const failures = stepFailures(dir);
-  const redCount = redConcerns(ranking, failures).length;
+  const redCount = redConcerns(ranking, openFailures(dir, failures)).length;
   const entries = readPages(dir).filter(entry => entry.round < options.round);
   const newPage: PageEntry = { round: options.round, file: `review-page-round-${options.round}.html`, head,
     message: `${prefix(options.round)} Review the page and answer with feedback or merge.`,
@@ -145,7 +166,7 @@ function renderPage(source: PackageSource, links: LinkContext, newPage: PageEntr
     return entry ? [{ ...entry, ...pick }] : [];
   });
   const failures = stepFailures(dir, media.problems);
-  const red = redConcerns(ranking, failures);
+  const red = redConcerns(ranking, openFailures(dir, failures));
   const orange = [...ranking.orange].sort((a, b) => Number(b.type.includes('Late commit')) - Number(a.type.includes('Late commit')));
   const yellow = ranking.yellow;
   const visible = (items: Item[]) => items.map(item => ({
@@ -180,7 +201,8 @@ function saveJourneys(dir: string, round: number, items: Item[]): void {
 }
 
 function recapLinks(links: LinkContext, options: PublishOptions) {
-  return recap(links.dir, options.round, options.reason ?? '').map(entry => {
+  return recap(links, options.round, options.reason ?? '').map(entry => {
+    if (entry.href) return { note: entry.note, label: entry.label, href: entry.href };
     const resolved = entry.commit ? resolveTarget(`commit:${entry.commit}`, links) : undefined;
     if (!(resolved && ('href' in resolved))) return { note: entry.note };
     const subject = output(links.exec, 'git', ['show', '-s', '--format=%s', entry.commit ?? '']) || 'Review fix';

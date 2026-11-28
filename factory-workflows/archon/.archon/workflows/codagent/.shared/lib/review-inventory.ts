@@ -4,19 +4,24 @@ import { join } from 'node:path';
 import { type Exec, output } from './exec.ts';
 import { tableBlocks, rawCells, isSeparatorRow } from './checklist.ts';
 import { readText, readJson, type StepResult } from './run-files.ts';
-import { disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
+import { asksNoWork, disputeQuestion, type KeyEvidence, type LateJourney, type Question, standardQuestion } from './review-questions.ts';
 import { baseRevisions, commitParents, pendingReviewRound, reviewedCommits, reviewRevisions } from './review-revisions.ts';
 import { reviewMedia } from './review-media.ts';
 import type { LinkContext, TargetLink } from './review-links.ts';
-import { readPages, sharedSources } from './review-pages.ts';
+import { type PageEntry, readPages, sharedSources } from './review-pages.ts';
+import { answersPath, type Choice } from './review-round.ts';
 import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
 export type Tier = typeof TIERS[number];
-export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; unlinkedSources?: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
+export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; unlinkedSources?: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean;
+  /** The source of an earlier answered item the ranker matched this one to, and the answer that item got. */
+  repeats?: string; answered?: Omit<Answered, 'source'>; }
+/** A source an earlier page asked about whose latest answer asked for no work. */
+export interface Answered { source: string; round: number; answer: string; issue?: string }
 export interface Ranking { red: Item[]; orange: Item[]; yellow: Item[]; evidence: string; keyEvidence?: KeyEvidence[]; }
 export interface RequiredItem { tier: Tier; item: Item; }
-export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[] }; }
+export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[]; answered: Answered[] }; }
 export interface InventoryInput { exec: Exec; dir: string; changeFolder: string; }
 export const emptyRanking = (): Ranking => ({ red: [], orange: [], yellow: [], evidence: '' });
 export function humanChecks(folder: string) {
@@ -49,8 +54,9 @@ function checklistItems(input: InventoryInput): RequiredItem[] {
   });
 }
 
+// A spec-change dispute needs an answer, so it is at least orange. The ranking raises it to red only when the gap should block the merge.
 function logTier(kind: string, title: string, specChange: boolean): Tier {
-  if (specChange) return 'red';
+  if (specChange) return 'orange';
   if (kind === 'decision' || title.startsWith('PR comment')) return 'yellow';
   return 'orange';
 }
@@ -83,6 +89,7 @@ const failures: Record<string, [string, string]> = {
   finalize: ['Finalize did not pass', 'Resolve the final checks before merging.'],
   retest: ['The retest did not pass', 'Review the behavior the retest could not verify.'],
   'merge-base': ['Merging in the base branch needs a person', 'Merge the current base before proceeding.'],
+  'follow-up': ['A follow-up issue could not be filed', 'File the issue by hand for each follow-up answer without one.'],
   'address-feedback': ['Addressing the feedback was blocked', 'Review which feedback still needs action.'],
   'check-response': ['The response to the feedback failed its check', 'Correct the rejected responses.'],
   description: ['The pull request description was not updated', 'Retry updating the pull request description.'],
@@ -127,10 +134,12 @@ export function acceptedHead(input: InventoryInput): string {
   if (!sha || output(input.exec, 'git', ['rev-parse', '--verify', `${sha}^{commit}`]) === undefined) throw new Error('accepted revision is missing or invalid');
   return sha;
 }
+/** The branch's own commits after start that change more than openspec/, as late commit items. */
+export function branchCommits(input: InventoryInput, start: string, skip = new Set<string>()): Item[] {
+  return reviewRevisions(input.exec, input.dir, start, 'HEAD').filter(sha => !skip.has(sha)).flatMap(sha => lateCommit(input.exec, sha));
+}
 export function laterCommits(input: InventoryInput, start: string): Item[] {
-  const revisions = reviewRevisions(input.exec, input.dir, start, 'HEAD');
-  const done = new Set([...readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []), ...reviewedCommits(input.dir)]);
-  return revisions.filter(sha => !done.has(sha)).flatMap(sha => lateCommit(input.exec, sha));
+  return branchCommits(input, start, new Set([...readJson<string[]>(join(input.dir, 'review/retested-commits.json'), []), ...reviewedCommits(input.dir)]));
 }
 function lateCommit(exec: Exec, sha: string): Item[] {
     const parents = commitParents(exec, sha);
@@ -181,6 +190,76 @@ export function responseStatuses(dir: string): Map<string, string> {
   return statuses;
 }
 
+export const printsPath = (dir: string, round: number) => join(dir, 'review', `prints-round-${round}.json`);
+
+function stepProblems(dir: string, step: string | undefined): unknown {
+  if (!step) return '';
+  if (step === 'review-media') return reviewMedia(dir).problems;
+  return readJson<Record<string, StepResult>>(join(dir, 'step-results.json'), {})[step]?.problems ?? '';
+}
+
+/** What an item says, with the problems behind a failed step. A later page shows an item answered with no work again only when this changes. */
+export function itemPrint(dir: string, item: Item): string {
+  const problems = stepProblems(dir, /^failure:(.+)$/.exec(item.source[0] ?? '')?.[1]);
+  return JSON.stringify([item.type, item.title, item.detail, item.failLine ?? '', problems]);
+}
+
+export const itemPrints = (dir: string, items: Item[]) => Object.fromEntries(items.flatMap(item => item.source.map(source => [source, itemPrint(dir, item)])));
+
+
+/** Each source a page's answers covered, with the choices made for it. */
+function sourceChoices(dir: string, page: PageEntry): Map<string, Choice[]> {
+  const choices = readJson<{ answers?: Choice[] } | null>(answersPath(dir, page.round), null)?.answers ?? [];
+  const shared = sharedSources(dir, page);
+  const answered = new Map<string, Choice[]>();
+  for (const code of new Set(choices.map(choice => choice.item))) {
+    for (const source of shared.get(code) ?? [code]) answered.set(source, choices.filter(choice => choice.item === code));
+  }
+  return answered;
+}
+
+/** Each source a page's answers covered, and whether they asked for no work on it. */
+const answeredSources = (dir: string, page: PageEntry) => new Map([...sourceChoices(dir, page)].map(([source, choices]) => [source, asksNoWork(choices)]));
+
+function answeredEntry(source: string, round: number, choices: Choice[]): Answered {
+  const issue = choices.find(choice => choice.issue)?.issue;
+  const answer = choices.map(choice => choice.label || choice.option).join('; ');
+  return { source, round, answer, ...(issue ? { issue } : {}) };
+}
+
+/** The sources earlier pages asked about whose latest answer asked for no work, with that answer, for matching a new item to it. */
+export function answeredItems(dir: string): Answered[] {
+  const answered = new Map<string, Answered>();
+  for (const page of readPages(dir)) {
+    for (const [source, choices] of sourceChoices(dir, page)) {
+      if (source !== 'note' && asksNoWork(choices)) answered.set(source, answeredEntry(source, page.round, choices));
+      else answered.delete(source);
+    }
+  }
+  return [...answered.values()];
+}
+
+interface AnswerState { rests: boolean; same: boolean; changed: boolean }
+/** Each source whose latest answer came from a page that saved its text: whether that answer asked no work, and whether the item, among these items, is the same now or changed. */
+function answerStates(dir: string, items: Item[]): Map<string, AnswerState> {
+  const now = itemPrints(dir, items);
+  const states = new Map<string, AnswerState>();
+  for (const page of readPages(dir)) {
+    const then = readJson<Record<string, string>>(printsPath(dir, page.round), {});
+    for (const [source, rests] of answeredSources(dir, page)) {
+      if (then[source] === undefined) states.delete(source);
+      else states.set(source, { rests, same: then[source] === now[source], changed: now[source] !== undefined && then[source] !== now[source] });
+    }
+  }
+  return states;
+}
+const sourcesWhere = (states: Map<string, AnswerState>, test: (state: AnswerState) => boolean) =>
+  new Set([...states].filter(([, state]) => test(state)).map(([source]) => source));
+const rested = (state: AnswerState) => state.rests && state.same;
+
+/** The sources among these items that the latest answer to them asked no work for, and that have not changed since. */
+export const restingSources = (dir: string, items: Item[]) => sourcesWhere(answerStates(dir, items), rested);
+
 function dismissedSource(source: string, status: string): boolean {
   if (['no-change', 'unchanged', 'settled'].includes(status)) return true;
   return status === 'fixed' && /^(?:D|DECIDE|DP|DISPUTE)-\d+$/.test(source);
@@ -193,16 +272,21 @@ export function inventory(input: InventoryInput): Inventory {
   const statuses = responseStatuses(dir);
   const media = reviewMedia(dir);
   const checklist = checklistItems(input);
-  // Failed rows, step failures and commits still waiting for their review round stay whatever the response says.
-  const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
-  const dismissed = [...statuses].filter(([id, status]) => !(kept.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id);
   const legacy = readText(join(changeFolder, 'test-plan.md')).match(/\bAT-\d+\b/g) ?? [];
   const required = [...checklist, ...logItems(changeFolder, 'decision'), ...logItems(changeFolder, 'dispute'),
     ...commits.map(item => ({ tier: 'orange' as const, item })), ...stepFailures(dir, media.problems).map(item => ({ tier: 'red' as const, item }))];
+  // Failed rows, step failures and commits still waiting for their review round stay whatever the response says,
+  // but not after the person reviewing asked for no work on them and nothing about them changed.
+  const kept = new Set([...checklist.filter(row => row.tier === 'red').map(row => row.item.source[0]), ...pendingReviewRound(dir)]);
+  // An item that changed since its latest answer shows again, whatever the response to that answer said.
+  const states = answerStates(dir, required.map(row => row.item));
+  const changed = sourcesWhere(states, state => state.changed);
+  const dismissed = [...new Set([...sourcesWhere(states, rested), ...[...statuses]
+    .filter(([id, status]) => !(kept.has(id) || changed.has(id) || id.startsWith('failure:')) && dismissedSource(id, status)).map(([id]) => id)])];
   const commands = media.commands.map(command => command.file);
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),
-    context: { dismissed, media: [...media.shots.map(shot => shot.file), ...commands], commands,
+    context: { dismissed, answered: answeredItems(dir), media: [...media.shots.map(shot => shot.file), ...commands], commands,
       links: { exec, dir, folder: changeFolder, base: '', head: output(exec, 'git', ['rev-parse', 'HEAD']) ?? '', bases: baseRevisions(exec, dir) },
       journeys: [...media.journeys.map(journey => journey.code), ...legacy], commits: commits.map(item => item.source[0]) } };
 }

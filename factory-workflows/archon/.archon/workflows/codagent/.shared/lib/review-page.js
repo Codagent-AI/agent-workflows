@@ -498,6 +498,11 @@
     for (const kind of item.type.split(',')) tags.append(node('span', kind.trim(), 'kind'));
     body.append(tags, inline(node('h3'), item.title));
     if (item.failLine) body.append(node('p', item.failLine, 'fail-line'));
+    if (item.answered) {
+      const earlier = node('p', answeredLine(item.answered), 'answered-line');
+      if (item.answered.issue) earlier.append(' ', link('The issue filed for it', item.answered.issue));
+      body.append(earlier);
+    }
     body.append(prose(item.detail));
     if (item.evidence) body.append(commandEvidence(item.evidence));
     const ask = node('div', '', 'ask');

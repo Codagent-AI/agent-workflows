@@ -37,7 +37,7 @@ record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-chan
 finalize-push: {"ok":true,"problems":""}
 mark-ready: {"ok":true,"problems":""}
 wait-finalize-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
-ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":""}
+ci-cycle-status: {"done":true,"fix":false,"cycle":1,"ci_report":"","head":"2222222222222222222222222222222222222222"}
 final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
 record-finalize: {"ok":true,"problems":""}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}

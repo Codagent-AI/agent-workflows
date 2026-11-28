@@ -1,6 +1,8 @@
 // The reader check: a fresh agent reads the page's items as the reviewer sees them, and the
 // items it could not follow go back to the ranker for one rewrite.
 import { TIERS, type Item, type Ranking } from './review-inventory.ts';
+import { followUp } from './review-questions.ts';
+import { answeredLine } from './review-send.ts';
 
 export interface ReaderEntry { number: number; asks: string; options: { label: string; does: string }[]; if_wrong: string; unclear: string[]; }
 export interface Flag { number: number; title: string; unclear: string[]; missing: string[]; }
@@ -19,7 +21,8 @@ export function readerItems(ranking: Ranking): string {
       ...question.options.map(option => `- ${option.label}${option.detail ? `: ${option.detail}` : ''}`),
     ].join('\n'));
     const links = item.links?.length ? [`Links on GitHub: ${item.links.map(entry => entry.label).join(', ')}`] : [];
-    return [`## Item ${index + 1}`, `### ${item.title}`, item.detail, ...questions, ...links].join('\n\n');
+    const answered = item.answered ? [answeredLine(item.answered)] : [];
+    return [`## Item ${index + 1}`, `### ${item.title}`, ...answered, item.detail, ...questions, ...links].join('\n\n');
   }).join('\n\n');
 }
 
@@ -77,9 +80,9 @@ function rewritten(item: Item, rewrite: Rewrite): Item {
     ...(labels && item.links ? { links: item.links.map((link, at) => ({ ...link, label: labels[at] })) } : {}),
     questions: item.questions?.map((question, index) => ({
       ...question, prompt: rewrite.questions[index].prompt,
-      // A spec edit's detail is the exact edit the round applies, so its wording stays.
-      options: question.options.map((option, at) => ({ ...option, label: rewrite.questions[index].options[at].label,
-        detail: option.id === 'spec-edit' ? option.detail : rewrite.questions[index].options[at].detail })),
+      // A follow-up says what the workflow does, so its wording stays.
+      options: question.options.map((option, at) => option.id === followUp.id ? option : { ...option, label: rewrite.questions[index].options[at].label,
+        detail: rewrite.questions[index].options[at].detail }),
     })),
   };
 }

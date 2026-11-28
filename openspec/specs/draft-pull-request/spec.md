@@ -6,7 +6,7 @@ Defines how the pack reaches the forge, opens and keeps the change's pull reques
 ## Requirements
 
 ### Requirement: Forge access is checked before any agent spends
-The first node after input validation SHALL check that a forge plugin serves the host of the branch's remote with every operation the pack uses, including `pr.merge` when the wait is on, and that its credential resolves, without calling the forge.
+The first node after input validation SHALL check that a forge plugin serves the host of the branch's remote with every operation the pack uses, including `pr.merge` and `workitem.create` when the wait is on, and that its credential resolves, without calling the forge.
 
 #### Scenario: Plugin and credential are ready
 - **WHEN** `archon forge check` reports a plugin and a credential for the remote's host
@@ -24,9 +24,13 @@ The first node after input validation SHALL check that a forge plugin serves the
 - **WHEN** the wait is on and the forge plugin does not offer `pr.merge`
 - **THEN** the run fails before any agent node runs, naming the missing operation
 
+#### Scenario: Forge cannot file issues
+- **WHEN** the wait is on and the forge plugin does not offer `workitem.create`
+- **THEN** the run fails before any agent node runs, naming the missing operation
+
 #### Scenario: Wait is off
-- **WHEN** the wait is off and the forge plugin does not offer `pr.merge`
-- **THEN** the check does not ask for it
+- **WHEN** the wait is off and the forge plugin does not offer `pr.merge` or `workitem.create`
+- **THEN** the check does not ask for them
 
 ### Requirement: Forge calls go through the Archon forge CLI
 Every pull request read and write except comment threads SHALL run as `archon forge <op> --data-file <file>`, with authored content only in the data file.

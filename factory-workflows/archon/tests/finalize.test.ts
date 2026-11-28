@@ -73,7 +73,7 @@ test('INT-010 cycle gate reads the saved wait result, so comments reach fix-pr w
   const env={...process.env,ARTIFACTS_DIR:box.path('artifacts'),INPUTS_STATUS:'',INPUTS_PREVIOUS:'0',ARCHON_CLI_COMMAND:JSON.stringify([join(box.binDir,'archon')])};
   const run=(op:string)=>{const r=spawnSync(process.execPath,[script],{cwd:box.dir,encoding:'utf8',env:{...env,INPUTS_OP:op}});expect(r.status).toBe(0);return JSON.parse(r.stdout);};
   const gate=run('ci-cycle-status');
-  expect(gate).toMatchObject({done:false,fix:true,cycle:1});expect(gate.ci_report).toContain('name the file in the error');
+  expect(gate).toMatchObject({done:false,fix:true,cycle:1,head:box.head()});expect(gate.ci_report).toContain('name the file in the error');
   expect(run('end-ci-cycle')).toEqual({done:false,fix:true,cycle:1});
 });
 test('INT-010 wait errors for missing upstream and draft return without polling',()=>{
@@ -484,7 +484,7 @@ test('shared answers settle every grouped source while separate declined dispute
   ]));
   const result = inventory({ exec: box.exec, dir, changeFolder: folder });
   expect(result.required.map(row => [row.tier, ...row.item.source])).toEqual([
-    ['yellow', 'DECIDE-4'], ['red', 'DISPUTE-3'], ['yellow', 'DISPUTE-4'],
+    ['yellow', 'DECIDE-4'], ['orange', 'DISPUTE-3'], ['yellow', 'DISPUTE-4'],
   ]);
   expect(checkRanking(emptyRanking(), result.required, result.context).problems).toContain('DISPUTE-4');
   const placed = placeRanking(emptyRanking(), result.required, result.context);

@@ -9,7 +9,7 @@ import {
 import { collectReview, initialChoice, missingAnswers, sizeTotals } from '../.archon/workflows/codagent/.shared/lib/review-send.ts';
 import { applyRewrite, flagItems, passingRewrite, readerItems, readerNotes } from '../.archon/workflows/codagent/.shared/lib/review-reader.ts';
 import { markReviewRoundDone, pendingReviewRound, reviewedCommits } from '../.archon/workflows/codagent/.shared/lib/review-revisions.ts';
-import { settleQuestions } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
+import { followUp, settleQuestions } from '../.archon/workflows/codagent/.shared/lib/review-questions.ts';
 import { createSandbox, type Sandbox } from './helpers.ts';
 
 const scripts = resolve(import.meta.dir, '../.archon/workflows/codagent/implement-change/scripts');
@@ -19,10 +19,7 @@ function cycle(state: ReviewState, round = 0): void {
   startCycle(state, { place: round ? 'acceptance' : 'before-pr', round, start: 'base', end: 'head' });
 }
 function stateWithFinding(): ReviewState {
-  const state = emptyState();
-  cycle(state);
-  addFindings(state, [defect()]);
-  return state;
+  const state = emptyState(); cycle(state); addFindings(state, [defect()]); return state;
 }
 const act = (state: ReviewState, action: 'fixed' | 'declined' | 'replied') =>
   applyActions(state, [{ id: 'REVIEW-1', action, note: `fixer ${action}` }]);
@@ -163,7 +160,7 @@ describe('review rendering and handoff', () => {
     for (const expected of ['## Review finding REVIEW-1', '## Review finding REVIEW-2', 'Question:', 'Requirement:', 'Decision:',
       'Rationale:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
       'intentional compatibility', 'The reviewer accepted it.', 'review/before-pr.md']) expect(ledger).toContain(expected);
-    expect(ledger).not.toContain('## Review finding REVIEW-3');
+    expect(ledger).not.toContain('## Review finding REVIEW-3'); expect(ledger.split('Missing config crashes')).toHaveLength(3);
     expect(ledger).not.toContain('No unresolved assumptions');
     expect(renderResult(state)).toContain('Low');
     expect(handedOff(state)).toContain('REVIEW-2: Accepted (file.txt:0)');
@@ -184,9 +181,7 @@ describe('review rendering and handoff', () => {
 
 interface OutputSchema {
   type: 'object' | 'boolean' | 'string' | 'integer';
-  properties?: Record<string, OutputSchema>;
-  required?: string[];
-  additionalProperties?: boolean;
+  properties?: Record<string, OutputSchema>; required?: string[]; additionalProperties?: boolean;
 }
 interface ScriptNode { script?: string; output_format?: OutputSchema; loop_group?: { nodes: ScriptNode[] } }
 const workflow = Bun.YAML.parse(readFileSync(join(scripts, '../implement-change.yaml'), 'utf8')) as { nodes: ScriptNode[] };
@@ -217,8 +212,7 @@ test('review script output check permits optional fields and enforces required a
   expect(() => checkOutput(schema, { files: 'file.txt', unexpected: '' })).toThrow();
 });
 
-let box: Sandbox;
-let artifacts: string;
+let box: Sandbox; let artifacts: string;
 beforeEach(() => { box = createSandbox(); artifacts = join(box.binDir, 'artifacts'); mkdirSync(artifacts); });
 afterEach(() => box.dispose());
 function run(name: string, inputs: Record<string, unknown> = {}, fails = false): Record<string, unknown> {
@@ -230,10 +224,8 @@ function run(name: string, inputs: Record<string, unknown> = {}, fails = false):
   expect(output.stderr).toBe(''); expect(output.status).toBe(0);
   const parsed = JSON.parse(output.stdout) as Record<string, unknown>;
   expect(output.stdout.trim().split('\n')).toHaveLength(1);
-  const schema = outputSchemas.get(name);
-  if (!schema) throw new Error(`No output schema for ${name}`);
-  checkOutput(schema, parsed);
-  return parsed;
+  const schema = outputSchemas.get(name); if (!schema) throw new Error(`No output schema for ${name}`);
+  checkOutput(schema, parsed); return parsed;
 }
 const read = (file: string): string => readFileSync(join(artifacts, file), 'utf8');
 const persisted = (): ReviewState => JSON.parse(read('review/state.json')) as ReviewState;
@@ -307,15 +299,14 @@ describe('INT-009 review scripts against real git', () => {
     box.write('openspec/changes/demo/proposal.md', 'definition'); box.git('add', '.'); box.commit('definition');
     const tail = prepare('tail'); expect(tail.needed).toBe(true); expect(tail.files).toBe('');
     record(tail, [], 'tail');
-    expect(persisted().last_reviewed).toBe(box.head());
+    expect([persisted().last_reviewed, persisted().cycles.map(entry => entry.reviewed)]).toEqual([box.head(), [undefined, true]]);
     expect(read('review/before-pr.md')).toContain(box.head());
   });
   test('same-head tail skips even when an unclosed low finding remains', () => {
     const start = box.head(); box.commitFix();
     record(prepare('initial', start), [defect({ severity: 'low' })]);
     run('hand-off-review');
-    const tail = prepare('tail');
-    expect(tail.needed).toBe(false);
+    expect(prepare('tail').needed).toBe(false);
     expect(persisted().cycles).toHaveLength(1);
   });
   test('fix and re-review scripts maintain incremental revision, blocked commits get tail review and handoff is idempotent', () => {
@@ -429,13 +420,22 @@ test('a review round answer starts the feedback review before the late commit it
   expect([pendingReviewRound(artifacts), reviewedCommits(artifacts)]).toEqual([[], [late]]);
 });
 
-test('late commits gain a review round option and yellow items that recommend work move to orange', () => {
+test('a finalize review covers only its cycle\'s fix and keeps what it reviewed off the late commits', () => {
+  const ran = box.head(); const fix = box.commitFix('ci fix\n'); const input = { place: 'finalize', mode: 'finalize', change_dir: 'openspec/changes/demo', round: 2 };
+  const prepared = run('prepare-review', { ...input, start: ran }); expect([prepared.start, prepared.end, prepared.files]).toEqual([ran, fix, 'file.txt']);
+  record({ ...prepared, place: 'finalize' }, [defect()], 'finalize'); expect(reviewedCommits(artifacts)).toEqual([fix]); const refix = box.commitFix('review fix\n');
+  const fixed = run('record-review-fixes', { review_name: 'fix-ci-fix-findings', result: { blocked: false, reason: '', actions: [{ id: 'REVIEW-1', action: 'fixed', note: 'done' }] } });
+  run('end-review-round', { place: 'finalize', blocked: false, end: fixed.end, review_name: 'ci-fix-re-review', result: { verdicts: [{ id: 'REVIEW-1', verdict: 'confirmed', reason: 'ok' }], findings: [] } });
+  expect(reviewedCommits(artifacts)).toEqual([fix, refix]);
+});
+
+test('late commits gain a review round option, follow-ups get the workflow wording, and yellow items that recommend work move to orange', () => {
   const ask = (...codes: string[]) => ({ prompt: codes.join(' '), options: codes.map(id => ({ id, label: id })) }); const { orange, yellow } = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('keep', 'fix')] }, { type: 'Late commit, Agent decision', questions: [ask('a', 'b', 'c', 'd'), ask('retest', 'leave')] }],
     yellow: [{ type: 'Risk', questions: [ask('accept', 'try')] }, { type: 'Risk', questions: [ask('fix', 'accept')] }] });
   const ids = (items: typeof orange) => items.map(item => item.questions?.map(question => question.options.map(option => option.id).join(' ')));
   expect([ids(orange), ids(yellow)]).toEqual([[['keep fix review-round'], ['a b c d', 'review-round keep', 'retest leave'], ['fix accept']], [['accept try']]]);
   const off = settleQuestions({ red: [], orange: [{ type: 'Late commit', questions: [ask('review-round', 'keep'), ask('a', 'review-round', 'b')] }], yellow: [{ type: 'Late commit', questions: [ask('accept', 'leave')] }] }, false);
-  expect([ids(off.orange), ids(off.yellow)]).toEqual([[['keep leave', 'a b']], [['accept leave']]]);
+  expect([ids(off.orange), ids(off.yellow)]).toEqual([[['keep leave', 'a b']], [['accept leave']]]); const later = { prompt: 'Later?', options: [{ id: 'follow-up', label: 'Define a follow-up change', detail: 'Records it' }, { id: 'drop', label: 'Drop it' }] }; expect(settleQuestions({ red: [{ type: 'Dispute', questions: [later] }], orange: [], yellow: [] }).red[0].questions?.[0].options).toEqual([followUp, later.options[1]]);
 });
 
 test('unanswered red and orange questions count plain blanks and empty Other, with yellow optional', () => {
@@ -486,7 +486,7 @@ test('the reader check renders page items, flags unclear ones and rewrites only 
   expect(readerNotes(flags)).toBe('Item 1: Checker floor\n- Could not understand: "floor"\n- Could not tell what each option would do\n- Could not tell what happens if the choice is wrong');
   const wording = { prompt: 'Keep the minimum?', options: [{ id: 'keep', label: 'Keep it', detail: 'Plain' }, { id: 'follow-up', label: 'Later', detail: 'After merge' }] };
   const next = applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['Why it was argued'] }, { number: 2, title: 'Not flagged', detail: 'x', questions: [wording] }], [1]);
-  expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });
+  expect(next.orange[0]).toEqual({ ...item, title: 'Plain title', detail: 'Plain detail', questions: [{ ...wording, options: [wording.options[0], question.options[1]], source: 'DISPUTE-1' }], links: [{ label: 'Why it was argued', target: 'log:DISPUTE-1' }] });
   expect(applyRewrite(ranking, [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording], links: ['a', 'b'] }], [1]).orange[0].links).toEqual(item.links);
   expect(next.yellow[0].title).toBe('Clear item');
   const reordered = { ...wording, options: [...wording.options].reverse() };
@@ -494,7 +494,4 @@ test('the reader check renders page items, flags unclear ones and rewrites only 
   const both = [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording] }, { number: 2, title: 'Breaks the check', detail: 'x', questions: [wording] }];
   const kept = passingRewrite(ranking, both, [1, 2], candidate => candidate.yellow[0].title !== 'Breaks the check');
   expect([kept.orange[0].title, kept.yellow[0].title, passingRewrite(ranking, both, [1, 2], () => false)]).toEqual(['Plain title', 'Clear item', ranking]);
-  const edit = { ...item, questions: [{ ...question, options: [{ id: 'spec-edit', label: 'Apply', detail: 'Change X to Y.' }, question.options[1]] }] };
-  const reworded = { prompt: 'P', options: [{ id: 'spec-edit', label: 'Apply it', detail: 'Reworded' }, { id: 'follow-up', label: 'Later', detail: '' }] };
-  expect(applyRewrite({ ...ranking, orange: [edit] }, [{ number: 1, title: 'T', detail: 'D', questions: [reworded] }], [1]).orange[0].questions?.[0].options[0]).toEqual({ id: 'spec-edit', label: 'Apply it', detail: 'Change X to Y.' });
 });

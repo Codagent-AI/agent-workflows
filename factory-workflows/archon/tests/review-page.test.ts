@@ -224,8 +224,8 @@ test('publication rebuilds missing ranking from required items and refuses an un
     box.commit('commit the review sources');
     const commit = box.commitFix();
     const ranking = rankingForPublication(input);
-    expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2', 'DISPUTE-1']);
-    expect(ranking.orange.flatMap(item => item.source)).toEqual([commit]);
+    expect(ranking.red.flatMap(item => item.source)).toEqual(['CHECK-1', 'CHECK-2']);
+    expect(ranking.orange.flatMap(item => item.source)).toEqual(['DISPUTE-1', commit]);
     box.write(`${input.changeFolder}/checklist.md`, '| No status column |');
     expect(() => rankingForPublication(input)).toThrow('checklist with Status column is missing');
   } finally {
@@ -411,7 +411,7 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
     detail: `Coverage:\n- **Test** \`verify\`\n* </script><img onerror=x>\n\n[allowed](${href}) [other](https://example.test/) [lookalike](https://github.com/owner/repo-lookalike/blob/${head}/file.txt) [local](file:///tmp/private)`,
     evidence: command, links: [] };
   const yellow = { ...red, type: 'Agent decision', title: 'Use the default', evidence: undefined, failLine: undefined,
-    source: ['DECIDE-1'], links: [{ label: 'What changed', href }, { label: 'Why', href: `${href}0` }] };
+    source: ['DECIDE-1'], links: [{ label: 'What changed', href }, { label: 'Why', href: `${href}0` }], answered: { round: 1, answer: 'File a follow-up issue.', issue: `${forgeBase}/issues/3` } };
   const data = { title: 'Export settings', round: 2, head, run: 'review-run', repository: 'owner/repo', pullRequest: 7,
     pullRequestUrl: `${forgeBase}/pull/7`, logs: { decisions: href, disputes: `${href}0` }, forgeBase, summary: '', recap: [], size: null,
     red: [red], orange: [], yellow: [yellow], commands: [command], keyEvidence: [command], wait: true, merge: true,
@@ -439,8 +439,8 @@ test('mixed evidence renders a safe, ordered page and mirrors command comments',
   expect(page('.masthead .meta').byTag('dd').map(value => value.textContent)).toContain(data.head);
   expect(main.children.at(-1)?.children.filter(child => child.className === 'tier-group').map(child => child.id)).toEqual(['red', 'yellow']);
   expect(main.byTag('article').map(article => article.children[0].textContent)).toEqual(['1', '2']);
-  expect(main.find('tier-head')?.find('dot')?.className).toBe('dot red');
-  expect(main.find('tier-head')?.find('c')?.textContent).toBe('(1)');
+  expect(main.find('tier-head')?.find('dot')?.className).toBe('dot red'); expect(main.find('tier-head')?.find('c')?.textContent).toBe('(1)');
+  const earlier = main.find('answered-line'); expect([earlier?.textContent, earlier?.byTag('a').map(anchor => anchor.href)]).toEqual(['You answered this in round 1: File a follow-up issue. The issue filed for it', [`${forgeBase}/issues/3`]]);
   expect(main.find('links')?.byTag('a').map(anchor => anchor.textContent)).toEqual(['What changed', 'Why']);
   expect(main.find('links-label')?.textContent).toBe('On GitHub');
   const concern = main.find('item-body');

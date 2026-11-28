@@ -73,3 +73,8 @@ export function sizeTotals(rows: { files: number; added: number; modified: numbe
     modified: sum.modified + row.modified, removed: sum.removed + row.removed,
   }), { files: 0, added: 0, modified: 0, removed: 0 });
 }
+
+/** The line an item that repeats an earlier answered item shows, so the person sees what they already chose. */
+export function answeredLine(answered: { round: number; answer: string }): string {
+  return `You answered this in round ${answered.round}: ${answered.answer.replace(/[.\s]+$/, '')}.`;
+}

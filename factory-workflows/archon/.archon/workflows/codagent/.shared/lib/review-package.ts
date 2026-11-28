@@ -1,7 +1,8 @@
 import { type CheckResult, fail, pass } from './check.ts';
-import { TIERS, type Ranking, type RequiredItem, type Item, type Tier } from './review-inventory.ts';
+import { type Answered, TIERS, type Ranking, type RequiredItem, type Item, type Tier } from './review-inventory.ts';
 import { type LinkContext, resolveTarget } from './review-links.ts';
 import { type KeyEvidence, type Question, standardQuestion, validQuestion } from './review-questions.ts';
+import { isRepeat } from './review-repeats.ts';
 
 
 const TYPES = new Set(['Agent decision', 'Risk', 'Failure', 'Dispute', 'Late commit', 'Human check']);
@@ -40,7 +41,8 @@ function requiredProblems(ranking: Ranking, required: RequiredItem[], context: R
   const all = entries(ranking);
   return required.flatMap(expected => {
     const found = all.find(({ item }) => expected.item.source.every(source => item.source?.includes(source)));
-    if (!found || TIERS.indexOf(found.tier) > TIERS.indexOf(expected.tier)) return [`missing or under-ranked ${expected.item.source.join(', ')}`];
+    // An item that repeats an earlier answer may sit below its tier, where the page shows that answer.
+    if (!found || (TIERS.indexOf(found.tier) > TIERS.indexOf(expected.tier) && !isRepeat(found.item, context.answered))) return [`missing or under-ranked ${expected.item.source.join(', ')}`];
     return requiredItemProblems(expected, found.item, context);
   });
 }
@@ -51,6 +53,7 @@ export interface RankingContext {
   journeys: string[];
   commits: string[];
   dismissed: string[];
+  answered?: Answered[];
 }
 const emptyContext: RankingContext = { media: [], commands: [], journeys: [], commits: [], dismissed: [] };
 function validPick(pick: KeyEvidence, context: RankingContext): boolean {
@@ -83,8 +86,7 @@ function disputeChoices(item: Item, required: RequiredItem[]): Item[] {
 
 function matchesDisputeChoices(question: Question | undefined, expected: Item): boolean {
   const allowed = expected.questions?.[0]?.options ?? [];
-  return question?.options.length === allowed.length && allowed.every(wanted => question.options.some(option =>
-    option.id === wanted.id && (!wanted.detail || option.detail === wanted.detail)));
+  return question?.options.length === allowed.length && allowed.every(wanted => question.options.some(option => option.id === wanted.id));
 }
 
 function hasSharedSource(item: Item, disputes: Item[]): boolean {

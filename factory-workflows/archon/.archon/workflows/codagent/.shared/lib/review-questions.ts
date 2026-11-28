@@ -3,6 +3,11 @@ export interface Question { source?: string; prompt: string; options: Option[] }
 export interface KeyEvidence { file: string; title: string; shows: string }
 export interface LateJourney { code: string; title: string; commit: string }
 
+// Answers that ask the next round for no work. An item answered only with these stays off later pages until it changes.
+const restingOptions = new Set(['leave', 'keep', 'drop', 'follow-up']);
+export const asksNoWork = (choices: { option: string; other?: string; note?: string }[]) =>
+  choices.every(choice => restingOptions.has(choice.option) && !choice.other?.trim() && !choice.note?.trim());
+
 export function validQuestion(question: Question): boolean {
   if (typeof question?.prompt !== 'string' || !question.prompt.trim() || !Array.isArray(question.options)) return false;
   const { options, source } = question;
@@ -17,6 +22,9 @@ export function validQuestion(question: Question): boolean {
 export const reviewRound: Option = { id: 'review-round', label: 'Run a review round',
   detail: 'The next round’s reviewer reviews this commit, the implementor fixes what it finds, and the reviewer checks the fixes.' };
 const keepCommit: Option = { id: 'keep', label: 'Keep it without a review' };
+/** Files an issue for the item when the next round starts. The workflow does it, so the wording is the workflow's, not the ranking's. */
+export const followUp: Option = { id: 'follow-up', label: 'File a follow-up issue',
+  detail: 'The next round files a GitHub issue for this and changes nothing in this pull request.' };
 
 export function standardQuestion(type: string): Question {
   if (type.includes('Late commit')) return { prompt: 'What should the run do about this commit?', options: [{ ...reviewRound }, { ...keepCommit }] };
@@ -58,15 +66,22 @@ export function withoutReviewRound<T extends Asked>(item: T): T {
   }) };
 }
 
-/** Gives late commits their review round when code review is on, and moves each yellow item whose recommendation asks the next round for work up to orange. */
+function withFollowUpWording<T extends Asked>(item: T): T {
+  if (!hasOption(item.questions ?? [], followUp.id)) return item;
+  return { ...item, questions: item.questions?.map(question => ({ ...question,
+    options: question.options.map(option => option.id === followUp.id ? { ...followUp } : option) })) };
+}
+
+/** Gives late commits their review round when code review is on, words each follow-up option as what it does, and moves each yellow item whose recommendation asks the next round for work up to orange. */
 export function settleQuestions<T extends Asked, R extends { red: T[]; orange: T[]; yellow: T[] }>(ranking: R, review = true): R {
   const offer = review ? withReviewRound : withoutReviewRound;
-  const [red, orange, yellow] = [ranking.red, ranking.orange, ranking.yellow].map(items => items.map(item => offer(item)));
+  const [red, orange, yellow] = [ranking.red, ranking.orange, ranking.yellow].map(items => items.map(item => withFollowUpWording(offer(item))));
   return { ...ranking, red, orange: [...orange, ...yellow.filter(recommendsWork)], yellow: yellow.filter(item => !recommendsWork(item)) };
 }
 
 export function disputeQuestion(edit: string): Question {
-  const options: Option[] = [{ id: 'follow-up', label: 'Merge without it and define a follow-up change' }, { id: 'drop', label: 'Drop the request' }];
-  if (edit) options.unshift({ id: 'spec-edit', label: 'Apply this spec edit', detail: edit });
+  // The next round applies the dispute log's Spec edit line, so the option describes it and never quotes it; settleQuestions words the follow-up.
+  const options: Option[] = [{ id: followUp.id, label: followUp.label }, { id: 'drop', label: 'Drop the request' }];
+  if (edit) options.unshift({ id: 'spec-edit', label: 'Change the spec', detail: 'The next round makes the spec edit the dispute proposes and changes the code to match.' });
   return { prompt: 'How should the run handle this request to change approved behavior?', options };
 }

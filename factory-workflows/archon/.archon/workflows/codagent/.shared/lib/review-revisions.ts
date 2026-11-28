@@ -72,6 +72,10 @@ export function feedbackScope(exec: Exec, dir: string, start: string, end: strin
 const reviewedPath = (dir: string) => join(dir, 'review/reviewed-commits.json');
 const requestedPath = (dir: string) => join(dir, 'review/review-round-commits.json');
 export const reviewedCommits = (dir: string) => readJson<string[]>(reviewedPath(dir), []);
+/** Records the commits a review covered outside a review round, so they are not Late commit items. */
+export function markReviewed(exec: Exec, dir: string, start: string, end: string): void {
+  writeJson(reviewedPath(dir), [...new Set([...reviewedCommits(dir), ...reviewRevisions(exec, dir, start, end)])]);
+}
 
 const isCommit = (code: string) => /^[0-9a-f]{40}$/.test(code);
 const answersFile = (dir: string, round: number) => join(dir, `review-answers-round-${round}.json`);

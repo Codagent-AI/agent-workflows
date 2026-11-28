@@ -43,7 +43,15 @@ record-archive: {"change_folder":"openspec/changes/archive/2026-11-16-valid-chan
 finalize-push: {"ok":true,"problems":""}
 mark-ready: {"ok":true,"problems":""}
 wait-finalize-ci: {"status":"failed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
-ci-cycle-status: {"done":false,"fix":true,"cycle":1,"ci_report":""}
+ci-cycle-status: {"done":false,"fix":true,"cycle":1,"ci_report":"","head":"2222222222222222222222222222222222222222"}
+prepare-ci-fix-review: {"needed":true,"start":"2222222222222222222222222222222222222222","end":"3333333333333333333333333333333333333333","files":"src/config.ts","findings":"","handed_off":""}
+ci-fix-review: {"verdicts":[],"findings":[{"title":"Unchecked retry","file":"src/config.ts","line":4,"severity":"medium","category":"error-handling","problem":"The retry can loop.","fix":"Bound it."}]}
+record-ci-fix-review: {"settled":false,"findings":"REVIEW-2 Unchecked retry"}
+fix-ci-fix-findings: {"blocked":false,"reason":"","actions":[{"id":"REVIEW-2","action":"fixed","note":"Bounded the retry."}]}
+record-ci-fix-fixes: {"blocked":false,"start":"3333333333333333333333333333333333333333","end":"4444444444444444444444444444444444444444","findings":"REVIEW-2 fixed: Bounded the retry."}
+ci-fix-re-review: {"verdicts":[{"id":"REVIEW-2","verdict":"confirmed","reason":"Bounded."}],"findings":[]}
+end-ci-fix-review: {"stop":true,"findings":""}
+hand-off-ci-fix-review: {"ok":true}
 final-ci: {"status":"passed","had_checks":true,"head_moved":false,"report":"ci/finalize-1.md","cycle":1,"ci_report":"CI report: no actionable checks or comments."}
 record-finalize: {"ok":true,"problems":""}
 prepare-ranking: {"accepted_head":"1111111111111111111111111111111111111111","later_commits":"[]"}
@@ -62,8 +70,15 @@ fixture:
   authored: succeeded
   reached:
     - fix-pr
+    - ci-fix-review
+    - fix-ci-fix-findings
+    - ci-fix-re-review
+    - hand-off-ci-fix-review
     - push-ci-fix
     - final-ci
+  resolved-text-contains:
+    ci-fix-review: "2222222222222222222222222222222222222222"
+    fix-ci-fix-findings: REVIEW-2 Unchecked retry
   inputs:
     review_wait: "false"
     change_name: valid-change

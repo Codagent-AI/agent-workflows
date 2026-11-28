@@ -1,10 +1,12 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { retainedChangeFolder } from './archive.ts';
+import { fail } from './check.ts';
 import { OPS, type PrView } from './forge.ts';
 import type { Tools } from './pull-request.ts';
-import { description, type PageEntry, pagesPath, readPages, sentBlock, updateDescription, viewNumber } from './review-pages.ts';
-import { readJson, readText, type StepResult, writeJson, writeText } from './run-files.ts';
+import { description, type PageEntry, type PageItem, pagesPath, publishedItems, readPages, sentBlock, sharedSources, updateDescription, viewNumber } from './review-pages.ts';
+import { asksNoWork, followUp } from './review-questions.ts';
+import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
 export interface Choice {
   item: string;
@@ -14,6 +16,8 @@ export interface Choice {
   detail?: string;
   other?: string;
   note?: string;
+  /** The follow-up issue the workflow filed for this choice. */
+  issue?: string;
 }
 
 export interface ReviewAnswer {
@@ -41,7 +45,7 @@ type Mode = 'first' | 'feedback' | 'refused' | 'stale' | 'merged' | 'closed';
 export const outcomesPath = (dir: string) => join(dir, 'review/outcome.json');
 export const answersPath = (dir: string, round: number) => join(dir, `review-answers-round-${round}.json`);
 export const responsePath = (dir: string, round: number) => join(dir, `review-response-round-${round}.json`);
-export const roundFailures = ['merge-base', 'address-feedback', 'check-response', 'description', 'logs'];
+export const roundFailures = ['merge-base', 'follow-up', 'address-feedback', 'check-response', 'description', 'logs'];
 
 function pageAnswer(text: string): Partial<ReviewAnswer> | undefined {
   try {
@@ -137,8 +141,58 @@ function clearRound(dir: string, round: number): void {
   if (!snapshotted) writeJson(marker, { round });
 }
 
-function begin(input: RoundInput, page: PageEntry): ReturnType<typeof roundOutput> {
+const logFiles: [RegExp, string][] = [[/^(?:DISPUTE|DP)-\d+$/, 'dispute-log.md'], [/^(?:DECIDE|D)-\d+$/, 'decision-log.md']];
+
+// The decision or dispute log entry for a source code, if it has one.
+function logEntry(folder: string, code: string): string {
+  const file = logFiles.find(([pattern]) => pattern.test(code))?.[1];
+  const blocks = file ? readText(join(folder, file)).split(/^(?=## )/m) : [];
+  return blocks.find(block => block.startsWith(`## ${code}:`))?.trim() ?? '';
+}
+
+function followUpIssue(input: RoundInput, page: PageEntry, choice: Choice, item?: PageItem) {
+  const pr = `${page.ref.repo.path}#${page.ref.number}`;
+  const marker = `<!-- codagent follow-up: ${pr} ${choice.item} -->`;
+  const parts = [`Left for later in review round ${page.round} of ${pr}.`, item?.detail, logEntry(retainedChangeFolder(input.folder), choice.item), choice.note];
+  return { repo: page.ref.repo, title: item?.title || choice.item, body: [marker, ...parts.filter(Boolean)].join('\n\n'), marker };
+}
+
+// Each follow-up answer files an issue for its item. The marker lets a resumed round find the issue it filed instead of filing another.
+function filePageFollowUps(tools: Tools, input: RoundInput, page: PageEntry): string[] {
+  const file = answersPath(input.dir, page.round);
+  const saved = readJson<SavedAnswer | null>(file, null);
+  if (!saved?.answers?.some(choice => choice.option === followUp.id && !choice.issue)) return [];
+  const items = publishedItems(input.dir, page);
+  const problems: string[] = [];
+  const answers = saved.answers.map(choice => {
+    if (choice.option !== followUp.id || choice.issue) return choice;
+    const request = followUpIssue(input, page, choice, items.find(item => item.source.includes(choice.item)));
+    const filed = tools.forge.call<{ workitem: { url: string } }>(OPS.createIssue, request);
+    if (filed.ok) return { ...choice, issue: filed.value.workitem.url };
+    problems.push(`${choice.item}: ${filed.problem}`);
+    return choice;
+  });
+  writeJson(file, { ...saved, answers });
+  return problems;
+}
+
+/** Whether a page after this round answered the follow-up failure without asking for work, leaving its missing issues to the person. */
+function followUpsLeft(dir: string, pages: PageEntry[], round: number): boolean {
+  return pages.some(page => page.round > round && (readJson<SavedAnswer | null>(answersPath(dir, page.round), null)?.answers ?? []).some(choice =>
+    (sharedSources(dir, page).get(choice.item) ?? [choice.item]).includes('failure:follow-up') && asksNoWork([choice])));
+}
+
+// A follow-up that could not be filed is tried again each round, until it is filed or the person takes it on, so its failure stays on the page.
+function fileFollowUps(tools: Tools, input: RoundInput, page: PageEntry): void {
+  const pages = readPages(input.dir).filter(entry => entry.round <= page.round);
+  const pending = pages.filter(entry => entry.round === page.round || !followUpsLeft(input.dir, pages, entry.round));
+  const problems = pending.flatMap(entry => filePageFollowUps(tools, input, entry));
+  if (problems.length > 0) recordStep(input.dir, 'follow-up', { ...fail(problems.join('\n')), remaining: 'File the missing follow-up issues by hand.' });
+}
+
+function begin(tools: Tools, input: RoundInput, page: PageEntry): ReturnType<typeof roundOutput> {
   clearRound(input.dir, page.round);
+  fileFollowUps(tools, input, page);
   const refused = page.status === 'Merge refused';
   return roundOutput(input, page.round + 1, refused ? 'refused' : 'feedback', page.reason);
 }
@@ -180,7 +234,7 @@ function handleRefusal(tools: Tools, input: RoundInput, pages: PageEntry[], repl
   page.time = time;
   page.refresh = needsRefresh(tools, page, observed?.head_revision);
   writeJson(pagesPath(input.dir), pages);
-  if (page.refresh) return begin(input, page);
+  if (page.refresh) return begin(tools, input, page);
   return roundOutput(input, page.round, 'stale', reason);
 }
 
@@ -215,7 +269,7 @@ export function startRound(tools: Tools, input: RoundInput) {
   const page = pages.at(-1);
   if (!page) return roundOutput(input, 1, 'first');
   const saved = readJson<SavedAnswer | null>(answersPath(input.dir, page.round), null);
-  if (resumePending(page, saved)) return begin(input, page);
+  if (resumePending(page, saved)) return begin(tools, input, page);
   const answer = parseAnswer(input.text, page);
   if (!answer && (!saved || page.status !== 'current')) return roundOutput(input, page.round, 'stale', page.reason);
   const view = readPr(tools, page);
@@ -236,5 +290,5 @@ function applyAnswer(tools: Tools, input: RoundInput, pages: PageEntry[], chosen
   delete page.refresh;
   page.time = response.time;
   writeJson(pagesPath(input.dir), pages);
-  return begin(input, page);
+  return begin(tools, input, page);
 }
