@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import type { CallManager } from "./agentcall.js";
+import { detectLead } from "./acpx.js";
 import { isValidChangeName, missingForSteps, nameRuleMessage } from "./checks.js";
-import { detectLead } from "./child.js";
 import { resolveCrosscheck } from "./config.js";
 import { type Context, logEvent, repoRoot } from "./context.js";
+import type { CrosscheckManager } from "./crosscheck.js";
 import { finishDefine, type ToolText } from "./finish.js";
 import { output, run } from "./proc.js";
 import {
@@ -29,14 +29,25 @@ function refuse(text: string): ToolText {
 }
 
 /** next_step: start or resume a define, or complete the current step and return the next one. */
-export async function nextStep(context: Context, calls: CallManager, args: NextStepArgs): Promise<ToolText> {
+export async function nextStep(context: Context, calls: CrosscheckManager, args: NextStepArgs): Promise<ToolText> {
+  const busy = calls.busyId();
+  if (busy) {
+    return refuse(`Crosscheck ${busy} is starting or running. Collect it with get_crosscheck, or stop it with cancel_crosscheck, before calling next_step.`);
+  }
+  if (calls.stepGate.held) {
+    return refuse("another next_step call is still running. Wait for it to return.");
+  }
+  return calls.stepGate.hold(() => nextStepIn(context, calls, args));
+}
+
+async function nextStepIn(context: Context, calls: CrosscheckManager, args: NextStepArgs): Promise<ToolText> {
   let root: string;
   try {
     root = await repoRoot(context);
   } catch (error) {
     return refuse((error as Error).message);
   }
-  const result = await nextStepIn(context, calls, root, args);
+  const result = await stepIn(context, calls, root, args);
   logEvent(context, root, "next_step", {
     change_name: args.change_name,
     start: args.start === true,
@@ -78,32 +89,7 @@ function loadState(workflow: Workflow, root: string, name: string): { state: Def
   }
 }
 
-/** Why next_step cannot run now, if it cannot: a crosscheck is starting or running, or another next_step is. */
-function busyRefusal(calls: CallManager): ToolText | undefined {
-  if (calls.isStarting()) {
-    return refuse(
-      "a crosscheck call is still starting. Wait for call_agent to return, then collect the call with get_agent_call or stop it with cancel_agent_call before calling next_step.",
-    );
-  }
-  const busy = calls.running();
-  if (busy) {
-    return refuse(
-      `crosscheck call ${busy.id} is still running. Collect it with get_agent_call, or stop it with cancel_agent_call, before calling next_step.`,
-    );
-  }
-  return calls.stepGate.held ? refuse("another next_step call is still running. Wait for it to return.") : undefined;
-}
-
-/** Runs one next_step with the step gate held, so no crosscheck starts until it returns. */
-function nextStepIn(context: Context, calls: CallManager, root: string, args: NextStepArgs): Promise<ToolText> {
-  const busy = busyRefusal(calls);
-  if (busy) {
-    return Promise.resolve(busy);
-  }
-  return calls.stepGate.hold(() => stepIn(context, root, args));
-}
-
-async function stepIn(context: Context, root: string, args: NextStepArgs): Promise<ToolText> {
+async function stepIn(context: Context, calls: CrosscheckManager, root: string, args: NextStepArgs): Promise<ToolText> {
   const name = resolveName(context.workflow, root, args);
   if (typeof name !== "string") {
     return name;
@@ -112,7 +98,11 @@ async function stepIn(context: Context, root: string, args: NextStepArgs): Promi
   if ("refusal" in loaded) {
     return loaded.refusal;
   }
-  return args.start ? startDefine(context, root, name, loaded.state) : completeStep(context, root, name, loaded.state);
+  if (!args.start) {
+    return completeStep(context, root, name, loaded.state);
+  }
+  const unavailable = await calls.acpx.refusal(root, context.env);
+  return unavailable ? refuse(unavailable) : startDefine(context, root, name, loaded.state);
 }
 
 /** next_step with start: true. Checks the crosscheck config, then begins a new define or resumes one. */
@@ -148,7 +138,7 @@ async function createDefine(context: Context, root: string, name: string, lead: 
   writeState(root, newState(context.workflow, name, at, lead), at);
   const step = firstStepId(context.workflow);
   return {
-    text: renderStep({ workflow: context.workflow, pluginRoot: context.pluginRoot, changeName: name, step, mode: "new", completed: [] }),
+    text: renderStep({ workflow: context.workflow, changeName: name, step, mode: "new", completed: [] }),
   };
 }
 
@@ -164,7 +154,6 @@ function resumeDefine(context: Context, root: string, state: DefineState, lead: 
   return {
     text: renderStep({
       workflow: context.workflow,
-      pluginRoot: context.pluginRoot,
       changeName: state.change_name,
       step,
       mode: "resume",
@@ -211,7 +200,6 @@ function advance(context: Context, root: string, state: DefineState, move: { fro
   return {
     text: renderStep({
       workflow: context.workflow,
-      pluginRoot: context.pluginRoot,
       changeName: state.change_name,
       step: move.to,
       mode: "continue",

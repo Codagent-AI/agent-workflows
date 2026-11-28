@@ -5,12 +5,18 @@ import { delimiter, join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 
-import type { Cli, CrosscheckChoice } from "./child.js";
+import type { Cli } from "./acpx.js";
 import { check } from "./schema.js";
 
 export const CONFIG_DISPLAY_PATH = "~/.agent-workflows/config.yaml";
 export const DEFAULT_EFFORT = "high";
-const CLIS = ["claude", "codex"] as const satisfies readonly Cli[];
+const LOCAL_CLIS = new Set(["claude", "codex", "agy"]);
+
+export interface CrosscheckChoice {
+  cli: string;
+  model?: string;
+  effort: string;
+}
 const CROSSCHECK_KEY = "`human-workflows.crosscheck`";
 
 export const SETUP_HINT = "Use the define-openspec-change:setup skill to set it up with the user, then try again.";
@@ -41,7 +47,7 @@ const optionalText = z
 const entrySchema = z
   .strictObject(
     {
-      cli: z.enum(CLIS, { error: (issue) => `must be "claude" or "codex", not ${JSON.stringify(issue.input)}` }),
+      cli: z.string().regex(/^[a-z][a-z0-9-]*$/, "must start with a lowercase letter and use only lowercase letters, digits, and hyphens"),
       model: optionalText,
       effort: optionalText,
     },
@@ -55,7 +61,7 @@ const entrySchema = z
   .transform(({ cli, model, effort }): CrosscheckChoice => (model === undefined ? { cli, effort: effort ?? DEFAULT_EFFORT } : { cli, model, effort: effort ?? DEFAULT_EFFORT }));
 
 const crosscheckSchema = z.array(entrySchema, { error: NEEDS_LIST }).min(1, NEEDS_LIST).superRefine((entries, context) => {
-  const seen = new Set<Cli>();
+  const seen = new Set<string>();
   for (const [index, entry] of entries.entries()) {
     if (seen.has(entry.cli)) {
       context.addIssue({ code: "custom", message: `more than one entry has cli: ${entry.cli}`, path: [index, "cli"] });
@@ -108,38 +114,24 @@ export function onPath(command: string, env: NodeJS.ProcessEnv): boolean {
   return false;
 }
 
-/**
- * The crosscheck entry for this session: the other CLI's entry when it is configured and installed,
- * otherwise the lead's own. With an unknown lead, the first configured entry that is installed.
- */
+/** All available reviewers on other CLIs, falling back to the lead's own entry. */
 export function chooseCrosscheck(
-  lead: Cli | undefined,
   entries: CrosscheckChoice[],
-  installed: (cli: Cli) => boolean,
-): CrosscheckChoice | string {
-  const order: Cli[] = lead === undefined ? entries.map((entry) => entry.cli) : [lead === "claude" ? "codex" : "claude", lead];
-  for (const cli of order) {
-    const entry = entries.find((candidate) => candidate.cli === cli);
-    if (entry && installed(cli)) {
-      return entry;
-    }
-  }
-  const configured = entries.map((entry) => entry.cli);
-  const missing = configured.filter((cli) => !installed(cli));
-  const leadText = lead === undefined ? "" : ` for a ${lead} lead`;
-  const detail =
-    missing.length > 0
-      ? `${CONFIG_DISPLAY_PATH} lists ${configured.join(" and ")}, but ${missing.join(" and ")} is not on PATH.`
-      : `${CONFIG_DISPLAY_PATH} has no entry for ${CLIS.join(" or ")} that can run${leadText}.`;
-  return `No crosscheck agent can run${leadText}. ${detail}`;
+  lead: Cli | undefined,
+  env: NodeJS.ProcessEnv,
+): CrosscheckChoice[] {
+  const available = entries.filter(({ cli }) => !LOCAL_CLIS.has(cli) || onPath(cli, env));
+  const others = available.filter(({ cli }) => cli !== lead);
+  return others.length > 0 ? others : available;
 }
 
-/** The crosscheck to use now, or the reason there is none (with the setup hint). */
-export function resolveCrosscheck(lead: Cli | undefined, env: NodeJS.ProcessEnv): CrosscheckChoice | string {
+export function resolveCrosscheck(lead: Cli | undefined, env: NodeJS.ProcessEnv): CrosscheckChoice[] | string {
   const config = readConfig(env);
   if (!config.ok) {
     return `${config.message} ${SETUP_HINT}`;
   }
-  const choice = chooseCrosscheck(lead, config.crosscheck, (cli) => onPath(cli, env));
-  return typeof choice === "string" ? `${choice} ${SETUP_HINT}` : choice;
+  const choices = chooseCrosscheck(config.crosscheck, lead, env);
+  return choices.length > 0
+    ? choices
+    : `No crosscheck reviewer can run. ${CONFIG_DISPLAY_PATH} lists ${config.crosscheck.map(({ cli }) => cli).join(", ")}, but none are on PATH. ${SETUP_HINT}`;
 }

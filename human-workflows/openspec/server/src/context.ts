@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { output, run } from "./proc.js";
 import type { Workflow } from "./steps.js";
@@ -18,10 +18,11 @@ export interface Context {
   pluginRoot: string;
   /** The steps, loaded from the plugin folder's workflow.yaml. */
   workflow: Workflow;
-  /** How long call_agent and get_agent_call wait before returning a running snapshot. */
+  /** How long crosscheck and get_crosscheck wait before returning a running snapshot. */
   waitMs: number;
   /** The longest a crosscheck call may run before it is stopped. Defaults to MAX_CALL_MS. */
   maxCallMs?: number;
+  killGraceMs?: number;
   /** Where logs and child output go. Never inside the working tree. */
   logBase: string;
   /** The MCP client's name from initialize, once known. */
@@ -61,9 +62,43 @@ export async function repoRoot(context: Context): Promise<string> {
   return result.stdout.trim();
 }
 
+/** Resolve symlinks in existing ancestors even when the private directory is new. */
+function resolvedLogPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || dirname(path) === path) {
+      throw error;
+    }
+    return join(resolvedLogPath(dirname(path)), basename(path));
+  }
+}
+
+function contains(root: string, path: string): boolean {
+  const fromRoot = relative(root, path);
+  return !isAbsolute(fromRoot) && fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`);
+}
+
+function logBaseFor(context: Context, root: string): string {
+  const repo = realpathSync(root);
+  const configured = resolvedLogPath(resolve(context.logBase));
+  if (!contains(repo, configured)) {
+    return configured;
+  }
+  const fallback = resolvedLogPath(join("/tmp", basename(defaultLogBase())));
+  if (contains(repo, fallback)) {
+    throw new Error(`No system temp folder outside the working tree at ${root}.`);
+  }
+  return fallback;
+}
+
 export function repoLogDir(context: Context, root: string): string {
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 12);
-  return join(context.logBase, hash);
+  const dir = join(logBaseFor(context, root), hash);
+  if (contains(realpathSync(root), resolvedLogPath(dir))) {
+    throw new Error(`Repository log directory resolves inside the working tree at ${root}: ${dir}`);
+  }
+  return dir;
 }
 
 /** Makes a folder only its owner can use, and tightens one that already exists. Throws if it cannot. */
@@ -74,8 +109,8 @@ export function ensurePrivateDir(path: string): void {
 
 /** The repository's log folder, or a folder under it, created so that only the current user can read it. */
 export function privateLogDir(context: Context, root: string, ...parts: string[]): string {
-  ensurePrivateDir(context.logBase);
   const repoDir = repoLogDir(context, root);
+  ensurePrivateDir(dirname(repoDir));
   ensurePrivateDir(repoDir);
   const dir = join(repoDir, ...parts);
   ensurePrivateDir(dir);

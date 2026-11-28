@@ -107,6 +107,6 @@ None.
   - Skills: `crosscheck` added, `call-agent` removed, `setup` and `define` updated.
   - `workflow.yaml` changes.
   - `.codex-mcp.json` keeps `DEFINE_OPENSPEC_CHANGE_CHILD` and `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS`, and lists the variables each supported agent needs.
-- **Docs:** README, the plugin's AGENTS.md, PROVENANCE, and the design docs for the plugin and the overview.
+- **Docs:** README, the plugin's AGENTS.md and PROVENANCE. The design docs for the plugin and the overview are private claude.ai pages outside the repository. They are updated outside the implementation, which leaves them alone.
 - **Dependencies:** acpx 0.23 or later, and the Claude and Codex adapters it fetches through npx. agy must be signed in.
 - **User config:** add an agy entry. The existing entries keep their models and effort.
