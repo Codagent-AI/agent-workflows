@@ -11,16 +11,18 @@ const serverDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const committed = join(serverDir, "..", "plugin", "server.mjs");
 const check = process.argv.includes("--check");
 
-// The plugin manifest is the one place the version is set. The server reports it, and the other
-// files that carry a version must match it, or the build stops.
+// The repository's root VERSION file is the one place the version is set. The server reports it,
+// and the files that carry a version must match it, or the build stops. Change them with
+// `node scripts/sync-versions.mjs` at the repository root.
 const readJson = (...parts) => JSON.parse(readFileSync(join(serverDir, ...parts), "utf8"));
-const version = readJson("..", "plugin", ".claude-plugin", "plugin.json").version;
+const version = readFileSync(join(serverDir, "..", "..", "..", "VERSION"), "utf8").trim();
 for (const other of [
+  ["..", "plugin", ".claude-plugin", "plugin.json"],
   ["..", "plugin", ".codex-plugin", "plugin.json"],
   ["package.json"],
 ]) {
   if (readJson(...other).version !== version) {
-    console.error(`${other.join("/")} has version ${readJson(...other).version}, but plugin/.claude-plugin/plugin.json has ${version}. Change them together.`);
+    console.error(`${other.join("/")} has version ${readJson(...other).version}, but VERSION has ${version}. Run \`node scripts/sync-versions.mjs\` at the repository root.`);
     process.exit(1);
   }
 }
@@ -33,7 +35,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node26",
+  target: "node22",
   legalComments: "eof",
   define: { __SERVER_VERSION__: JSON.stringify(version) },
   logLevel: "warning",

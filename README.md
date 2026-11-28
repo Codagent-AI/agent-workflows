@@ -25,6 +25,7 @@ Top-level folders are named by purpose. The folders under them are named by what
 | [`human-workflows/archon/`](human-workflows/archon/) | `codagent-archon`, a Claude Code and Codex plugin that runs the factory workflows on Archon from your own session and follows each run |
 | [`factory-workflows/archon/`](factory-workflows/archon/) | Codagent's factory workflows for the Archon engine |
 | [`openspec/`](openspec/) | The OpenSpec changes for every project in this repository |
+| [`scripts/`](scripts/) | Release tooling: the version sync and the release workflow's script. One `VERSION` file covers the whole repository |
 
 The repository root is also a plugin marketplace for both CLIs:
 

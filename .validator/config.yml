@@ -14,6 +14,11 @@ entry_points:
       - .validator
       - human-workflows
       - factory-workflows
+    checks:
+      # The version files all match the root VERSION file.
+      - versions-root:
+          command: node scripts/sync-versions.mjs --check
+          working_directory: .
     reviews:
       - all-reviewers:
           builtin: all-reviewers
@@ -25,6 +30,10 @@ entry_points:
       - plugin/server.mjs
       - server/package-lock.json
     checks:
+      # The version files all match the root VERSION file.
+      - versions-openspec:
+          command: node scripts/sync-versions.mjs --check
+          working_directory: .
       # Biome lint (complexity, function and file size) and jscpd duplication.
       # This check and the next both install into server/node_modules, so they
       # run one after the other.
@@ -45,6 +54,11 @@ entry_points:
 
   # The codagent-archon plugin: skills and the script they run.
   - path: human-workflows/archon
+    checks:
+      # The version files all match the root VERSION file.
+      - versions-archon:
+          command: node scripts/sync-versions.mjs --check
+          working_directory: .
     reviews:
       - all-reviewers
 
