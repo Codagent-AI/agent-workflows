@@ -1,5 +1,5 @@
 // Starts or cleans up a live trial: codagent-implement-change with real agents on a small public
-// repository kept for this. See README.md, "Live trials". Start one only when the user allows it.
+// repository kept for this. See AGENTS.md, "Live trials". Start one only when the user allows it.
 //
 //   bun run live-trial [--change <name>] [--branch <name>] [--from <branch>] [--input <name=value>]...
 //   bun run live-trial cleanup <branch>

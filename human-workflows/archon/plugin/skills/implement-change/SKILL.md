@@ -7,7 +7,7 @@ description: Implement an approved OpenSpec change with Archon, running the Coda
 
 Runs `codagent-implement-change` from the Codagent pack (`factory-workflows/archon` in a clone of `Codagent-AI/agent-workflows`) against one OpenSpec change, then reports.
 
-For general Archon CLI use (run states, reading a run and its artifacts, answer forms, resume, end-turn, cancel versus abandon, logs, worktree cleanup), use Archon's `archon-cli` skill. This skill adds only what is specific to the pack. If `archon-cli` is not installed or `archon doctor` fails, point the user to the Setup section of the pack's README (`archon setup`, then `archon skill add`) before launching.
+For general Archon CLI use (run states, reading a run and its artifacts, answer forms, resume, end-turn, cancel versus abandon, logs, worktree cleanup), use Archon's `archon-cli` skill. This skill adds only what is specific to the pack. If `archon-cli` is not installed or `archon doctor` fails, point the user to the Setup page of the docs, https://github.com/Codagent-AI/agent-workflows/blob/main/docs/setup.md (`archon setup`, then `archon skill add`) before launching.
 
 Never print tokens or read credential files.
 

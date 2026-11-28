@@ -7,7 +7,7 @@ description: >-
 # Each agent node names a role alias (@implementor, @reviewer,
 # @tester) with a tier fallback; bind the aliases in the launch checkout's
 # .archon/config.yaml. Agents record rulings and the blocked record under
-# $ARTIFACTS_DIR, with the file names the README lists.
+# $ARTIFACTS_DIR, with the file names AGENTS.md lists.
 
 # End the run from its recorded review or acceptance outcome.
 returns: end-run
