@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -67,17 +68,27 @@ async function fileFingerprint(path: string, index: string | undefined, options:
   return hash.digest("hex");
 }
 
+/** Git's NUL-delimited paths are raw bytes. Refuse an incomplete snapshot when paths cannot be represented. */
+async function runPathCommand(args: string[], options: RunOptions): Promise<string | undefined> {
+  const result = await run("git", args, { ...options, stdoutEncoding: "latin1" });
+  if (result.code !== 0) {
+    return undefined;
+  }
+  const bytes = Buffer.from(result.stdout, "latin1");
+  return isUtf8(bytes) ? bytes.toString("utf8") : undefined;
+}
+
 export async function snapshotTree(options: RunOptions): Promise<TreeSnapshot | undefined> {
   const [head, status, index] = await Promise.all([
     run("git", ["rev-parse", "HEAD"], options),
-    run("git", ["status", "--porcelain=v1", "-z", "-uall"], options),
-    run("git", ["ls-files", "-s", "-z"], options),
+    runPathCommand(["status", "--porcelain=v1", "-z", "-uall"], options),
+    runPathCommand(["ls-files", "-s", "-z"], options),
   ]);
-  if (head.code !== 0 || status.code !== 0 || index.code !== 0) {
+  if (head.code !== 0 || status === undefined || index === undefined) {
     return undefined;
   }
-  const paths = statusPaths(status.stdout);
-  const entries = indexEntries(index.stdout, paths);
+  const paths = statusPaths(status);
+  const entries = indexEntries(index, paths);
   try {
     for (const [path, code] of paths) {
       const indexEntry = entries.get(path);
@@ -94,8 +105,8 @@ async function committedPaths(oldHead: string, newHead: string, options: RunOpti
   if (oldHead === newHead) {
     return [];
   }
-  const diff = await run("git", ["diff", "--name-only", "--no-renames", "-z", oldHead, newHead], options);
-  return diff.code === 0 ? ["HEAD", ...diff.stdout.split("\0").filter(Boolean)] : undefined;
+  const paths = await runPathCommand(["diff", "--name-only", "--no-renames", "-z", oldHead, newHead], options);
+  return paths === undefined ? undefined : ["HEAD", ...paths.split("\0").filter(Boolean)];
 }
 
 export async function compareTrees(

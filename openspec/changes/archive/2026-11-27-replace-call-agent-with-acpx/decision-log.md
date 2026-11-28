@@ -191,3 +191,33 @@ async function submoduleState(path: string, options: RunOptions): Promise<string
 }
 
 In the gitlink branch, call `hash.update(await submoduleState(path, options))`. Add a test case that starts with a dirty submodule, changes a file inside it without committing, and expects `["nested"]`.; fixer declined: Confirmed that edits inside an already-dirty submodule can be missed when its HEAD and dirty status stay the same. The reviewer chose to record this exact gap as a follow-up and keep it out of this PR.; reviewer accepted: The gap is still there: further uncommitted edits inside an already-dirty submodule can be reported as `unchanged`. The decline is a deliberate scope decision, and the record supports it. Line 146 of the change's decision-log.md says review round 2 settled this exact gap as a follow-up. It covers tracked and untracked edits when the submodule commit, parent gitlink and dirty status stay the same. It also says this PR keeps only the commit fingerprint and can still miss these edits. The follow-up requires the result to name the affected submodule or report that the change couldn't be determined. The same entry shows that recursive fingerprinting was considered as an alternative and left out.. Result: review/feedback.md
+
+## DECIDE-15: PR review — Check the admitted define identity when recording
+
+- Step: PR comment fixes.
+- Question and requirement: Named reviews should be recorded against the same define they were launched for.
+- Decision: Compare the saved created_at with the state reloaded at settlement and use the established recording-failure log when they differ. Still return the review result.
+- Alternatives: Identify the define by name alone, or add a persistent unique identifier to old and new state files.
+- Rationale: created_at is already persisted and distinguishes replacement state in the reported branch-switch scenario without a state migration.
+- What breaks if wrong: Two distinct definitions with the same name and created_at are still indistinguishable.
+- Evidence: `evidence/fix-pr-2-targeted.log`.
+
+## DECIDE-16: PR review — Mark effort unapplied when a reviewer fails to launch
+
+- Step: PR comment fixes.
+- Question and requirement: A launch failure proves no adapter applied the configured effort.
+- Decision: Use the same launch-failure check for result display and state recording.
+- Alternatives: Keep reporting support by CLI for all outcomes, or change every adapter to supply verifiable acknowledgement.
+- Rationale: The confirmed case is sufficient to report unapplied without guessing what happened in other failures or expanding the effort contract.
+- What breaks if wrong: A reviewer that launches and then rejects an effort can still display the requested value alongside its failure.
+- Evidence: `evidence/fix-pr-2-targeted.log`.
+
+## DECIDE-17: PR review — Report unknown for Git paths that cannot be decoded losslessly
+
+- Step: PR comment fixes.
+- Question and requirement: The approved tree result is unknown when a snapshot fails. An invalid path decoded with replacement characters can instead make a modified file look missing and unchanged.
+- Decision: Validate raw Git path bytes as UTF-8 before lookup or comparison. Treat invalid UTF-8 as a snapshot or committed-path lookup failure.
+- Alternatives: Add a raw-byte filename contract and a lossless escape format, or continue decoding with replacement characters.
+- Rationale: Returning unknown avoids falsely claiming the tree is unchanged and preserves the existing result schema.
+- What breaks if wrong: Repositories containing a reported non-UTF-8 path will have no changed-path list until raw path support is defined.
+- Evidence: `evidence/fix-pr-2-targeted.log`.

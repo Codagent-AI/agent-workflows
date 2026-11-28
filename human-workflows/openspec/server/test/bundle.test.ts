@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -9,6 +9,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 import { defaultLogBase, repoLogDir } from "../src/context.js";
 import { signal } from "../src/reviewer.js";
+import { compareTrees, snapshotTree } from "../src/worktree.js";
 import { CHANGE, fakeCall, makeContext, makeFixture, PLUGIN_ROOT } from "./helpers.js";
 
 type TextResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
@@ -159,4 +160,56 @@ test("signal permission errors keep groups live and are reported", (t) => {
   kill.mock.mockImplementation(() => { throw Object.assign(new Error("no such process"), { code: "ESRCH" }); });
   assert.equal(signal(-20, 0), false);
   assert.equal(error.mock.callCount(), 2);
+});
+
+
+test("blank prompts return the same structured refusal over stdio", async () => {
+  const fixture = makeFixture();
+  const client = await connect(fixture, "claude-code");
+  try {
+    for (const prompt of ["", " \t\n"]) {
+      const result = await client.callTool({ name: "crosscheck", arguments: { prompt } });
+      assert.equal((result as TextResult).isError, true);
+      assert.equal(JSON.parse(text(result)).error.code, "invalid_request");
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test("a named crosscheck keeps its result when its define is replaced", async () => {
+  const fixture = makeFixture();
+  const client = await connect(fixture, "claude-code", fixture.repo, {
+    FAKE_REVIEWERS: JSON.stringify({ codex: { delay: 800 } }),
+  });
+  try {
+    const started = await client.callTool({ name: "next_step", arguments: { start: true, change_name: CHANGE } });
+    assert.ok(!(started as TextResult).isError, text(started));
+    const statePath = `openspec/changes/${CHANGE}/.define-openspec-change.json`;
+    const run = await client.callTool({ name: "crosscheck", arguments: { prompt: "Review.", change_name: CHANGE } });
+    const running = JSON.parse(text(run));
+    assert.equal(running.status, "running");
+    const original = JSON.parse(fixture.read(statePath));
+    const replacement = JSON.stringify({ ...original, created_at: "2000-01-01T00:00:00.000Z" });
+    fixture.write(statePath, replacement);
+    assert.equal((await poll(client, running.crosscheck_id)).status, "succeeded");
+    assert.equal(fixture.read(statePath), replacement);
+  } finally {
+    await client.close();
+  }
+});
+
+test("snapshot reports unknown for a raw Git path that is not UTF-8", async () => {
+  const fixture = makeFixture();
+  const options = { cwd: fixture.repo, env: fixture.env };
+  const before = await snapshotTree(options);
+  assert.ok(before);
+  writeFileSync(join(fixture.dir, "bin", "git"), [
+    "#!/bin/sh",
+    'if [ "$1" = status ]; then printf " M invalid-\\377\\000"; else exec /usr/bin/git "$@"; fi',
+    "",
+  ].join("\n"), { mode: 0o700 });
+  const after = await snapshotTree(options);
+  assert.equal(after, undefined);
+  assert.deepEqual(await compareTrees(before, after, options), { working_tree: "unknown" });
 });

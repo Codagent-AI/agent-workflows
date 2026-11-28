@@ -352,6 +352,7 @@ test("INTEG-2: a spawn failure becomes launch_failed and sets the MCP error flag
   assert.equal(record.status, "failed");
   assert.equal(record.reviewers[0].status, "failed");
   assert.equal(record.reviewers[0].code, "launch_failed");
+  assert.equal(record.reviewers[0].effort, "not applied (high)");
   assert.match(record.reviewers[0].error, /acpx.*ENOENT/);
 });
 

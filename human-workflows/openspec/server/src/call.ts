@@ -35,13 +35,17 @@ export function settledStatus(reviewers: readonly Pick<Reviewer, "outcome">[]): 
   return reviewers.every(({ outcome }) => outcome?.status === "succeeded") ? "succeeded" : "failed";
 }
 
+export function reviewerEffortApplied({ entry, outcome }: Pick<Reviewer, "entry" | "outcome">): boolean {
+  return effortApplied(entry.cli) && !(outcome?.status === "failed" && outcome.code === "launch_failed");
+}
+
 function reviewerResult(reviewer: ReviewerDetails, now: Date, running: boolean) {
   const { cli, model, effort } = reviewer.entry;
   const outcome = reviewer.outcome;
   return {
     cli,
     model: model ?? "default",
-    effort: effortApplied(cli) ? effort : `not applied (${effort})`,
+    effort: reviewerEffortApplied(reviewer) ? effort : `not applied (${effort})`,
     elapsed: formatElapsed(reviewer.startedAt, reviewer.endedAt ?? now),
     ...(running ? { status: outcome?.status ?? "running" } : outcome),
   };

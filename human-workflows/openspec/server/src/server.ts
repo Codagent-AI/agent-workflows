@@ -86,7 +86,7 @@ function registerCrosscheck({ server, context, calls }: ToolDeps): void {
         "Make the prompt self-contained and strictly instruct reviewers to change nothing. Waits up to " + waitText(context) +
         " for the result or returns running and a crosscheck_id for get_crosscheck. One crosscheck runs at a time.",
       inputSchema: {
-        prompt: z.string().min(1).describe("The complete, standalone task for all reviewers."),
+        prompt: z.string().describe("The complete, standalone task for all reviewers."),
         change_name: z.string().optional().describe("Name an in-progress define to record the crosscheck there."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },

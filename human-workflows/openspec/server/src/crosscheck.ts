@@ -1,8 +1,8 @@
 import { join } from "node:path";
 
-import { detectLead, effortApplied } from "./acpx.js";
+import { detectLead } from "./acpx.js";
 import { AcpxVersion } from "./acpx-version.js";
-import { type Crosscheck, errorText, settledStatus, snapshotOf } from "./call.js";
+import { type Crosscheck, errorText, reviewerEffortApplied, settledStatus, snapshotOf } from "./call.js";
 import { newCrosscheckId, reserveLogDir } from "./callchild.js";
 import { isValidChangeName } from "./checks.js";
 import { type CrosscheckChoice, resolveCrosscheck } from "./config.js";
@@ -20,6 +20,7 @@ const SHUTDOWN_GRACE_MS = 3_000;
 interface Owner {
   name: string;
   step: StepId;
+  createdAt: string;
 }
 
 interface StartPlan {
@@ -32,7 +33,7 @@ function findOwner(context: Context, root: string, name: string): Owner | undefi
   if (isValidChangeName(name)) {
     const state = readState(context.workflow, root, name);
     if (state?.status === "in_progress" && state.current_step !== null) {
-      return { name, step: state.current_step };
+      return { name, step: state.current_step, createdAt: state.created_at };
     }
   }
   return undefined;
@@ -42,11 +43,14 @@ function record(context: Context, plan: StartPlan, call: Crosscheck): void {
   if (!(plan.owner && call.endedAt && call.tree)) {
     return;
   }
-  const { name, step } = plan.owner;
+  const { name, step, createdAt } = plan.owner;
   try {
     const state = readState(context.workflow, plan.root, name);
     if (!state) {
       throw new StateError(`Define "${name}" no longer has a state file.`);
+    }
+    if (state.created_at !== createdAt) {
+      throw new StateError(`Define "${name}" was replaced while this crosscheck was running.`);
     }
     state.crosschecks.push({
       crosscheck_id: call.id,
@@ -57,7 +61,7 @@ function record(context: Context, plan: StartPlan, call: Crosscheck): void {
       ended_at: call.endedAt.toISOString(),
       reviewers: call.reviewers.map(({ entry, outcome }) => ({
         ...entry,
-        effort_applied: effortApplied(entry.cli),
+        effort_applied: reviewerEffortApplied({ entry, outcome }),
         status: outcome?.status ?? "failed",
         ...(outcome?.status === "failed" ? { code: outcome.code } : {}),
       })),

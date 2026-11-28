@@ -35987,7 +35987,7 @@ function run(command, args, options) {
       finish({ code: null, stdout, stderr, launchError: String(error62) });
       return;
     }
-    child.stdout.setEncoding("utf8").on("data", (chunk) => stdout += chunk);
+    child.stdout.setEncoding(options.stdoutEncoding ?? "utf8").on("data", (chunk) => stdout += chunk);
     child.stderr.setEncoding("utf8").on("data", (chunk) => stderr += chunk);
     child.on("error", (error62) => finish({ code: null, stdout, stderr, launchError: error62.message }));
     child.on("close", (code) => finish({ code, stdout, stderr }));
@@ -44348,13 +44348,16 @@ function settledStatus(reviewers) {
   }
   return reviewers.every(({ outcome }) => outcome?.status === "succeeded") ? "succeeded" : "failed";
 }
+function reviewerEffortApplied({ entry, outcome }) {
+  return effortApplied(entry.cli) && !(outcome?.status === "failed" && outcome.code === "launch_failed");
+}
 function reviewerResult(reviewer, now, running) {
   const { cli, model, effort } = reviewer.entry;
   const outcome = reviewer.outcome;
   return {
     cli,
     model: model ?? "default",
-    effort: effortApplied(cli) ? effort : `not applied (${effort})`,
+    effort: reviewerEffortApplied(reviewer) ? effort : `not applied (${effort})`,
     elapsed: formatElapsed(reviewer.startedAt, reviewer.endedAt ?? now),
     ...running ? { status: outcome?.status ?? "running" } : outcome
   };
@@ -45120,6 +45123,7 @@ function completedSteps(workflow2, state) {
 }
 
 // src/worktree.ts
+import { isUtf8 } from "node:buffer";
 import { createHash as createHash2 } from "node:crypto";
 import { lstatSync, readFileSync as readFileSync5, readlinkSync } from "node:fs";
 import { join as join9 } from "node:path";
@@ -45174,17 +45178,25 @@ async function fileFingerprint(path, index, options) {
   }
   return hash2.digest("hex");
 }
+async function runPathCommand(args, options) {
+  const result = await run("git", args, { ...options, stdoutEncoding: "latin1" });
+  if (result.code !== 0) {
+    return void 0;
+  }
+  const bytes = Buffer.from(result.stdout, "latin1");
+  return isUtf8(bytes) ? bytes.toString("utf8") : void 0;
+}
 async function snapshotTree(options) {
   const [head, status, index] = await Promise.all([
     run("git", ["rev-parse", "HEAD"], options),
-    run("git", ["status", "--porcelain=v1", "-z", "-uall"], options),
-    run("git", ["ls-files", "-s", "-z"], options)
+    runPathCommand(["status", "--porcelain=v1", "-z", "-uall"], options),
+    runPathCommand(["ls-files", "-s", "-z"], options)
   ]);
-  if (head.code !== 0 || status.code !== 0 || index.code !== 0) {
+  if (head.code !== 0 || status === void 0 || index === void 0) {
     return void 0;
   }
-  const paths = statusPaths(status.stdout);
-  const entries = indexEntries(index.stdout, paths);
+  const paths = statusPaths(status);
+  const entries = indexEntries(index, paths);
   try {
     for (const [path, code] of paths) {
       const indexEntry = entries.get(path);
@@ -45200,8 +45212,8 @@ async function committedPaths(oldHead, newHead, options) {
   if (oldHead === newHead) {
     return [];
   }
-  const diff = await run("git", ["diff", "--name-only", "--no-renames", "-z", oldHead, newHead], options);
-  return diff.code === 0 ? ["HEAD", ...diff.stdout.split("\0").filter(Boolean)] : void 0;
+  const paths = await runPathCommand(["diff", "--name-only", "--no-renames", "-z", oldHead, newHead], options);
+  return paths === void 0 ? void 0 : ["HEAD", ...paths.split("\0").filter(Boolean)];
 }
 async function compareTrees(before, after, options) {
   if (!(before && after)) {
@@ -45227,7 +45239,7 @@ function findOwner(context, root, name) {
   if (isValidChangeName(name)) {
     const state = readState(context.workflow, root, name);
     if (state?.status === "in_progress" && state.current_step !== null) {
-      return { name, step: state.current_step };
+      return { name, step: state.current_step, createdAt: state.created_at };
     }
   }
   return void 0;
@@ -45236,11 +45248,14 @@ function record2(context, plan, call) {
   if (!(plan.owner && call.endedAt && call.tree)) {
     return;
   }
-  const { name, step } = plan.owner;
+  const { name, step, createdAt } = plan.owner;
   try {
     const state = readState(context.workflow, plan.root, name);
     if (!state) {
       throw new StateError(`Define "${name}" no longer has a state file.`);
+    }
+    if (state.created_at !== createdAt) {
+      throw new StateError(`Define "${name}" was replaced while this crosscheck was running.`);
     }
     state.crosschecks.push({
       crosscheck_id: call.id,
@@ -45251,7 +45266,7 @@ function record2(context, plan, call) {
       ended_at: call.endedAt.toISOString(),
       reviewers: call.reviewers.map(({ entry, outcome }) => ({
         ...entry,
-        effort_applied: effortApplied(entry.cli),
+        effort_applied: reviewerEffortApplied({ entry, outcome }),
         status: outcome?.status ?? "failed",
         ...outcome?.status === "failed" ? { code: outcome.code } : {}
       }))
@@ -45866,7 +45881,7 @@ function registerCrosscheck({ server: server2, context, calls: calls2 }) {
       title: "Start a crosscheck",
       description: "Use only when a review step or the crosscheck skill asks. Starts the configured reviewers together with your exact prompt. Make the prompt self-contained and strictly instruct reviewers to change nothing. Waits up to " + waitText(context) + " for the result or returns running and a crosscheck_id for get_crosscheck. One crosscheck runs at a time.",
       inputSchema: {
-        prompt: external_exports.string().min(1).describe("The complete, standalone task for all reviewers."),
+        prompt: external_exports.string().describe("The complete, standalone task for all reviewers."),
         change_name: external_exports.string().optional().describe("Name an in-progress define to record the crosscheck there.")
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
