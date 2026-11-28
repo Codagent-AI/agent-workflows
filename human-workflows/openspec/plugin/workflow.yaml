@@ -1,27 +1,25 @@
 name: define-openspec-change
 description: Interactively define a structured change through proposal, specification, design, and testing strategy.
 
-# Placeholders: {{change_name}} is the change's name, {{reviews_dir}} is this plugin's reviews folder, which holds the instructions the crosscheck child reads.
-# A step with tools: [call_agent] may run a crosscheck review with the call_agent tool.
+# Placeholders: {{change_name}} is the change name. {{review:<file>}} embeds a file from reviews/.
 
-# Text the server adds after a step's own prompt, so it is written once.
 shared_prompts:
-  # After the prompt of each step with tools: [call_agent].
-  call_agent: |
-    Follow define-openspec-change:call-agent's verification and user-facing reporting rules. Discuss every consequential finding with the user. Do not modify any file in response to the review until you have presented your assessment and received the user's explicit confirmation about which changes to make. Apply only the changes the user confirms.
   # After every step's prompt.
   every_step: |
     Keep this step interactive with the user, through any review discussion. Once the user approves the content or the changes, or tells you to write them, write them to the step's artifacts and continue to the next step without asking the user to review the written artifacts again.
 
 steps:
   - id: proposal
-    tools: [call_agent]
     prompt: |
       Help the user write the proposal for OpenSpec change "{{change_name}}". Treat what the user already said earlier in this conversation as context they have already provided, and do not ask them to repeat it. If they have not yet said what the change is about, first ask what the change is about and do not guess. That earlier conversation is prior factual context only: it is not approval of a direction, authorization to write, or a substitute for confirmation required by the define-openspec-change:propose skill. You MUST use the define-openspec-change:propose skill and write the proposal to `openspec/changes/{{change_name}}/proposal.md`.
 
       Keep every OpenSpec definition and planning artifact under the repository-local `openspec/changes/{{change_name}}/` directory.
 
-      Once the proposal draft is complete, use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one adversarial review. Do not run that review yourself. The task-specific child instructions must require it to read and follow the review instructions at `{{reviews_dir}}/proposal-review.md`, read the proposal under `openspec/changes/{{change_name}}/`, inspect relevant repository context, provide clear actionable feedback with recommended resolutions, and never modify files.
+      Once the proposal draft is complete, call `crosscheck` once with `change_name` set to "{{change_name}}". Give the reviewers a self-contained prompt asking them to review `openspec/changes/{{change_name}}/proposal.md`, inspect relevant repository context, and propose actionable resolutions. Strictly tell them to change nothing. Include these instructions verbatim in the prompt:
+
+      {{review:proposal-review.md}}
+
+      If the result is running, poll `get_crosscheck` with its ID until it finishes. Check each finding before reporting a combined result, including failed reviewers and changed paths. Discuss consequential findings with the user and obtain explicit confirmation before applying any changes.
 
   - id: specs
     prompt: |
@@ -36,10 +34,9 @@ steps:
       Use the define-openspec-change:test-plan skill to collaboratively create `openspec/changes/{{change_name}}/test-plan.md`.
 
   - id: approach-review
-    tools: [call_agent]
     prompt: |
-      You MUST use the define-openspec-change:call-agent skill with a fresh `agent: crosscheck` to obtain one independent definition review for OpenSpec change "{{change_name}}". Do not perform that review yourself.
+      Call `crosscheck` once with `change_name` set to "{{change_name}}". Write a self-contained prompt asking the reviewers to independently examine the proposal, every specification, design and test plan in `openspec/changes/{{change_name}}/` together. Ask for consequential gaps, weak tradeoffs, failure modes, and better alternatives. Strictly tell the reviewers to change nothing. Include these instructions verbatim in the prompt:
 
-      The task-specific child instructions must require the child to read and follow the review instructions at `{{reviews_dir}}/review-approach.md` and independently review the proposal, every specification, the design, and `test-plan.md` under `openspec/changes/{{change_name}}/` together.
+      {{review:review-approach.md}}
 
-      Require the child to check cross-artifact consistency and testability; find consequential behavioral, architectural, or testing-strategy gaps, missing decisions, weak tradeoffs, failure modes, and better alternatives; inspect relevant repository patterns; avoid reviewing implementation tasks; and never modify files.
+      If the result is running, poll `get_crosscheck` with its ID until it finishes. Verify each finding against the artifacts and relevant repository context. Report one combined result with failed reviewers and changed paths, discuss consequential findings with the user, and obtain explicit confirmation before applying any changes.

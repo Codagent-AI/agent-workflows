@@ -1,438 +1,500 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readdirSync, statSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
-import { STATE_FILE } from "../src/state.js";
-import { spawnLogged } from "../src/callchild.js";
-import { readConfig } from "../src/config.js";
-import { waitMsFromEnv } from "../src/context.js";
-import { workingTreeFingerprint } from "../src/worktree.js";
-import { CHANGE, fakeCall, fakeLog, makeContext, makeFixture, pathWithout, session, writeArtifacts, writeConfig } from "./helpers.js";
+import { childEnv, detectLead, SESSION_ENV_VARS } from "../src/acpx.js";
+import { supportedAcpxVersion } from "../src/acpx-version.js";
+import { snapshotOf } from "../src/call.js";
+import { reserveLogDir } from "../src/callchild.js";
+import { chooseCrosscheck, readConfig } from "../src/config.js";
+import { repoLogDir, waitMsFromEnv } from "../src/context.js";
+import { descendantGroups } from "../src/reviewer.js";
+import { readReview, reviewOutcome } from "../src/reviewoutcome.js";
+import { compareTrees, snapshotTree } from "../src/worktree.js";
+import { addDirtySubmodule, advanceSubmodule, CHANGE, defined, fakeLog, type Fixture, makeContext, makeFixture, pathWithout, session, writeConfig } from "./helpers.js";
 
-const SESSION_VARS = {
-  CLAUDECODE: "1",
-  CLAUDE_CODE_SESSION_ATTENDED: "1",
-  CLAUDE_EFFORT: "high",
-  CLAUDE_CODE_CHILD_SESSION: "1",
-  CLAUDE_CODE_ENTRYPOINT: "cli",
-  CLAUDE_CODE_SESSION_ID: "lead-session",
-  CLAUDE_CODE_MESSAGING_TOKEN: "secret",
-  CLAUDE_PROJECT_DIR: "/somewhere",
-  CLAUDE_CODE_USE_BEDROCK: "0",
-};
+const config = (...names: string[]) =>
+  `human-workflows:\n  crosscheck:\n${names.map((cli) => `    - cli: ${cli}\n`).join("")}`;
 
 function parse(result: { text: string }) {
-  return JSON.parse(result.text) as Record<string, unknown> & { error?: { code: string; message: string } };
+  return JSON.parse(result.text);
 }
 
-/** Polls get_agent_call until the call is no longer running. */
-async function settled(calls: ReturnType<typeof session>["calls"], callId: unknown) {
-  let polled = parse(await calls.get(String(callId)));
-  for (let i = 0; i < 20 && polled.status === "running"; i++) {
-    polled = parse(await calls.get(String(callId)));
+async function settled(calls: ReturnType<typeof session>["calls"], id: string) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const result = await calls.get(id);
+    if (parse(result).status !== "running") return result;
   }
-  return polled;
+  return assert.fail(`crosscheck ${id} did not settle`);
 }
 
-async function atProposal(options: Parameters<typeof makeContext>[1] = {}, fixtureOptions: Parameters<typeof makeFixture>[0] = {}) {
-  const fixture = makeFixture(fixtureOptions);
-  const context = makeContext(fixture, options);
-  const s = session(context);
-  await s.next({ change_name: CHANGE, start: true });
-  return { fixture, context, ...s };
+function launches(fixture: Fixture) {
+  return fakeLog(fixture).filter(({ bin }) => bin === "acpx");
 }
 
-test("a Claude lead gets a read-only Codex child that reads its prompt from stdin", async () => {
-  const { fixture, context, calls } = await atProposal({ client: "claude-code", extraEnv: SESSION_VARS });
-  const result = await calls.start("crosscheck", "Review the proposal.");
-  const body = parse(result);
+function byAgent(fixture: Fixture) {
+  return Object.fromEntries(launches(fixture).map((launch) => [launch.agent, launch]));
+}
 
-  assert.equal(body.status, "succeeded");
-  assert.equal(body.cli, "codex");
-  assert.equal(body.model, "default");
-  assert.equal(body.response, "codex review: no consequential findings.");
-  assert.equal(body.working_tree, "unchanged");
-
-  const child = fakeCall(fixture, "codex");
-  const lastMessage = child.args[child.args.indexOf("-o") + 1];
-  assert.deepEqual(child.args, [
-    "exec",
-    "--json",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "-s",
-    "read-only",
-    "-c",
-    'model_reasoning_effort="high"',
-    "-o",
-    lastMessage,
-    "-",
+test("config accepts named agents and optional data, and rejects each invalid list", () => {
+  const fixture = makeFixture({ config: `${config("gemini", "agy")}      model: gemini-4-neon\n      effort: low\n` });
+  const read = () => readConfig(fixture.env);
+  const result = read();
+  assert.ok(result.ok);
+  assert.deepEqual(result.crosscheck, [
+    { cli: "gemini", effort: "high" },
+    { cli: "agy", model: "gemini-4-neon", effort: "low" },
   ]);
-  assert.equal(child.prompt, "Review the proposal.");
-  assert.ok(lastMessage?.startsWith(context.logBase), "child output stays outside the worktree");
-  assert.equal(child.cwd, fixture.repo);
-  assert.deepEqual(child.env?.filter((name) => name.startsWith("CLAUDE")), ["CLAUDE_CODE_USE_BEDROCK"]);
-  assert.ok(child.env?.includes("DEFINE_OPENSPEC_CHANGE_CHILD"), "the child is marked so the server registers no tools in it");
-});
-
-test("a Codex lead gets a Claude child with no settings, no MCP servers, and read-only tools", async () => {
-  const { fixture, context, calls } = await atProposal({ client: "codex-mcp-client" });
-  const body = parse(await calls.start("crosscheck", "Review the proposal."));
-  assert.equal(body.status, "succeeded");
-  assert.equal(body.cli, "claude");
-  assert.equal(body.cost_usd, 0.25);
-
-  const child = fakeCall(fixture, "claude");
-  assert.deepEqual(child.args, [
-    "-p",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--setting-sources",
-    "",
-    "--strict-mcp-config",
-    "--tools",
-    "Read,Grep,Glob,WebSearch",
-    "--allowedTools",
-    "Read",
-    "Grep",
-    "Glob",
-    "WebSearch",
-    "--add-dir",
-    context.pluginRoot,
-    "--effort",
-    "high",
-  ]);
-  assert.equal(child.prompt, "Review the proposal.");
-});
-
-test("the other CLI's config entry sets the child's model and effort", async () => {
-  const config = "human-workflows:\n  crosscheck:\n    - cli: claude\n      model: opus\n      effort: high\n    - cli: codex\n      model: gpt-6-astra\n      effort: xhigh\n";
-  const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
-  const body = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(body.cli, "codex");
-  assert.equal(body.model, "gpt-6-astra");
-  assert.equal(body.effort, "xhigh");
-  const args = fakeCall(fixture, "codex").args;
-  assert.deepEqual(args.slice(args.indexOf("-c"), args.indexOf("-c") + 4), ["-c", 'model_reasoning_effort="xhigh"', "-m", "gpt-6-astra"]);
-});
-
-test("with only the lead's CLI in the config, the crosscheck runs on the lead's CLI", async () => {
-  const config = "human-workflows:\n  crosscheck:\n    - cli: claude\n      model: sonnet\n      effort: medium\n";
-  const { fixture, calls } = await atProposal({ client: "claude-code" }, { config });
-  const body = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(body.cli, "claude");
-  assert.equal(body.model, "sonnet");
-  assert.equal(body.effort, "medium");
-  const args = fakeCall(fixture, "claude").args;
-  assert.deepEqual(args.slice(args.indexOf("--effort"), args.indexOf("--effort") + 4), ["--effort", "medium", "--model", "sonnet"]);
-  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
-});
-
-test("the lead's own CLI is used when the other CLI is configured but not installed", async () => {
-  const fixture = makeFixture();
-  const context = makeContext(fixture, { client: "codex-mcp-client" });
-  const s = session(context);
-  await s.next({ change_name: CHANGE, start: true });
-  const noClaude = session({ ...context, env: { ...context.env, PATH: pathWithout(fixture, ["claude"]) } });
-  const body = parse(await noClaude.calls.start("crosscheck", "Review."));
-  assert.equal(body.status, "succeeded");
-  assert.equal(body.cli, "codex");
-});
-
-test("an unknown lead uses the first configured CLI that is installed", async () => {
-  const { calls } = await atProposal({ client: "some-other-client" });
-  const body = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(body.cli, "codex");
-});
-
-test("call_agent without a usable config is refused before any child starts", async () => {
-  const { fixture, calls } = await atProposal({ client: "claude-code" });
-  writeConfig(fixture, null);
-  const missing = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(missing.error?.code, "crosscheck_not_configured");
-  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
-});
-
-test("the config is checked: a crosscheck list of claude and codex entries with only cli, model, and effort", () => {
-  const fixture = makeFixture();
-  const read = (text: string) => {
-    writeConfig(fixture, text);
-    return readConfig(fixture.env);
-  };
-  const ok = read("human-workflows:\n  crosscheck:\n    - cli: codex\n      model: gpt-6-astra\n    - cli: claude\n");
-  assert.deepEqual(ok.ok && ok.crosscheck, [
-    { cli: "codex", model: "gpt-6-astra", effort: "high" },
-    { cli: "claude", effort: "high" },
-  ]);
-  const problems: Array<[string, RegExp]> = [
-    ["human-workflows:\n  crosscheck: []\n", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows:\n  crosscheck:\n    cli: codex\n", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
-    ["factory-workflows: {}\n", /needs a `human-workflows.crosscheck` list/],
-    ["crosscheck:\n  - cli: codex\n", /needs a `human-workflows.crosscheck` list/],
-    ["", /needs a `human-workflows.crosscheck` list/],
-    ["human-workflows:\n  crosscheck:\n    - cli: gemini\n", /human-workflows\.crosscheck\[0\]\.cli: must be "claude" or "codex", not "gemini"/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n    - cli: codex\n", /crosscheck\[1\]\.cli: more than one entry has cli: codex/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      reasoning: high\n", /crosscheck\[0\]: has unknown keys: reasoning/],
-    ["human-workflows:\n  crosscheck:\n    - cli: codex\n      model: ''\n", /crosscheck\[0\]\.model: must be non-empty text/],
-    ["human-workflows:\n  crosscheck:\n    - just-text\n", /crosscheck\[0\]: must be a mapping/],
-    ["human-workflows:\n  crosscheck: [\n", /not valid/],
-  ];
-  for (const [text, pattern] of problems) {
-    const result = read(text);
-    assert.equal(result.ok, false, text);
-    assert.match(result.ok ? "" : result.message, pattern, text);
+  for (const [contents, expected] of [
+    ["human-workflows:\n  crosscheck: []\n", /one entry per CLI/],
+    [config("codex", "codex"), /more than one entry/],
+    [`${config("claude")}      command: shell\n`, /unknown keys: command/],
+    ...["-option", "run shell", "Codex", "a_b"].map((name) => [config(name), /must start with a lowercase letter/] as const),
+  ] as const) {
+    writeConfig(fixture, contents);
+    const invalid = read();
+    assert.ok(!invalid.ok);
+    assert.equal(invalid.reason, "invalid");
+    assert.match(invalid.message, expected);
   }
-  const withFactory = read(
-    "human-workflows:\n  crosscheck:\n    - cli: codex\n" +
-      "factory-workflows:\n  anything: [1, {a: b}]\n  other:\n    nested: true\n",
-  );
-  assert.deepEqual(withFactory.ok && withFactory.crosscheck, [{ cli: "codex", effort: "high" }]);
-  writeConfig(fixture, null);
-  const missing = readConfig(fixture.env);
-  assert.equal(!missing.ok && missing.reason, "missing");
 });
 
-test("a long prompt reaches the child on stdin, not in its arguments", async () => {
-  const { fixture, calls } = await atProposal({ client: "claude-code" });
-  const prompt = `Review.\n${"x".repeat(300_000)}`;
-  assert.equal(parse(await calls.start("crosscheck", prompt)).status, "succeeded");
-  const child = fakeCall(fixture, "codex");
-  assert.equal(child.prompt, prompt);
-  assert.equal(child.args.some((arg) => arg.includes("xxxx")), false);
+test("reviewer selection follows lead and local availability rules", () => {
+  const fixture = makeFixture();
+  const entries = ["claude", "codex", "agy", "gemini"].map((cli) => ({ cli, effort: "high" }));
+  const env = { PATH: pathWithout(fixture, ["agy"]) };
+  assert.equal(detectLead("codex-client", { CLAUDECODE: "1" }), "codex");
+  assert.equal(detectLead("another", { CLAUDECODE: "1" }), "claude");
+  assert.equal(detectLead("another", {}), undefined);
+  assert.deepEqual(childEnv({ CLAUDECODE: "1", CLAUDE_CONFIG_DIR: "/fixture" }), { DEFINE_OPENSPEC_CHANGE_CHILD: "1", CLAUDE_CONFIG_DIR: "/fixture" });
+  assert.deepEqual(chooseCrosscheck(entries, "codex", env).map(({ cli }) => cli), ["claude", "gemini"]);
+  assert.deepEqual(chooseCrosscheck(entries, undefined, env).map(({ cli }) => cli), ["claude", "codex", "gemini"]);
+  assert.deepEqual(chooseCrosscheck(entries.slice(0, 3), "codex", { PATH: pathWithout(fixture, ["agy", "claude"]) }), [entries[1]]);
+  assert.deepEqual(chooseCrosscheck(entries.slice(0, 3), "codex", { PATH: "" }), []);
 });
 
-test("a slow child returns running, then get_agent_call returns the result", async () => {
-  const { calls, fixture } = await atProposal({ waitMs: 100, extraEnv: { FAKE_CHILD_SLEEP_MS: "700" } });
-  const started = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(started.status, "running");
-  assert.match(String(started.call_id), /^call-[0-9a-f]{8}$/);
-  assert.equal(started.response, undefined);
-
-  const busy = await calls.start("crosscheck", "Another review.");
-  assert.equal(busy.isError, true);
-  assert.equal(parse(busy).error?.code, "call_in_progress");
-  assert.equal(parse(busy).call_id, started.call_id);
-
-  const polled = await settled(calls, started.call_id);
-  assert.equal(polled.status, "succeeded");
-  assert.equal(polled.response, "codex review: no consequential findings.");
-  assert.equal(fakeLog(fixture).filter((entry) => entry.bin === "codex").length, 1);
-
-  const cached = parse(await calls.get(String(started.call_id)));
-  assert.deepEqual(cached, polled);
-});
-
-test("next_step is refused while a call is running", async () => {
-  const { calls, next, fixture } = await atProposal({ waitMs: 50, extraEnv: { FAKE_CHILD_SLEEP_MS: "600" } });
-  writeArtifacts(fixture, CHANGE, "proposal");
-  const started = parse(await calls.start("crosscheck", "Review."));
-  const refused = await next({ change_name: CHANGE });
-  assert.equal(refused.isError, true);
-  assert.match(refused.text, new RegExp(`crosscheck call ${started.call_id} is still running`));
-  let polled = parse(await calls.get(String(started.call_id)));
-  while (polled.status === "running") polled = parse(await calls.get(String(started.call_id)));
-  const advanced = await next({ change_name: CHANGE });
-  assert.match(advanced.text, /^Continuing to step "specs"/);
-});
-
-test("next_step and call_agent never overlap", async () => {
-  const { calls, next, fixture } = await atProposal({ waitMs: 50, extraEnv: { FAKE_CHILD_SLEEP_MS: "300" } });
-  writeArtifacts(fixture, CHANGE, "proposal");
-  // A crosscheck that has passed its busy check but not started yet still holds next_step back.
-  const starting = calls.start("crosscheck", "Review.");
-  const refused = await next({ change_name: CHANGE });
-  assert.equal(refused.isError, true);
-  assert.match(refused.text, /^Refused: a crosscheck call is still (starting|running)|^Refused: crosscheck call \S+ is still running/);
-  await settled(calls, parse(await starting).call_id);
-
-  // While next_step runs, a crosscheck cannot start and a second next_step is refused.
-  await calls.stepGate.hold(async () => {
-    const blocked = parse(await calls.start("crosscheck", "Review."));
-    assert.equal(blocked.error?.code, "step_in_progress");
-    const second = await next({ change_name: CHANGE });
-    assert.match(second.text, /^Refused: another next_step call is still running\./);
+test("INTEG-1: all launches use the exact acpx command, cwd, environment and stdin", async () => {
+  const fixture = makeFixture({
+    config: `human-workflows:
+  crosscheck:
+    - {cli: claude, model: opus, effort: low}
+    - {cli: codex, model: gpt-6-astra, effort: medium}
+    - {cli: agy, model: gemini-4-neon, effort: high}
+    - {cli: gemini, effort: high}
+`,
   });
-  assert.equal(calls.stepGate.held, false);
-  const advanced = await next({ change_name: CHANGE });
-  assert.match(advanced.text, /^Continuing to step "specs"/);
-});
-
-test("cancel stops a running child", async () => {
-  const { calls } = await atProposal({ waitMs: 100, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000" } });
-  const started = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(started.status, "running");
-  let canceled = parse(await calls.cancel(String(started.call_id)));
-  for (let i = 0; i < 20 && canceled.status === "running"; i++) {
-    canceled = parse(await calls.get(String(started.call_id)));
+  const prompt = `${"α\n".repeat(60_000)}  `;
+  const extraEnv = Object.fromEntries(SESSION_ENV_VARS.filter((key) => key !== "CLAUDECODE").map((key) => [key, "session"]));
+  const { calls } = session(makeContext(fixture, { client: "unknown", extraEnv }));
+  const result = parse(await calls.start(prompt, join(fixture.repo, "openspec")));
+  assert.equal(result.status, "succeeded");
+  const captured = byAgent(fixture);
+  for (const [agent, args] of Object.entries({
+    claude: ["--model", "opus", "claude", "exec", "-f", "-", "--config-option", "effort=low"],
+    codex: ["--model", "gpt-6-astra", "codex", "exec", "-f", "-", "--config-option", "reasoning_effort=medium"],
+    agy: ["--model", "gemini-4-neon", "--agent", "agy acp", "exec", "-f", "-", "--config-option", "thought_level=high"],
+    gemini: ["gemini", "exec", "-f", "-"],
+  })) {
+    const launch = defined(captured[agent], agent);
+    assert.equal(launch.cwd, fixture.repo);
+    assert.equal(launch.prompt, prompt);
+    assert.deepEqual(launch.args, [
+      "--format", "json", "--json-strict", "--suppress-reads", "--approve-all", "--timeout", "3660", "--cwd", fixture.repo, ...args,
+    ]);
+    assert.equal(launch.env?.DEFINE_OPENSPEC_CHANGE_CHILD, "1");
+    assert.ok(SESSION_ENV_VARS.every((key) => launch.env?.[key] === undefined));
   }
-  assert.equal(canceled.status, "canceled");
-  assert.equal(canceled.error?.code, "call_canceled");
-  assert.equal(calls.running(), undefined, "the slot is free after the cancel settles");
+  assert.equal(result.reviewers.find(({ cli }: { cli: string }) => cli === "gemini").effort, "not applied (high)");
+  assert.equal(parse(await calls.start("portable review", fixture.dir)).working_tree, "unknown");
+  for (const launch of launches(fixture).slice(4)) {
+    assert.equal(launch.cwd, fixture.dir);
+    assert.equal(launch.args[launch.args.indexOf("--cwd") + 1], fixture.dir);
+  }
 });
 
-test("a call that runs past the time limit is stopped and reported as a timeout", async () => {
-  const { calls } = await atProposal({ waitMs: 100, maxCallMs: 300, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000" } });
-  const started = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(started.status, "running");
-  const ended = await settled(calls, started.call_id);
-  assert.equal(ended.status, "failed");
-  assert.equal(ended.error?.code, "timeout");
-  assert.match(ended.error?.message ?? "", /ran past its limit/);
-  assert.equal(calls.running(), undefined, "the slot is free after the timeout settles");
+test("INTEG-2: non-lead reviewers overlap and a slow result can be polled", async () => {
+  const fixture = makeFixture({ config: config("claude", "codex", "agy") });
+  const { calls } = session(makeContext(fixture, {
+    waitMs: 10,
+    extraEnv: { FAKE_REVIEWERS: JSON.stringify({ agy: { delay: 350 }, codex: { delay: 350 } }) },
+  }));
+  const pending = parse(await calls.start("review"));
+  assert.equal(pending.status, "running");
+  assert.match(pending.crosscheck_id, /^cc-[a-f\d]{8}$/);
+  assert.equal(typeof pending.elapsed, "string");
+  assert.equal(pending.working_tree, undefined);
+  assert.equal(pending.changed_paths, undefined);
+  assert.equal(pending.reviewers.length, 2);
+  for (const reviewer of pending.reviewers) {
+    assert.equal(reviewer.status, "running");
+    assert.equal(typeof reviewer.elapsed, "string");
+    assert.equal(reviewer.response, undefined);
+  }
+  const end = parse(await settled(calls, pending.crosscheck_id));
+  assert.equal(end.status, "succeeded");
+  assert.deepEqual(end.reviewers.map(({ cli, model, effort }: { cli: string; model: string; effort: string }) => [cli, model, effort]), [
+    ["codex", "default", "high"], ["agy", "default", "high"],
+  ]);
+  const starts = launches(fixture).map(({ started }) => defined(started));
+  const ends = fakeLog(fixture).filter(({ bin }) => bin === "review-end").map(({ ended }) => defined(ended));
+  assert.ok(Math.max(...starts) < Math.min(...ends));
 });
 
-test("the default wait stays under the 60 seconds Codex allows an MCP tool call", () => {
-  assert.equal(waitMsFromEnv({}), 50_000);
-  assert.equal(waitMsFromEnv({ DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "5" }), 5_000);
-  assert.equal(waitMsFromEnv({ DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "nope" }), 50_000);
+test("INTEG-2: selection is enforced for fallback, unknown leads and missing agy", async () => {
+  const fixture = makeFixture({ config: config("claude", "codex", "agy") });
+  const cases = [
+    { client: "claude", missing: ["codex", "agy"], expected: ["claude"] },
+    { client: "unknown", missing: [], expected: ["agy", "claude", "codex"] },
+    { client: "claude", missing: ["agy"], expected: ["codex"] },
+  ];
+  for (const { client, missing, expected } of cases) {
+    const context = makeContext(fixture, { client, extraEnv: { PATH: pathWithout(fixture, missing) } });
+    const offset = launches(fixture).length;
+    const result = await session(context).calls.start("review");
+    assert.equal(parse(result).status, "succeeded");
+    assert.deepEqual(launches(fixture).slice(offset).map(({ agent }) => agent).sort(), expected);
+  }
 });
 
-test("a failing child is reported as failed with its error", async () => {
-  const { calls } = await atProposal({ extraEnv: { FAKE_CHILD_EXIT: "1" } });
-  const result = await calls.start("crosscheck", "Review.");
-  assert.equal(result.isError, true);
-  const body = parse(result);
-  assert.equal(body.status, "failed");
-  assert.equal(body.error?.code, "execution_failed");
-  assert.match(body.error?.message ?? "", /codex ended with exit code 1 and no final message\. model overloaded/);
-});
-
-test("a child that changes the working tree is reported", async () => {
-  const { calls } = await atProposal({ extraEnv: { FAKE_CHILD_WRITE: "child-was-here.txt" } });
-  const body = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(body.status, "succeeded");
-  assert.equal(body.working_tree, "changed");
-});
-
-test("finished calls are recorded in the state file", async () => {
-  const { calls, fixture } = await atProposal();
-  const body = parse(await calls.start("crosscheck", "Review."));
-  const state = JSON.parse(fixture.read(`openspec/changes/${CHANGE}/${STATE_FILE}`));
-  assert.equal(state.calls.length, 1);
-  assert.equal(state.calls[0].call_id, body.call_id);
-  assert.equal(state.calls[0].step, "proposal");
-  assert.equal(state.calls[0].cli, "codex");
-  assert.equal(state.calls[0].status, "succeeded");
-  assert.equal(state.calls[0].working_tree, "unchanged");
-});
-
-test("call_agent is refused outside the proposal and approach-review steps", async () => {
+test("INTEG-2: overlapping starts and steps are refused before they start work", async () => {
   const fixture = makeFixture();
-  const { calls, next } = session(makeContext(fixture));
-  const none = await calls.start("crosscheck", "Review.");
-  assert.equal(parse(none).error?.code, "call_agent_unavailable");
-
-  await next({ change_name: CHANGE, start: true });
-  writeArtifacts(fixture, CHANGE, "proposal");
-  await next({ change_name: CHANGE });
-  const atSpecs = await calls.start("crosscheck", "Review.");
-  assert.equal(atSpecs.isError, true);
-  assert.equal(parse(atSpecs).error?.code, "call_agent_unavailable");
-  assert.match(parse(atSpecs).error?.message ?? "", /only available during the proposal and approach-review steps of a define/);
-  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex"), false);
+  const { calls, next } = session(makeContext(fixture, {
+    waitMs: 10, extraEnv: { FAKE_REVIEWERS: JSON.stringify({ codex: { delay: 180 } }) },
+  }));
+  const started = calls.start("first");
+  const empty = await calls.start(" \n");
+  assert.equal(parse(empty).error.code, "invalid_request");
+  const overlap = parse(await calls.start("second"));
+  assert.equal(overlap.error.code, "crosscheck_in_progress");
+  const startingStep = await next({ change_name: CHANGE, start: true });
+  assert.equal(startingStep.isError, true);
+  assert.ok(startingStep.text.includes(overlap.crosscheck_id));
+  const pending = parse(await started);
+  assert.equal(pending.crosscheck_id, overlap.crosscheck_id);
+  const runningStep = await next({ change_name: CHANGE, start: true });
+  assert.equal(runningStep.isError, true);
+  assert.ok(runningStep.text.includes(pending.crosscheck_id));
+  assert.equal(parse(await settled(calls, pending.crosscheck_id)).status, "succeeded");
+  const step = next({ change_name: CHANGE, start: true });
+  assert.equal(parse(await calls.start("third")).error.code, "step_in_progress");
+  assert.equal((await step).isError, undefined);
+  assert.equal(launches(fixture).length, 1);
+  assert.equal(parse(await calls.get("missing")).error.code, "unknown_crosscheck");
+  assert.equal(parse(await calls.cancel("missing")).error.code, "unknown_crosscheck");
 });
 
-test("bad targets, empty prompts, and unknown calls are refused", async () => {
-  const { calls, fixture } = await atProposal({ client: "claude-code" });
-  assert.equal(parse(await calls.start("reviewer", "Review.")).error?.code, "invalid_target");
-  assert.equal(parse(await calls.start("crosscheck", "   ")).error?.code, "invalid_request");
-  assert.equal(parse(await calls.get("call-00000000")).error?.code, "unknown_call");
-  assert.equal(parse(await calls.cancel("call-00000000")).error?.code, "unknown_call");
-  assert.equal(fakeLog(fixture).some((entry) => entry.bin === "codex" || entry.bin === "claude"), false);
-});
-
-test("overlapping call_agent requests start only one child", async () => {
-  const { calls, fixture } = await atProposal({ waitMs: 50, extraEnv: { FAKE_CHILD_SLEEP_MS: "400" } });
-  const results = await Promise.all([calls.start("crosscheck", "One."), calls.start("crosscheck", "Two.")]);
-  const codes = results.map((result) => parse(result).error?.code ?? parse(result).status).sort();
-  assert.deepEqual(codes, ["call_in_progress", "running"]);
-  await settled(calls, parse(results.find((r) => !r.isError) ?? results[0]).call_id);
-  assert.equal(fakeLog(fixture).filter((entry) => entry.bin === "codex").length, 1);
-});
-
-test("with two defines in progress, call_agent needs change_name", async () => {
-  const { calls, next, fixture } = await atProposal();
-  await next({ change_name: "other-change", start: true });
-  const ambiguous = await calls.start("crosscheck", "Review.");
-  assert.equal(parse(ambiguous).error?.code, "ambiguous_change");
-  assert.match(parse(ambiguous).error?.message ?? "", /add-reading-time, other-change/);
-
-  const named = parse(await calls.start("crosscheck", "Review.", fixture.repo, "other-change"));
-  assert.equal(named.status, "succeeded");
-  const other = JSON.parse(fixture.read(`openspec/changes/other-change/${STATE_FILE}`));
-  const first = JSON.parse(fixture.read(`openspec/changes/${CHANGE}/${STATE_FILE}`));
-  assert.equal(other.calls.length, 1);
-  assert.equal(first.calls.length, 0);
-
-  const unknown = await calls.start("crosscheck", "Review.", fixture.repo, "no-such-change");
-  assert.equal(parse(unknown).error?.code, "call_agent_unavailable");
-});
-
-test("killAll kills a child that ignores SIGTERM", async () => {
-  const { calls } = await atProposal({ waitMs: 100, extraEnv: { FAKE_CHILD_SLEEP_MS: "30000", FAKE_CHILD_IGNORE_TERM: "1" } });
-  const started = parse(await calls.start("crosscheck", "Review."));
-  assert.equal(started.status, "running");
-  await calls.killAll(200);
-  const polled = await settled(calls, started.call_id);
-  assert.equal(polled.status, "canceled");
-});
-
-test("a call stays running until its working-tree check is done", async () => {
-  const { calls } = await atProposal({ extraEnv: { FAKE_CHILD_WRITE: "child-was-here.txt", FAKE_CHILD_SLEEP_MS: "100" }, waitMs: 20 });
-  const started = parse(await calls.start("crosscheck", "Review."));
-  const id = String(started.call_id);
-  while (calls.running()) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  assert.equal(parse(await calls.get(id)).working_tree, "changed");
-});
-
-test("call logs are private to the user, even in a folder that already existed", async () => {
+test("INTEG-2: private logs are separated across managers", async () => {
   const fixture = makeFixture();
   const context = makeContext(fixture);
-  mkdirSync(context.logBase, { mode: 0o755 });
-  const s = session(context);
-  await s.next({ change_name: CHANGE, start: true });
-  const body = parse(await s.calls.start("crosscheck", "Review."));
-  const repoDir = join(context.logBase, readdirSync(context.logBase).filter((name) => !name.endsWith(".log"))[0] ?? "");
-  const callDir = join(repoDir, String(body.call_id));
-  const mode = (path: string) => statSync(path).mode & 0o777;
-  assert.equal(mode(context.logBase), 0o700);
-  assert.equal(mode(repoDir), 0o700);
-  assert.equal(mode(callDir), 0o700);
-  for (const file of ["prompt.txt", "command.json", "stdout", "stderr"]) {
-    assert.equal(mode(join(callDir, file)), 0o600, file);
+  const first = session(context).calls.start("first review");
+  const second = session(context).calls.start("second review");
+  const results = (await Promise.all([first, second])).map(parse);
+  const ids = results.map(({ crosscheck_id }) => crosscheck_id);
+  assert.notEqual(ids[0], ids[1]);
+  for (const id of ids) {
+    const base = repoLogDir(context, fixture.repo);
+    const batch = join(base, id);
+    const reviewer = join(batch, "1-codex");
+    for (const dir of [context.logBase, base, batch, reviewer]) assert.equal(statSync(dir).mode & 0o777, 0o700);
+    assert.deepEqual(readdirSync(reviewer).sort(), ["command.json", "events.ndjson", "prompt.txt", "response.txt", "stderr.txt"]);
+    for (const file of readdirSync(reviewer)) assert.equal(statSync(join(reviewer, file)).mode & 0o777, 0o600);
   }
+  assert.equal(fixture.events().filter(({ event }) => event === "crosscheck_end").length, 2);
 });
 
-test("a log file that cannot be opened closes the one that was", () => {
+test("an existing log folder forces a new crosscheck ID without altering prior logs", () => {
   const fixture = makeFixture();
-  const dir = join(fixture.dir, "call-logs");
-  mkdirSync(join(dir, "stderr"), { recursive: true });
-  const open = () => readdirSync("/dev/fd").length;
-  const before = open();
-  assert.throws(() => spawnLogged({ command: "true", args: [], prompt: "" }, dir, fixture.repo, fixture.env));
-  assert.equal(open(), before);
+  const context = makeContext(fixture);
+  const taken = "cc-01234567";
+  const occupied = join(repoLogDir(context, fixture.repo), taken);
+  mkdirSync(occupied, { recursive: true });
+  const previousLog = join(occupied, "prompt.txt");
+  writeFileSync(previousLog, "prior review");
+  const reserved = reserveLogDir(context, fixture.repo, taken);
+  assert.notEqual(reserved.id, taken);
+  assert.equal(reserved.dir, join(repoLogDir(context, fixture.repo), reserved.id));
+  assert.equal(statSync(reserved.dir).mode & 0o777, 0o700);
+  assert.equal(readFileSync(previousLog, "utf8"), "prior review");
 });
 
-test("the working-tree fingerprint sees a retargeted symlink and is unknown when git cannot compare", async () => {
+test("INTEG-2: a temp path inside the working tree uses the external private log base", async () => {
   const fixture = makeFixture();
-  mkdirSync(join(fixture.repo, "a"));
-  mkdirSync(join(fixture.repo, "b"));
-  symlinkSync("a", join(fixture.repo, "link"));
-  const before = await workingTreeFingerprint(fixture.repo, fixture.env);
-  rmSync(join(fixture.repo, "link"));
-  symlinkSync("b", join(fixture.repo, "link"));
-  const after = await workingTreeFingerprint(fixture.repo, fixture.env);
-  assert.ok(before && after);
-  assert.notEqual(before, after);
+  const alias = join(fixture.dir, "repo-alias");
+  symlinkSync(fixture.repo, alias);
+  const context = makeContext(fixture, { logBase: join(alias, "temp-logs") });
+  const { calls } = session(context);
+  const result = parse(await calls.start("review"));
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.working_tree, "unchanged");
+  assert.equal(fixture.git("status", "--porcelain"), "");
+  const directory = repoLogDir(context, fixture.repo);
+  assert.equal(statSync(join(directory, result.crosscheck_id)).mode & 0o777, 0o700);
+  rmSync(directory, { recursive: true });
+});
 
-  const unborn = join(fixture.dir, "unborn");
-  mkdirSync(unborn);
-  fixture.git("-C", unborn, "init", "-q");
-  writeFileSync(join(unborn, "file.txt"), "x\n");
-  assert.equal(await workingTreeFingerprint(unborn, fixture.env), undefined);
+test("the wait override and minimum acpx version are checked", () => {
+  assert.equal(waitMsFromEnv({}), 50_000);
+  assert.equal(waitMsFromEnv({ DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS: "0.1" }), 100);
+  for (const version of ["0.23.0", "0.23.0+build", "0.100.0", "1.0.0"]) assert.ok(supportedAcpxVersion(version), version);
+  for (const version of ["0.22.9", "0.23.0-rc.1", "unknown", "0.023.0"]) assert.ok(!supportedAcpxVersion(version), version);
+});
+
+test("result formatting omits interim answers and sets MCP error only for no successes", () => {
+  const now = new Date("2026-11-27T01:01:05Z");
+  const startedAt = new Date("2026-11-27T01:00:00Z");
+  const batch = { id: "cc-12345678", startedAt };
+  const success = {
+    entry: { cli: "gemini", effort: "high" },
+    startedAt, endedAt: now, outcome: { status: "succeeded", response: "answer" } as const,
+  };
+  const failure = {
+    entry: { cli: "codex", model: "model-id", effort: "low" },
+    startedAt, endedAt: now, outcome: { status: "failed", code: "empty_answer", error: "empty" } as const,
+  };
+  const running = parse(snapshotOf({ ...batch, status: "running", reviewers: [success, failure] }, now));
+  assert.deepEqual(running.reviewers, [
+    { cli: "gemini", model: "default", effort: "not applied (high)", status: "succeeded", elapsed: "1m 5s" },
+    { cli: "codex", model: "model-id", effort: "low", status: "failed", elapsed: "1m 5s" },
+  ]);
+  assert.equal(running.working_tree, undefined);
+  const mixed = snapshotOf({
+    ...batch, status: "failed", reviewers: [success, failure],
+    tree: { working_tree: "changed", changed_paths: ["changed.md"] },
+  }, now);
+  assert.equal(mixed.isError, false);
+  assert.equal(parse(mixed).reviewers[0].response, "answer");
+  assert.deepEqual(parse(mixed).changed_paths, ["changed.md"]);
+  assert.equal(snapshotOf({ ...batch, status: "failed", reviewers: [failure] }, now).isError, true);
+});
+test("review parser joins multi-chunk records and the returned answer stays within its cap", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "crosscheck-parser-"));
+  t.after(() => rmSync(dir, { recursive: true }));
+  const chunk = (text: string) => ({
+    method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+  });
+  const other = { id: 8, result: { stopReason: "max_tokens" } };
+  writeFileSync(join(dir, "stderr.txt"), `${"padding ".repeat(500)}error tail`);
+  const answer = `first\u2028${"second".repeat(200_000)}\u2029third`;
+  const log = [
+    { id: 7, method: "session/prompt" }, chunk(answer), chunk(" and "), chunk("last"),
+    { id: 6, error: { message: "recovered error", data: { details: "recovered detail" } } },
+    { id: 7, result: { stopReason: "end_turn" } }, other, { id: 9, error: { message: "fallback error" } },
+  ];
+  writeFileSync(join(dir, "events.ndjson"), `not json\n${log.map((event) => JSON.stringify(event)).join("\r\n")}`);
+  const matched = await readReview(dir);
+  assert.equal(matched.answer, `${answer} and last`);
+  assert.equal(matched.stop, "end_turn");
+  const capped = reviewOutcome({ code: 0 }, matched);
+  assert.equal(capped.status, "succeeded");
+  assert.equal(capped.response.length, 200_000);
+  assert.match(capped.response, /\n\[Answer truncated.*\]$/);
+  assert.deepEqual(reviewOutcome({ code: 0 }, { ...matched, answer: "x".repeat(200_000) }), { status: "succeeded", response: "x".repeat(200_000) });
+  assert.doesNotMatch(matched.error, /recovered/);
+  assert.match(matched.error, /^fallback error\n\.\.\..*error tail$/);
+  writeFileSync(join(dir, "events.ndjson"), JSON.stringify(other));
+  assert.equal((await readReview(dir)).stop, "max_tokens");
+  assert.equal(reviewOutcome({ code: 3, stopped: "canceled" }).status, "canceled");
+  assert.deepEqual(reviewOutcome({ code: 0, stopped: "timeout" }), { status: "failed", code: "timeout", error: "Crosscheck reached its time limit." });
+});
+
+test("INTEG-2: acpx failures and successful answers survive together", async () => {
+  const agents = {
+    delayed: { delay: 200, answer: "final review", beforeTool: true, trailingUpdate: true },
+    unknown: { code: 1, error: "agent is unknown" },
+    "bad-model": { code: 1, error: "model is not offered" },
+    "bad-effort": { code: 1, error: "unsupported effort" },
+    "disabled-exec": { code: 2, error: "exec disabled" },
+    timedout: { code: 3 },
+    blank: { answer: "" },
+    stopped: { stop: "max_tokens" },
+    incomplete: { stop: null },
+    lastcall: { answer: "before last call", trailingCall: true },
+    long: { length: 200_100 },
+  };
+  const fixture = makeFixture({ config: config(...Object.keys(agents)) });
+  const { calls } = session(makeContext(fixture, { extraEnv: { FAKE_REVIEWERS: JSON.stringify(agents) } }));
+  const output = await calls.start("review");
+  const result = parse(output);
+  assert.equal(output.isError, false);
+  assert.equal(result.status, "failed");
+  assert.equal(result.reviewers.length, Object.keys(agents).length);
+  const reviews = Object.fromEntries(result.reviewers.map((review: { cli: string }) => [review.cli, review]));
+  for (const agent of ["unknown", "bad-model", "bad-effort", "disabled-exec"] as const) {
+    assert.equal(reviews[agent].status, "failed");
+    assert.equal(reviews[agent].code, "execution_failed");
+    assert.ok(reviews[agent].error.includes(agents[agent].error));
+    assert.match(reviews[agent].error, /adapter stderr/);
+  }
+  assert.equal(reviews.timedout.code, "timeout");
+  assert.equal(reviews.blank.code, "empty_answer");
+  assert.equal(reviews.stopped.code, "stopped");
+  assert.match(reviews.stopped.error, /max_tokens/);
+  assert.equal(reviews.incomplete.code, "execution_failed");
+  assert.equal(reviews.delayed.status, "succeeded");
+  assert.equal(reviews.delayed.response, "final review");
+  assert.equal(reviews.lastcall.response, "before last call");
+  assert.equal(reviews.long.response.length, 200_000);
+  assert.match(reviews.long.response, /truncated/);
+});
+
+test("INTEG-2: a spawn failure becomes launch_failed and sets the MCP error flag", async () => {
+  const fixture = makeFixture();
+  const { calls } = session(makeContext(fixture));
+  assert.equal(await calls.acpx.refusal(fixture.repo, fixture.env), undefined);
+  rmSync(join(fixture.dir, "bin", "acpx"));
+  const result = await calls.start("review");
+  assert.equal(result.isError, true);
+  const record = parse(result);
+  assert.equal(record.status, "failed");
+  assert.equal(record.reviewers[0].status, "failed");
+  assert.equal(record.reviewers[0].code, "launch_failed");
+  assert.equal(record.reviewers[0].effort, "not applied (high)");
+  assert.match(record.reviewers[0].error, /acpx.*ENOENT/);
+});
+
+async function ready(fixture: Fixture, expected: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const launch = byAgent(fixture)[expected];
+    if (launch?.pids) return launch.pids;
+    await delay(10);
+  }
+  return assert.fail(`reviewer ${expected} never started`);
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+      return !execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().startsWith("Z");
+  } catch {
+    return false;
+  }
+}
+
+async function assertStopped(pids: number[]) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!pids.some(alive)) return;
+    await delay(10);
+  }
+  assert.fail(`still alive: ${pids.filter(alive).join(", ")}`);
+}
+
+async function waitForFastReviewer(calls: ReturnType<typeof session>["calls"], id: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const snapshot = parse(await calls.get(id));
+    if (snapshot.reviewers.find(({ cli }: { cli: string }) => cli === "fast").status === "succeeded") return;
+  }
+  assert.fail("fast reviewer did not finish");
+}
+
+for (const { action, ignoreTerm } of [
+  { action: "cancel", ignoreTerm: true }, { action: "cancel", ignoreTerm: false },
+  { action: "timeout", ignoreTerm: true }, { action: "shutdown", ignoreTerm: false },
+]) {
+  test(`INTEG-3: ${action} stops process groups (acpx ignores SIGTERM: ${ignoreTerm})`, async () => {
+    const fixture = makeFixture({ config: config("claude", "slow", "fast") });
+    const { calls } = session(makeContext(fixture, {
+      waitMs: 20, maxCallMs: action === "timeout" ? 950 : 60_000, killGraceMs: 100,
+      extraEnv: { FAKE_REVIEWERS: JSON.stringify({ slow: { ignoreTerm, descendants: true, delay: 8_000 } }) },
+    }));
+    const pending = parse(await calls.start("review"));
+    const pids = await ready(fixture, "slow");
+    assert.equal(pids.length, 3);
+    await waitForFastReviewer(calls, pending.crosscheck_id);
+    if (action === "cancel") {
+      await calls.cancel(pending.crosscheck_id);
+    } else if (action === "shutdown") {
+      await calls.killAll(100);
+    }
+    const result = parse(await settled(calls, pending.crosscheck_id));
+    assert.equal(result.status, action === "timeout" ? "failed" : "canceled");
+    const slow = result.reviewers.find(({ cli }: { cli: string }) => cli === "slow");
+    assert.equal(slow.status, action === "timeout" ? "failed" : "canceled");
+    assert.equal(slow.code, action === "timeout" ? "timeout" : undefined);
+    assert.equal(result.reviewers.find(({ cli }: { cli: string }) => cli === "fast").response, "fast review");
+    await assertStopped(pids);
+  });
+}
+
+test("descendant group selection excludes the server group even when a descendant joins it", () => {
+  const groups = descendantGroups(200, [
+    { pid: 100, parent: 1, group: 90 },
+    { pid: 200, parent: 100, group: 200 },
+    { pid: 201, parent: 200, group: 90 },
+    { pid: 202, parent: 201, group: 202 },
+    { pid: 300, parent: 100, group: 300 },
+  ], 100);
+  assert.deepEqual(groups, [200, 202]);
+});
+
+test("INTEG-3: cancellation finds a detached child created after SIGTERM", async (t) => {
+  const fixture = makeFixture();
+  const { calls } = session(makeContext(fixture, {
+    waitMs: 20, killGraceMs: 500,
+    extraEnv: { FAKE_REVIEWERS: JSON.stringify({ codex: { lateDescendant: true, delay: 8_000 } }) },
+  }));
+  const pending = parse(await calls.start("review"));
+  const parent = await ready(fixture, "codex");
+  const lateChild = () => fakeLog(fixture).find(({ bin }) => bin === "late-descendant")?.pids ?? [];
+  t.after(() => {
+    for (const pid of [...parent, ...lateChild()].filter(alive)) process.kill(pid, "SIGKILL");
+  });
+  await calls.cancel(pending.crosscheck_id);
+  assert.equal(parse(await settled(calls, pending.crosscheck_id)).status, "canceled");
+  assert.equal(lateChild().length, 1);
+  await assertStopped([...parent, ...lateChild()]);
+});
+
+const staged = (fixture: Fixture) => {
+  fixture.write("README.md", "staged\n");
+  fixture.git("add", "README.md");
+  fixture.write("README.md", "unstaged\n");
+};
+
+test("INTEG-4: real git snapshots report exact changed paths or unknown", async () => {
+  const cases: Array<[string[], (fixture: Fixture) => void, ((fixture: Fixture) => void)?]> = [
+    [["README.md"], (f) => f.write("README.md", "edited")],
+    [["new file\nname"], (f) => f.write("new file\nname", "added")],
+    [["README.md"], (f) => rmSync(join(f.repo, "README.md"))],
+    [["README.md"], (f) => { f.write("README.md", "indexed"); f.git("add", "README.md"); }],
+    [["link"], (f) => { rmSync(join(f.repo, "link")); symlinkSync("changed", join(f.repo, "link")); }, (f) => symlinkSync("old", join(f.repo, "link"))],
+    [["README.md", "new"], (f) => f.git("mv", "README.md", "new")],
+    [["HEAD", "README.md"], (f) => { f.write("README.md", "commit"); f.git("commit", "-qam", "next"); }],
+    [[], () => {}, addDirtySubmodule],
+    [["nested"], advanceSubmodule, addDirtySubmodule],
+    [["README.md"], (f) => f.write("README.md", "edited twice"), (f) => f.write("README.md", "edited")],
+    [["README.md"], (f) => chmodSync(join(f.repo, "README.md"), 0o755), (f) => f.write("README.md", "edited")],
+    [["README.md"], (f) => { f.write("README.md", "staged again"); f.git("add", "README.md"); f.write("README.md", "unstaged\n"); }, staged],
+  ];
+  for (const [changed_paths, mutate, prepare] of cases) {
+    const fixture = makeFixture();
+    const options = { cwd: fixture.repo, env: fixture.env };
+    prepare?.(fixture);
+    const before = await snapshotTree(options);
+    mutate(fixture);
+    const after = await snapshotTree(options);
+    const result = await compareTrees(before, after, options);
+    assert.deepEqual(result, changed_paths.length > 0 ? { working_tree: "changed", changed_paths } : { working_tree: "unchanged" });
+  }
+  const unavailable = makeFixture();
+  const outside = { cwd: unavailable.dir, env: unavailable.env };
+  const inside = { cwd: unavailable.repo, env: unavailable.env };
+  const before = await snapshotTree(inside);
+  rmSync(join(unavailable.repo, ".git"), { recursive: true });
+  const failed = await snapshotTree(inside);
+  assert.ok(before);
+  assert.equal(failed, undefined);
+  assert.equal(await snapshotTree(outside), undefined);
+  assert.deepEqual(await compareTrees(before, failed, inside), { working_tree: "unknown" });
+  assert.deepEqual(await compareTrees(failed, before, inside), { working_tree: "unknown" });
+  const fixture = makeFixture();
+  const { calls } = session(makeContext(fixture, {
+    extraEnv: { FAKE_REVIEWERS: JSON.stringify({ codex: { write: "reviewer-written" } }) },
+  }));
+  const result = parse(await calls.start("review"));
+  assert.equal(result.working_tree, "changed");
+  assert.deepEqual(result.changed_paths, ["reviewer-written"]);
 });

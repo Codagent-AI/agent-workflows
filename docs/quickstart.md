@@ -11,7 +11,7 @@ This page takes one small change from idea to merged pull request. It assumes yo
 
 ## 1. Clone the repository and install the plugins
 
-Archon reads the workflows from a clone of this repository, so clone it first:
+The plugins install straight from GitHub. Archon reads the workflows from a clone of this repository, so clone it too:
 
 ```bash
 git clone https://github.com/Codagent-AI/agent-workflows.git
@@ -25,13 +25,15 @@ On Claude Code, add the marketplace and install both plugins:
 /plugin install codagent-archon@agent-workflows
 ```
 
-On Codex, from the clone:
+On Codex, add the marketplace from GitHub and install both plugins. You don't need a clone for this:
 
 ```bash
-codex plugin marketplace add /path/to/agent-workflows
+codex plugin marketplace add Codagent-AI/agent-workflows
 codex plugin add define-openspec-change@agent-workflows
 codex plugin add codagent-archon@agent-workflows
 ```
+
+To install a branch or tag, add a ref. On Claude Code, write `Codagent-AI/agent-workflows#<ref>`. On Codex, write `Codagent-AI/agent-workflows@<ref>`, or pass `--ref <ref>`.
 
 ## 2. Set up Archon
 

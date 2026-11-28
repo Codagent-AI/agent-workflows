@@ -52,7 +52,7 @@ Codex differs from Claude Code in four ways:
 
 - Codex doesn't expand a plugin-root variable in a plugin's server config, so the plugin has its own `.codex-mcp.json`, which starts the server in the plugin folder.
 - The server needs your session's folder. Claude Code sets it once. On Codex the server reads it on every call, from the call's metadata.
-- Codex passes the server only a few variables, such as `HOME` and `PATH`. The plugin forwards the ones it needs: the child CLIs' credentials and settings, the `gh` and git variables, and `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS`. If a reviewer for a new agent can't sign in under Codex, its credential variables aren't on that list.
+- Codex passes the server only a few variables, such as `HOME` and `PATH`. The plugin forwards the ones it needs: acpx and its adapters' credentials and settings, the `gh` and git variables, and `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS`. If a reviewer for a new agent can't sign in under Codex, its credential variables aren't on that list.
 - On Codex the agent can start a define itself when you ask it to define a change. On Claude Code only you can.
 
 ### Logs

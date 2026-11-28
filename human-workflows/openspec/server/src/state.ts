@@ -32,6 +32,23 @@ export interface CallRecord {
   ended_at: string;
 }
 
+export interface CrosscheckRecord {
+  crosscheck_id: string;
+  step: StepId;
+  status: string;
+  working_tree: string;
+  started_at: string;
+  ended_at: string;
+  reviewers: Array<{
+    cli: string;
+    model?: string | undefined;
+    effort: string;
+    effort_applied: boolean;
+    status: string;
+    code?: string | undefined;
+  }>;
+}
+
 export interface DefineState {
   schema: 1;
   /** The name of the workflow that wrote the file. */
@@ -42,7 +59,8 @@ export interface DefineState {
   current_step: StepId | null;
   steps: Partial<Record<StepId, StepTimes>>;
   starts: StartRecord[];
-  calls: CallRecord[];
+  calls?: CallRecord[] | undefined;
+  crosschecks: CrosscheckRecord[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -65,7 +83,7 @@ export function newState(workflow: Workflow, changeName: string, at: string, lea
     current_step: first,
     steps: { [first]: { started_at: at } },
     starts: [{ at, lead, mode: "new", step: first }],
-    calls: [],
+    crosschecks: [],
     created_at: at,
     updated_at: at,
     completed_at: null,
@@ -79,7 +97,7 @@ function stateSchema(workflow: Workflow, changeName: string): z.ZodType<DefineSt
   const text = z.string();
   const times = z.object({ started_at: text, completed_at: text.optional() });
   const start = z.object({ at: text, lead: text, mode: z.enum(["new", "resume"]), step });
-  const call = z.object({
+  const call = z.looseObject({
     call_id: text,
     step,
     cli: text,
@@ -89,6 +107,23 @@ function stateSchema(workflow: Workflow, changeName: string): z.ZodType<DefineSt
     working_tree: text.optional(),
     started_at: text,
     ended_at: text,
+  });
+  const reviewer = z.object({
+    cli: text,
+    model: text.optional(),
+    effort: text,
+    effort_applied: z.boolean(),
+    status: text,
+    code: text.optional(),
+  });
+  const crosscheck = z.object({
+    crosscheck_id: text,
+    step,
+    status: text,
+    working_tree: text,
+    started_at: text,
+    ended_at: text,
+    reviewers: z.array(reviewer),
   });
   return z
     .object({
@@ -101,7 +136,8 @@ function stateSchema(workflow: Workflow, changeName: string): z.ZodType<DefineSt
       current_step: step.nullable(),
       steps: z.record(step, times),
       starts: z.array(start),
-      calls: z.array(call),
+      calls: z.array(call).optional(),
+      crosschecks: z.array(crosscheck).default([]),
       created_at: text,
       updated_at: text,
       completed_at: text.nullable(),

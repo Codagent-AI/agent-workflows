@@ -15,7 +15,7 @@ human-workflows/openspec/
     skills/define/             the entry point on both CLIs
     skills/setup/              writes ~/.agent-workflows/config.yaml with the user
     skills/<other skills>/     the skills the steps use
-    reviews/                   review instructions that only the crosscheck child reads
+    reviews/                   review instructions the server inlines in step prompts
     workflow.yaml              the steps, their prompts, and the shared text added to them
     PROVENANCE.md              where the skills and the workflow came from
   server/                      TypeScript source, tests, and the esbuild build
@@ -24,7 +24,7 @@ human-workflows/openspec/
 ## Rules
 
 - `plugin/` is the installable plugin root. Codex, and Claude Code for a Git marketplace, copy only that folder into the plugin cache, so nothing outside it is reachable at run time. Keep `node_modules` and sources out of it.
-- `plugin/workflow.yaml` holds the step order, the step prompts, and `shared_prompts`, the text the server adds after a step's own prompt, so none of it is hard-coded in the server. Write text that several steps need once, under `shared_prompts`, not in each prompt. The artifact check for a step stays in `server/src/checks.ts`, keyed by step id. When you rename or add a step, update that table and the test that pins the step ids.
+- `plugin/workflow.yaml` holds the step order, the step prompts, and `shared_prompts`, the `every_step` text the server adds after each step's own prompt. Each review step specifies its crosscheck and names its review instructions with `{{review:<file>}}`. The artifact check for a step stays in `server/src/checks.ts`, keyed by step id. When you rename or add a step, update that table and the test that pins the step ids.
 - `server/` holds the TypeScript tool server and its tests. `plugin/server.mjs` is the committed esbuild bundle of it.
 - After changing `server/src`, run `npm run build` in `server/` and commit `plugin/server.mjs` with the source. `npm run lint` (Biome and jscpd) and `npm run check` (typecheck, a check that the bundle matches a fresh build, and the tests) must pass. Keep the code within the lint limits by restructuring it; do not raise a limit or add a suppression comment. Biome fails on cognitive complexity over 10, functions over 50 lines, files over 300 lines (500 for tests), more than 4 parameters, and shadowed names. jscpd fails on any repeated block of 50 tokens or more.
 - Add tests to the existing suites in `server/test/`. They test the server's code, never static content such as a skill, a `workflow.yaml` prompt, or a tool description. See the hard rule in the root `AGENTS.md`.
@@ -47,5 +47,5 @@ npm run check   # typecheck, bundle-matches-build check, tests
 
 - Codex 0.166 does not expand `${CLAUDE_PLUGIN_ROOT}` in a plugin's `.mcp.json`. So the Codex manifest names its own server file, `.codex-mcp.json`, which starts `node ./server.mjs` with `cwd: "."`, in the plugin folder.
 - The server needs the session's working folder to create the change, run `openspec`, and commit. Claude Code sets `CLAUDE_PROJECT_DIR` for the servers it starts. On Codex the server declares the `codex/sandbox-state-meta` capability and reads `sandboxCwd` from each tool call's `_meta`.
-- Codex passes an MCP server only a few variables, such as `HOME` and `PATH`. `.codex-mcp.json` forwards the rest through `env_vars`: the child CLIs' credentials and settings, `GH_TOKEN` and the other `gh` and git variables, and `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS`. Claude Code passes its whole environment.
+- Codex passes an MCP server only a few variables, such as `HOME` and `PATH`. `.codex-mcp.json` forwards the rest through `env_vars`: acpx and its adapters' credentials and settings, `GH_TOKEN` and the other `gh` and git variables, and `DEFINE_OPENSPEC_CHANGE_WAIT_SECONDS`. Claude Code passes its whole environment.
 - Do not switch to Codex's portable plugin format (a root `plugin.json` and `mcp.json` with the `$schema` marker). Its `mcp.json` has no `env_vars`, and it passes `${VAR}` in `env` on as literal text, so the server would not get those variables.

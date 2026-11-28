@@ -1,27 +1,27 @@
 # define-openspec-change
 
-A Claude Code and Codex plugin that defines an OpenSpec change with you, in your own session. It takes the change through five steps: proposal, specs, design, test-plan, and approach-review. Agents on other vendors' CLIs review the proposal and the finished approach. At the end the plugin validates the change and commits its documents.
+A Claude Code and Codex plugin that defines an OpenSpec change with you, in your own session. It takes the change through five steps: proposal, specs, design, test-plan, and approach-review. A batch of independent reviewers, run through acpx, checks the proposal and the finished approach. At the end the plugin validates the change and commits its documents.
 
 ## Requirements
 
 - macOS or Linux.
 - Node.js 26 or later and the `openspec` CLI on `PATH`.
 - A git repository with an `openspec/` folder. To finish on a branch other than the default branch, `gh` must be signed in.
-- `claude`, `codex`, or both, signed in, and acpx 0.23 or later for the crosscheck.
+- acpx 0.23 or later on `PATH` and at least one configured reviewer. Sign in to the agents you use, such as `claude`, `codex` and `agy`.
 
 [Setup](../../docs/setup.md#requirements) has the details.
 
 ## Install
 
-From a clone of this repository:
+From GitHub, with no clone:
 
 ```sh
 # Claude Code
-claude plugin marketplace add /path/to/agent-workflows
+claude plugin marketplace add Codagent-AI/agent-workflows
 claude plugin install define-openspec-change@agent-workflows
 
 # Codex
-codex plugin marketplace add /path/to/agent-workflows
+codex plugin marketplace add Codagent-AI/agent-workflows
 codex plugin add define-openspec-change@agent-workflows
 ```
 

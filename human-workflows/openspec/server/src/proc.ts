@@ -12,6 +12,7 @@ export interface RunOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  stdoutEncoding?: BufferEncoding;
 }
 
 function spawnPiped(command: string, args: string[], options: RunOptions) {
@@ -42,7 +43,7 @@ export function run(command: string, args: string[], options: RunOptions): Promi
       finish({ code: null, stdout, stderr, launchError: String(error) });
       return;
     }
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+    child.stdout.setEncoding(options.stdoutEncoding ?? "utf8").on("data", (chunk: string) => (stdout += chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
     child.on("error", (error) => finish({ code: null, stdout, stderr, launchError: error.message }));
     child.on("close", (code) => finish({ code, stdout, stderr }));

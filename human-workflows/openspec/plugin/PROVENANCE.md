@@ -24,13 +24,13 @@ commit that touched the skill.
 | `skills/test-plan/SKILL.md` | `8605d33` |
 | `reviews/review-approach.md` (from `skills/review-approach/`) | `4b0a362` |
 | `skills/ask-questions/SKILL.md` | `d9c5059` |
-| `skills/call-agent/SKILL.md` | `6442600` |
 
-Not copied: the `agents/openai.yaml` files beside `skills/test-plan/` and `skills/call-agent/`, and the
+Not copied: the `agents/openai.yaml` file beside `skills/test-plan/`, and the
 plan-tasks and review-tasks skills.
 
-Written here, not copied: `skills/define/SKILL.md` and `skills/setup/SKILL.md`. The setup skill's
-recommended models come from Runner's crosscheck profile (Codex) and `lead` profile (Claude).
+Written here: `skills/define/SKILL.md`, `skills/setup/SKILL.md` and `skills/crosscheck/`. The setup skill's
+Claude and Codex models come from Runner's `lead` and crosscheck profiles. The agy model is the
+`gemini-4-neon` ID offered by its ACP server.
 
 ## Workflow
 

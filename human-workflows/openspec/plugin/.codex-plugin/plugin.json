@@ -1,7 +1,7 @@
 {
   "name": "define-openspec-change",
   "version": "0.1.0",
-  "description": "Define an OpenSpec change step by step (proposal, specs, design, test plan, approach review) with a cross-vendor review, then commit the change documents.",
+  "description": "Define an OpenSpec change step by step (proposal, specs, design, test plan, approach review) with independent crosschecks through acpx, then commit the change documents.",
   "author": {
     "name": "Codagent-AI",
     "url": "https://github.com/Codagent-AI"
@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "Define OpenSpec Change",
     "shortDescription": "Define an OpenSpec change step by step",
-    "longDescription": "Runs the proposal, specs, design, test-plan, and approach-review steps for an OpenSpec change in your own session, with a cross-vendor crosscheck review, then validates and commits the change documents.",
+    "longDescription": "Runs the proposal, specs, design, test-plan, and approach-review steps for an OpenSpec change in your own session, with independent crosschecks through acpx, then validates and commits the change documents.",
     "developerName": "Codagent-AI",
     "category": "Productivity",
     "capabilities": [

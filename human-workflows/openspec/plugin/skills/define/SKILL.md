@@ -24,7 +24,7 @@ steps and returns each step's instructions; do not run the steps from memory.
 2. Call `next_step` with `change_name` set to that name and `start` set to `true`. This creates the
    change, or picks up one that is already in progress, and returns the current step's instructions.
    If it refuses because the name is taken, choose another name the same way and call it again. If it
-   refuses because the crosscheck agent is not configured, use the define-openspec-change:setup
+   refuses because the crosscheck config or acpx is unavailable, use the define-openspec-change:setup
    skill with the user, then call it again.
 3. Carry out each result as if the user had typed it, in this conversation. When a step is complete,
    call `next_step` again with the same `change_name` and without `start`. If it refuses, do what the

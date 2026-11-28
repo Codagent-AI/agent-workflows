@@ -11,15 +11,15 @@ A Claude Code and Codex plugin for running the Codagent pack's Archon workflows 
 
 ## Install
 
-From a clone of this repository:
+From GitHub:
 
 ```sh
 # Claude Code
-claude plugin marketplace add /path/to/agent-workflows
+claude plugin marketplace add Codagent-AI/agent-workflows
 claude plugin install codagent-archon@agent-workflows
 
 # Codex
-codex plugin marketplace add /path/to/agent-workflows
+codex plugin marketplace add Codagent-AI/agent-workflows
 codex plugin add codagent-archon@agent-workflows
 ```
 
