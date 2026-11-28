@@ -13,7 +13,7 @@ Each part has its own requirements. You need the first three rows to define a ch
 
 | Part | Needs |
 |---|---|
-| Define (`define-openspec-change`) | macOS or Linux. Node.js 26 or later. The `openspec` CLI on `PATH` (tested with 1.17.0). A git repository with an `openspec/` folder. Claude Code or Codex, signed in. |
+| Define (`define-openspec-change`) | macOS or Linux. Node.js 26 or later. The `openspec` CLI on `PATH`: OpenSpec 1.17 or 2.x (checked with 1.17.0 and 2.2.0). A git repository with an `openspec/` folder. Claude Code or Codex, signed in. |
 | Crosschecks | `acpx` 0.23 or later on `PATH`. At least one reviewer's CLI installed and signed in: `claude`, `codex`, `agy`, or another agent acpx can start. |
 | Finishing a define on a branch | `gh`, signed in. It opens the pull request. |
 | The `codagent-archon` plugin | Archon, set up as below. A clone of this repository. `jq` on `PATH`. |

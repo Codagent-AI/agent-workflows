@@ -18,7 +18,7 @@ This page is for people who used Agent Runner's `openspec:change` workflow and t
 | Agent Skills (`codagent:*`) | Copied into the plugin, which is now their source of truth. Changes are logged in its `PROVENANCE.md`. |
 | Agent Runner's engine: sessions, profiles, handoff code | Archon provides the engine |
 | Agent Validator | Stays standalone. The pack has its own code review and relies on the repository's CI. |
-| OpenSpec | Stays, on 1.17.0 |
+| OpenSpec | Stays: 1.17 or 2.x (checked with 1.17.0 and 2.2.0) |
 | `plan-tasks` and `review-tasks` | Not ported. The change workflow no longer uses them. The implementor plans a checklist of how each behavior is verified instead. |
 | Agent Factory | Retired. Archon plus the pack is the factory now. |
 
