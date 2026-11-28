@@ -65,7 +65,7 @@ The page SHALL be titled after the pull request. It SHALL show, in this order: t
 - **THEN** the page links to both logs and does not show their entries
 
 ### Requirement: Key evidence and screenshots
-The key evidence section SHALL show the acceptance screenshots and command evidence the ranking picks, at most five in all, each with its title and a line on what it shows. A command evidence entry SHALL also show its command and its excerpt. After it, all acceptance evidence SHALL appear, grouped by acceptance round: the round's command evidence, each entry showing its title and line and opening to its command and excerpt, then the round's screenshots, each of which MUST open in a viewer. The viewer SHALL open a screenshot fitted to its width, and a taller one SHALL scroll. It SHALL zoom in and out with buttons, ctrl and the scroll wheel, and a trackpad pinch, and its Fit button SHALL return to the width fit. On the page, the preview of a screenshot more than three times as tall as it is wide SHALL show its top at full width. An excerpt SHALL show its lines and spacing as the command printed them. The page MUST NOT show a command's full output. A run with no screenshots and no command evidence MUST have no key evidence section and no acceptance evidence section.
+The key evidence section SHALL show the acceptance screenshots and command evidence the ranking picks, at most five in all, each with its title and a line on what it shows. A command evidence entry SHALL also show its command and its excerpt. After it, all acceptance evidence SHALL appear, grouped by acceptance round: the round's command evidence, each entry showing its title and line and opening to its command and excerpt, then the round's screenshots, each of which MUST open in a viewer. The viewer SHALL open a screenshot fitted to its width, and a taller one SHALL scroll. It SHALL zoom in and out with buttons, ctrl and the scroll wheel, and a trackpad pinch, and its Fit button SHALL return to the width fit. On the page, the preview of a screenshot more than three times as tall as it is wide SHALL show its top at full width. An excerpt SHALL show its lines and spacing as the command printed them, with two exceptions. A line of compact JSON wider than 100 characters SHALL show indented, one field to a line, when converting it back gives exactly that line. A line too long for its box SHALL wrap rather than scroll sideways. The page MUST NOT show a command's full output. A run with no screenshots and no command evidence MUST have no key evidence section and no acceptance evidence section.
 
 #### Scenario: Key screenshots shown
 - **WHEN** the ranking picks two screenshots and one command evidence entry
@@ -93,6 +93,14 @@ The key evidence section SHALL show the acceptance screenshots and command evide
 #### Scenario: No screenshots
 - **WHEN** the run recorded no acceptance screenshots and no command evidence
 - **THEN** the page has no key evidence section and no acceptance evidence section
+
+#### Scenario: Wide JSON line
+- **WHEN** an excerpt is one line of compact JSON, 1,671 characters long
+- **THEN** the page shows it indented, one field to a line, with long values wrapping in the box
+
+#### Scenario: Line kept as printed
+- **WHEN** an excerpt has a 140-character line of plain text, or of JSON with a space after each colon
+- **THEN** the page shows that line as printed, wrapping it in the box
 
 ### Requirement: Questions
 Each red, orange and yellow item SHALL have one or more questions, after its text and before its links. Each question SHALL offer two to four options, the recommended one first, then "Other" for a free-text answer. A yellow item's questions MUST have the recommended option preselected. A red or orange item's questions MUST start with no option chosen. Every question SHALL take an optional note. The page MUST NOT keep answers across a reload.
