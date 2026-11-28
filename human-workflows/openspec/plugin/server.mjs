@@ -44770,14 +44770,20 @@ var ReviewEvents = class {
   }
 };
 async function* eventLines(path) {
-  let pending = "";
+  let pieces = [];
   for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
-    const lines = (pending + chunk).split("\n");
-    pending = lines.pop() ?? "";
-    yield* lines;
+    const [first = "", ...lines] = chunk.split("\n");
+    pieces.push(first);
+    if (lines.length > 0) {
+      yield pieces.join("");
+      const tailPiece = lines.pop() ?? "";
+      yield* lines;
+      pieces = [tailPiece];
+    }
   }
-  if (pending) {
-    yield pending;
+  const last = pieces.join("");
+  if (last) {
+    yield last;
   }
 }
 async function readReview(dir) {

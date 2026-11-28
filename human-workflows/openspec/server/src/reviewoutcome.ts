@@ -80,14 +80,20 @@ class ReviewEvents {
 }
 
 async function* eventLines(path: string): AsyncGenerator<string> {
-  let pending = "";
+  let pieces: string[] = [];
   for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
-    const lines = (pending + chunk).split("\n");
-    pending = lines.pop() ?? "";
-    yield* lines;
+    const [first = "", ...lines] = (chunk as string).split("\n");
+    pieces.push(first);
+    if (lines.length > 0) {
+      yield pieces.join("");
+      const tailPiece = lines.pop() ?? "";
+      yield* lines;
+      pieces = [tailPiece];
+    }
   }
-  if (pending) {
-    yield pending;
+  const last = pieces.join("");
+  if (last) {
+    yield last;
   }
 }
 

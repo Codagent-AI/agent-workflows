@@ -271,8 +271,7 @@ test("result formatting omits interim answers and sets MCP error only for no suc
   assert.deepEqual(parse(mixed).changed_paths, ["changed.md"]);
   assert.equal(snapshotOf({ ...batch, status: "failed", reviewers: [failure] }, now).isError, true);
 });
-
-test("review parser matches the prompt response, skips malformed lines, and falls back to any stop reason", async (t) => {
+test("review parser joins multi-chunk records and matches the prompt response", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "crosscheck-parser-"));
   t.after(() => rmSync(dir, { recursive: true }));
   const chunk = (text: string) => ({
@@ -283,14 +282,15 @@ test("review parser matches the prompt response, skips malformed lines, and fall
   const other = { id: 8, result: { stopReason: "max_tokens" } };
   const events = join(dir, "events.ndjson");
   writeFileSync(join(dir, "stderr.txt"), `${"padding ".repeat(500)}error tail`);
+  const answer = `first\u2028${"second".repeat(200_000)}\u2029third`;
   const log = [
-    prompt, chunk("first\u2028second\u2029third"), chunk(" and "), chunk("last"),
+    prompt, chunk(answer), chunk(" and "), chunk("last"),
     { id: 6, error: { message: "recovered error", data: { details: "recovered detail" } } },
     response, other, { id: 9, error: { message: "fallback error" } },
   ];
   writeFileSync(events, `not json\n${log.map((event) => JSON.stringify(event)).join("\r\n")}`);
   const matched = await readReview(dir);
-  assert.equal(matched.answer, "first\u2028second\u2029third and last");
+  assert.equal(matched.answer, `${answer} and last`);
   assert.equal(matched.stop, "end_turn");
   assert.doesNotMatch(matched.error, /recovered/);
   assert.match(matched.error, /^fallback error\n\.\.\..*error tail$/);
