@@ -40,7 +40,18 @@ function indexEntries(output: string, paths: Map<string, string>): Map<string, s
   return entries;
 }
 
-function fileFingerprint(path: string): string {
+async function submoduleHead(path: string, options: RunOptions): Promise<string> {
+  if (!lstatSync(join(path, ".git"), { throwIfNoEntry: false })) {
+    return "";
+  }
+  const head = await run("git", ["rev-parse", "--verify", "HEAD"], { ...options, cwd: path });
+  if (head.code !== 0) {
+    throw new Error(`Could not resolve submodule HEAD at ${path}`);
+  }
+  return head.stdout.trim();
+}
+
+async function fileFingerprint(path: string, index: string | undefined, options: RunOptions): Promise<string> {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) {
     return "missing";
@@ -50,6 +61,8 @@ function fileFingerprint(path: string): string {
     hash.update(readlinkSync(path, { encoding: "buffer" }));
   } else if (stat.isFile()) {
     hash.update(readFileSync(path));
+  } else if (stat.isDirectory() && index && /(?:^|\n)160000 /.test(index)) {
+    hash.update(await submoduleHead(path, options));
   }
   return hash.digest("hex");
 }
@@ -67,7 +80,9 @@ export async function snapshotTree(options: RunOptions): Promise<TreeSnapshot | 
   const entries = indexEntries(index.stdout, paths);
   try {
     for (const [path, code] of paths) {
-      paths.set(path, JSON.stringify([code, entries.get(path), fileFingerprint(join(options.cwd, path))]));
+      const indexEntry = entries.get(path);
+      const file = await fileFingerprint(join(options.cwd, path), indexEntry, options);
+      paths.set(path, JSON.stringify([code, indexEntry, file]));
     }
     return { head: head.stdout.trim(), paths };
   } catch {

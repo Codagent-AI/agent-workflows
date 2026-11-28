@@ -36052,7 +36052,11 @@ function logBaseFor(context, root) {
 }
 function repoLogDir(context, root) {
   const hash2 = createHash("sha256").update(root).digest("hex").slice(0, 12);
-  return join(logBaseFor(context, root), hash2);
+  const dir = join(logBaseFor(context, root), hash2);
+  if (contains(realpathSync(root), resolvedLogPath(dir))) {
+    throw new Error(`Repository log directory resolves inside the working tree at ${root}: ${dir}`);
+  }
+  return dir;
 }
 function ensurePrivateDir(path) {
   mkdirSync(path, { recursive: true, mode: 448 });
@@ -44864,8 +44868,13 @@ function signal(pid, value) {
   try {
     process.kill(pid, value);
     return true;
-  } catch {
-    return false;
+  } catch (error62) {
+    const failure2 = error62;
+    if (failure2.code === "ESRCH") {
+      return false;
+    }
+    console.error(`Crosscheck could not signal PID or group ${pid} with ${value}: ${failure2.message}`);
+    return value === 0;
   }
 }
 var Reviewer = class {
@@ -45140,7 +45149,17 @@ function indexEntries(output3, paths) {
   }
   return entries;
 }
-function fileFingerprint(path) {
+async function submoduleHead(path, options) {
+  if (!lstatSync(join9(path, ".git"), { throwIfNoEntry: false })) {
+    return "";
+  }
+  const head = await run("git", ["rev-parse", "--verify", "HEAD"], { ...options, cwd: path });
+  if (head.code !== 0) {
+    throw new Error(`Could not resolve submodule HEAD at ${path}`);
+  }
+  return head.stdout.trim();
+}
+async function fileFingerprint(path, index, options) {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) {
     return "missing";
@@ -45150,6 +45169,8 @@ function fileFingerprint(path) {
     hash2.update(readlinkSync(path, { encoding: "buffer" }));
   } else if (stat.isFile()) {
     hash2.update(readFileSync5(path));
+  } else if (stat.isDirectory() && index && /(?:^|\n)160000 /.test(index)) {
+    hash2.update(await submoduleHead(path, options));
   }
   return hash2.digest("hex");
 }
@@ -45166,7 +45187,9 @@ async function snapshotTree(options) {
   const entries = indexEntries(index.stdout, paths);
   try {
     for (const [path, code] of paths) {
-      paths.set(path, JSON.stringify([code, entries.get(path), fileFingerprint(join9(options.cwd, path))]));
+      const indexEntry = entries.get(path);
+      const file2 = await fileFingerprint(join9(options.cwd, path), indexEntry, options);
+      paths.set(path, JSON.stringify([code, indexEntry, file2]));
     }
     return { head: head.stdout.trim(), paths };
   } catch {

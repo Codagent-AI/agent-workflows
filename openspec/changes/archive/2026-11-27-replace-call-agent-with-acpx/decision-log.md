@@ -120,3 +120,33 @@ Settled in review round 1. Kept the truncation note inside the 200,000-character
 - Rationale: The strict limit protects clients that rely on the size of the returned response and still includes the required note. This interpretation fits the approved requirement and needs no change to the definition.
 - If wrong: A caller expecting a full 200,000 characters of reviewer-authored text before the note receives 42 fewer characters of the original answer when it exceeds the cap.
 - Verification: `evidence/acceptance-fix-0-unit.log` confirms the full response cap and the exact-length boundary. INTEG-2 already drives a long response over the fake acpx subprocess boundary, so its assertion now covers the full length and the note. That integration test was outside this unit-only run. `evidence/acceptance-fix-0-build.log` records the rebuild and bundle comparison.
+
+## DECIDE-11: PR review — Reject repository log directories that resolve inside the checkout
+
+- Step: PR comment fixes.
+- Question and requirement: An external log base can contain a hash-named symlink into the tree. The privacy requirement forbids logs in the tree, and the normal external directory and existing base fallback should still work.
+- Decision: Validate the resolved repository directory and refuse before creating a batch when the target is inside the checkout.
+- Alternatives: Redirect the batch again, or replace the existing entry.
+- Rationale: Refusal keeps the existing entry intact and makes the unsafe path visible before any reviewer launches.
+- What breaks if wrong: A configuration that intentionally links the repository log directory into the checkout will fail until that path is changed.
+- Evidence: `evidence/fix-pr-targeted.log`.
+
+## DECIDE-12: PR review — Fingerprint the checked-out commit of dirty gitlinks
+
+- Step: PR comment fixes.
+- Question and requirement: The tree result needs to distinguish changes to the checked-out revision when both snapshots have the same index entry and dirty status.
+- Decision: Include the initialized submodule HEAD in the path fingerprint. Keep the directory fingerprint for uninitialized submodules and the established unknown result if resolving an initialized HEAD fails.
+- Alternatives: Compare only the gitlink in the parent index, or fingerprint files recursively inside every submodule.
+- Rationale: The checked-out revision identifies this change without adding a separate recursive review scope.
+- What breaks if wrong: A damaged initialized submodule whose HEAD cannot be read makes the snapshot unknown.
+- Evidence: `evidence/fix-pr-targeted.log`.
+
+## DECIDE-13: PR review — Report denied process-group signals
+
+- Step: PR comment fixes.
+- Question and requirement: The cleanup design signals groups that still exist. A failed signal-zero probe can mean the group exists but the server lacks permission.
+- Decision: Treat ESRCH as absence. Keep escalation armed on other probe errors and log non-ESRCH failures to server stderr without replacing the reviewer outcome.
+- Alternatives: Treat every error as absence, or add a new reviewer outcome for cleanup diagnostics.
+- Rationale: Permission failures stay visible and the existing cancellation and timeout result schema remains intact.
+- What breaks if wrong: A group the server cannot signal can still survive, with the failure visible in server stderr.
+- Evidence: `evidence/fix-pr-targeted.log`.

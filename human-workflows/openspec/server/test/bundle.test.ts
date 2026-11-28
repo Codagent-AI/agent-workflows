@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { CHANGE, fakeCall, makeFixture, PLUGIN_ROOT } from "./helpers.js";
+import { defaultLogBase, repoLogDir } from "../src/context.js";
+import { signal } from "../src/reviewer.js";
+import { CHANGE, fakeCall, makeContext, makeFixture, PLUGIN_ROOT } from "./helpers.js";
 
 type TextResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
 
@@ -124,4 +126,37 @@ test("an internal error shows its message and omits the stack", async () => {
   });
   assert.equal(failed.isError, true);
   assert.equal(failed.content[0]?.text, "define-openspec-change internal error: boom");
+});
+
+
+test("a symlinked repository log folder cannot direct logs into the checkout", async () => {
+  const fixture = makeFixture();
+  const context = makeContext(fixture, { logBase: join(fixture.dir, basename(defaultLogBase())) });
+  const dir = repoLogDir(context, fixture.repo);
+  mkdirSync(dirname(dir), { recursive: true });
+  symlinkSync(fixture.repo, dir);
+  const client = await connect(fixture, "claude-code", fixture.repo, { TMPDIR: fixture.dir });
+  try {
+    const result = await client.callTool({ name: "crosscheck", arguments: { prompt: "Review." } });
+    assert.equal((result as TextResult).isError, true);
+    assert.match(text(result), /log directory resolves inside the working tree/);
+    assert.equal(existsSync(join(fixture.repo, "events.jsonl")), false);
+    assert.equal(fixture.git("status", "--porcelain"), "");
+  } finally {
+    await client.close();
+  }
+});
+
+test("signal permission errors keep groups live and are reported", (t) => {
+  const error = t.mock.method(console, "error", () => {});
+  const kill = t.mock.method(process, "kill", () => {
+    throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+  });
+  assert.equal(signal(-20, 0), true);
+  assert.equal(signal(-20, "SIGKILL"), false);
+  assert.equal(error.mock.callCount(), 2);
+  assert.match(String(error.mock.calls[1]?.arguments[0]), /SIGKILL.*permission denied/);
+  kill.mock.mockImplementation(() => { throw Object.assign(new Error("no such process"), { code: "ESRCH" }); });
+  assert.equal(signal(-20, 0), false);
+  assert.equal(error.mock.callCount(), 2);
 });

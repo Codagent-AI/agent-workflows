@@ -94,7 +94,11 @@ function logBaseFor(context: Context, root: string): string {
 
 export function repoLogDir(context: Context, root: string): string {
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 12);
-  return join(logBaseFor(context, root), hash);
+  const dir = join(logBaseFor(context, root), hash);
+  if (contains(realpathSync(root), resolvedLogPath(dir))) {
+    throw new Error(`Repository log directory resolves inside the working tree at ${root}: ${dir}`);
+  }
+  return dir;
 }
 
 /** Makes a folder only its owner can use, and tightens one that already exists. Throws if it cannot. */

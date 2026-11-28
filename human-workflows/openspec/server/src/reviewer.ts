@@ -45,12 +45,17 @@ export function descendantGroups(pid: number, all: ProcessGroup[], serverPid: nu
   return [...groups];
 }
 
-function signal(pid: number, value: NodeJS.Signals | 0): boolean {
+export function signal(pid: number, value: NodeJS.Signals | 0): boolean {
   try {
     process.kill(pid, value);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException;
+    if (failure.code === "ESRCH") {
+      return false;
+    }
+    console.error(`Crosscheck could not signal PID or group ${pid} with ${value}: ${failure.message}`);
+    return value === 0;
   }
 }
 

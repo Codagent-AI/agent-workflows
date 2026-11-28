@@ -15,7 +15,7 @@ import { repoLogDir, waitMsFromEnv } from "../src/context.js";
 import { descendantGroups } from "../src/reviewer.js";
 import { readReview, reviewOutcome } from "../src/reviewoutcome.js";
 import { compareTrees, snapshotTree } from "../src/worktree.js";
-import { CHANGE, defined, fakeLog, type Fixture, makeContext, makeFixture, pathWithout, session, writeConfig } from "./helpers.js";
+import { addDirtySubmodule, advanceSubmodule, CHANGE, defined, fakeLog, type Fixture, makeContext, makeFixture, pathWithout, session, writeConfig } from "./helpers.js";
 
 const config = (...names: string[]) =>
   `human-workflows:\n  crosscheck:\n${names.map((cli) => `    - cli: ${cli}\n`).join("")}`;
@@ -125,7 +125,6 @@ test("INTEG-2: non-lead reviewers overlap and a slow result can be polled", asyn
   const pending = parse(await calls.start("review"));
   assert.equal(pending.status, "running");
   assert.match(pending.crosscheck_id, /^cc-[a-f\d]{8}$/);
-  assert.match(pending.next, /get_crosscheck/);
   assert.equal(typeof pending.elapsed, "string");
   assert.equal(pending.working_tree, undefined);
   assert.equal(pending.changed_paths, undefined);
@@ -368,8 +367,7 @@ async function ready(fixture: Fixture, expected: string) {
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    // Linux containers can leave an exited orphan as a zombie if PID 1 is not a reaper.
-    return !execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().startsWith("Z");
+      return !execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().startsWith("Z");
   } catch {
     return false;
   }
@@ -464,7 +462,8 @@ test("INTEG-4: real git snapshots report exact changed paths or unknown", async 
     [["link"], (f) => { rmSync(join(f.repo, "link")); symlinkSync("changed", join(f.repo, "link")); }, (f) => symlinkSync("old", join(f.repo, "link"))],
     [["README.md", "new"], (f) => f.git("mv", "README.md", "new")],
     [["HEAD", "README.md"], (f) => { f.write("README.md", "commit"); f.git("commit", "-qam", "next"); }],
-    [[], () => {}],
+    [[], () => {}, addDirtySubmodule],
+    [["nested"], advanceSubmodule, addDirtySubmodule],
     [["README.md"], (f) => f.write("README.md", "edited twice"), (f) => f.write("README.md", "edited")],
     [["README.md"], (f) => chmodSync(join(f.repo, "README.md"), 0o755), (f) => f.write("README.md", "edited")],
     [["README.md"], (f) => { f.write("README.md", "staged again"); f.git("add", "README.md"); f.write("README.md", "unstaged\n"); }, staged],

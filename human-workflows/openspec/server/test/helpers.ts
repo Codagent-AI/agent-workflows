@@ -334,3 +334,15 @@ export async function driveToApproachReview(next: (args?: NextStepArgs) => Promi
     if (result.isError) throw new Error(result.text);
   }
 }
+
+export function advanceSubmodule(fixture: Fixture): void {
+  fixture.write("nested/README.md", `${fixture.read("nested/README.md")}next\n`);
+  fixture.git("-C", "nested", "commit", "-qam", "advance submodule");
+}
+
+export function addDirtySubmodule(fixture: Fixture): void {
+  const child = makeFixture();
+  fixture.git("-c", "protocol.file.allow=always", "submodule", "add", child.repo, "nested");
+  fixture.git("commit", "-qm", "add submodule");
+  advanceSubmodule(fixture);
+}
