@@ -22,7 +22,10 @@ fi
 SRC_REAL="$(cd "$SRC" && pwd -P)"
 mkdir -p "$DEST"
 DEST_REAL="$(cd "$DEST" && pwd -P)"
-if [ "$DEST_REAL" = "/" ] || [ "$DEST_REAL" = "$HOME" ] || [ -e "$DEST_REAL/.git" ]; then
+# Resolved paths may keep a leading double slash; drop it so the checks compare like with like.
+while [ "${DEST_REAL#//}" != "$DEST_REAL" ]; do DEST_REAL="${DEST_REAL#/}"; done
+while [ "${SRC_REAL#//}" != "$SRC_REAL" ]; do SRC_REAL="${SRC_REAL#/}"; done
+if [ -z "${DEST_REAL//\//}" ] || [ "$DEST_REAL" = "$HOME" ] || [ -e "$DEST_REAL/.git" ]; then
   echo "refusing to empty $DEST_REAL" >&2
   exit 1
 fi
