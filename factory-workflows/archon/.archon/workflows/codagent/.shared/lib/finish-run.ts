@@ -16,6 +16,7 @@ import { acceptedHead, emptyRanking, stepFailures, humanChecks, inventory, type 
 import { reviewMedia } from './review-media.ts';
 import { refreshBase } from './review-revisions.ts';
 import { bindDisputeQuestions, checkRanking, placeRanking } from './review-package.ts';
+import { settleRepeats } from './review-repeats.ts';
 import { settleQuestions } from './review-questions.ts';
 import { currentPage, publishPackage } from './publish-review.ts';
 import { flagItems, pageItems, passingRewrite, readerItems, readerNotes, type Flag } from './review-reader.ts';
@@ -108,6 +109,7 @@ function prepareRanking(input: FinishInputs, dir: string) {
   // What each item says on the page this round publishes, for telling later whether an answered item changed.
   writeJson(printsPath(dir, (readPages(dir).at(-1)?.round ?? 0) + 1), itemPrints(dir, inv.required.map(row => row.item)));
   writeJson(join(dir, 'review/human-checks.json'), humanChecks(input.folder));
+  writeJson(join(dir, 'review/answered.json'), inv.context.answered);
   return { accepted_head: inv.accepted_head, later_commits: JSON.stringify(inv.later_commits) };
 }
 
@@ -115,10 +117,10 @@ function rankingNode(input: FinishInputs, dir: string): unknown {
   const inv = inventory({ exec: runCommand, dir, changeFolder: input.folder });
   const ranking = JSON.parse(input.result) as Ranking;
   if (input.op === 'place-ranking') {
-    writeJson(join(dir, 'review-attention.json'), settleQuestions(placeRanking(ranking, inv.required, inv.context), input.review)); return pass();
+    writeJson(join(dir, 'review-attention.json'), settleQuestions(settleRepeats(placeRanking(ranking, inv.required, inv.context), inv.context.answered), input.review)); return pass();
   }
   const checked = checkRanking(ranking, inv.required, inv.context);
-  if (checked.ok) writeJson(join(dir, 'review-attention.json'), settleQuestions(bindDisputeQuestions(ranking, inv.required), input.review));
+  if (checked.ok) writeJson(join(dir, 'review-attention.json'), settleQuestions(settleRepeats(bindDisputeQuestions(ranking, inv.required), inv.context.answered), input.review));
   return checked;
 }
 // The reader check never fails its node: without a usable result the page publishes the ranking it has.

@@ -7,7 +7,7 @@ A script SHALL build its own list of required items from files the ranking agent
 - each other open dispute-log entry other than a pull request comment, spec-change disputes included, and the commits after the accepted head, must be at least orange;
 - each open decision-log entry and each open pull request comment dispute must be at least yellow.
 
-A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes.
+A decision-log or dispute-log entry SHALL be open unless it is marked settled or an earlier round's response record marks it fixed, unchanged or settled. A response to a question that an item's entries share SHALL settle every entry that shares it. An entry with a question of its own SHALL be settled only by the response to that entry. An item whose latest answer asked for no work SHALL NOT be required until it changes. An item that repeats an earlier answer SHALL be required only at yellow.
 
 #### Scenario: Spec-change dispute in orange
 - **WHEN** the ranking puts a dispute that needs a spec change in orange
@@ -145,3 +145,82 @@ The workflow SHALL add a red item of type Failure for each failed acceptance, re
 #### Scenario: Push failed in a feedback round
 - **WHEN** a feedback round's push still fails after its repair
 - **THEN** the run fails, and the round writes no page
+
+### Requirement: A dispute log records what the agents left unfixed without agreement
+The workflow SHALL commit `dispute-log.md` in the change folder, numbered `DISPUTE-1`, `DISPUTE-2` and so on, with one entry for each `high` or `medium` review finding still disputed or never fixed, each audit finding the implementor did not fix, and each pull request review comment the finalize fixer did not fix. Each entry SHALL give the finding or comment and both sides. An entry a script makes from a review finding, in either log, SHALL state the finding's problem once.
+
+#### Scenario: Finding stays disputed
+- **WHEN** the reviewer still contests a decline after the implementor's reply
+- **THEN** the dispute log has an entry with the finding, the reviewer's position and the implementor's
+
+#### Scenario: Audit finding is not fixed
+- **WHEN** the implementor holds that an audit finding is not a violation and does not fix it
+- **THEN** it records the finding, the requirement and its reason in the run's dispute log, and the committed log has the entry
+
+#### Scenario: Pull request comment is not fixed
+- **WHEN** the finalize fixer does not fix a review comment on the pull request
+- **THEN** it adds an entry headed `PR comment` to the committed dispute log, with the comment's file, line and author, what it asked for and why it was not fixed, and commits it with its fixes or by itself; its reply on the comment stays as well
+
+#### Scenario: Nothing is disputed
+- **WHEN** no finding is disputed at the end of the run
+- **THEN** the dispute log has no entries, and no dispute item is ranked
+
+#### Scenario: Entry from a review finding
+- **WHEN** a script logs a review finding
+- **THEN** the entry states the finding's problem once, as what breaks if the decision is wrong
+
+### Requirement: The fallback keeps the agent's valid questions and picks
+When the script places items itself, it SHALL write each one plainly: a title from the entry's heading or the behavior it covers, without its code, a one-line body saying what is open, and a labeled link to its source, never a code, a file path or a whole log entry in the text. It SHALL give the standard question to each item without a valid one, and to a dispute that needs a spec change an option to make the edit its entry records, worded without quoting it, the follow-up and the drop options, or only the last two when it records no edit. It SHALL keep the key evidence that names the run's screenshots or command evidence, at most five, and drop the rest. When no pick is valid, the page SHALL have no key evidence section, and all evidence SHALL still show.
+
+#### Scenario: Item placed by the script
+- **WHEN** the script places a required item the ranking left out
+- **THEN** the item ends with the standard question
+
+#### Scenario: Decision placed by the script
+- **WHEN** the script places a decision-log entry headed `DECIDE-5: Fixture cleanup uses a temporary folder`
+- **THEN** the item's title is "Fixture cleanup uses a temporary folder", its text has no `DECIDE-5`, and it links to the entry on GitHub
+
+#### Scenario: Spec-change dispute placed by the script
+- **WHEN** the script places a dispute that needs a spec change and its entry records an edit
+- **THEN** the item is orange, and its question offers making that edit, filing a follow-up issue, and dropping it
+
+#### Scenario: Some picks invalid
+- **WHEN** the repaired ranking still names two real screenshots and one that does not exist
+- **THEN** the page's key evidence shows the two real screenshots
+
+#### Scenario: No valid pick
+- **WHEN** none of the ranking's key evidence names real evidence
+- **THEN** the page has no key evidence section
+- **AND** all evidence still shows
+
+### Requirement: Flagged items are rewritten once
+When items are flagged, the ranking agent SHALL rewrite their wording once from the reader's notes, and MAY relabel links, but MUST keep every tier, type, source, link target, journey, piece of evidence and option ID. The rewritten ranking SHALL pass the same check as the ranking. When it does not, each item SHALL keep its rewrite only if the ranking still passes with it, and otherwise its wording from before the rewrite.
+
+#### Scenario: Rewrite passes the check
+- **WHEN** the reader flags two items and their rewrite passes the check
+- **THEN** the page shows the two rewritten items and the others unchanged
+
+#### Scenario: Rewrite changes an option
+- **WHEN** the rewrite of an item gives its question a different option ID
+- **THEN** that item keeps its earlier wording
+
+#### Scenario: One rewrite fails the check
+- **WHEN** the reader flags two items and the rewrite of one drops the line of files changed from a late commit
+- **THEN** the page shows the other item rewritten and the late commit with its wording from before the rewrite
+
+## ADDED Requirements
+
+### Requirement: A repeat of an answered item shows the earlier answer
+The ranking agent MAY match a decision or dispute to an earlier item whose latest answer asked for no work, when both raise the same problem. A matched item SHALL be yellow, and the page SHALL show on it the round of the earlier answer and what it was, with a link to any issue filed for it. A script SHALL ignore a match for any other item, or to an item whose latest answer asked for work.
+
+#### Scenario: Gap already sent to a follow-up
+- **WHEN** round 3's code review finds a gap that the reviewer sent to a follow-up issue in round 2, and the ranking matches the new decision to the old one
+- **THEN** page 3 shows the new decision in yellow with "You answered this in round 2" and that answer, linking to the issue
+
+#### Scenario: Earlier answer asked for work
+- **WHEN** the ranking matches an item to one whose latest answer asked for a fix
+- **THEN** the script ignores the match and the item keeps its tier
+
+#### Scenario: Failure matched
+- **WHEN** the ranking matches a failed step to an earlier item
+- **THEN** the script ignores the match

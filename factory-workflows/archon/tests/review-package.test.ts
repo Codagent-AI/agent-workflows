@@ -1,10 +1,10 @@
 import { commitLogs } from '../.archon/workflows/codagent/.shared/lib/logs.ts';
-import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { join } from 'node:path'; import { mkdirSync } from 'node:fs';
 import { Script } from 'node:vm';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { inventory, emptyRanking, itemPrints, stepFailures, type Item, type Ranking, type RequiredItem } from '../.archon/workflows/codagent/.shared/lib/review-inventory.ts';
 import { checkRanking, placeRanking } from '../.archon/workflows/codagent/.shared/lib/review-package.ts';
+import { settleRepeats } from '../.archon/workflows/codagent/.shared/lib/review-repeats.ts';
 import { publishPackage } from '../.archon/workflows/codagent/.shared/lib/publish-review.ts';
 import { readPages } from '../.archon/workflows/codagent/.shared/lib/review-pages.ts';
 import { startRound } from '../.archon/workflows/codagent/.shared/lib/review-round.ts';
@@ -147,16 +147,16 @@ test('INT-010 publishes numbered pages, relative screenshots, cloc data and merg
   const answered = box.read(pageFile(1));
   box.commitFix();
   box.write('artifacts/review-response-round-1.json', JSON.stringify([{ item: 'CHECK-2', status: 'fixed', note: 'Kept the summary', commit: accepted }, { item: 'note', status: 'no-change', note: 'Kept the rest' }]));
-  steps({ 'merge-base': { ...passedStep, remaining: 'Merged the current base.' } });
-  recordRetest(dir(), 2, false, 'Retest needs work');
+  steps({ 'merge-base': { ...passedStep, remaining: 'Merged the current base.' } }); recordRetest(dir(), 2, false, 'Retest needs work');
+  const found = (cycle: number, title: string, state: string, flags: { handed_off?: boolean; reopened?: boolean } = {}) => ({ cycle, title, state, accepted_decline: Boolean(flags.handed_off), ...flags });
+  box.write('artifacts/review/state.json', JSON.stringify({ cycles: [{ place: 'feedback', round: 2 }, { place: 'finalize', round: 2, reviewed: true }, { place: 'finalize', round: 2 }, { place: 'feedback', round: 1, reviewed: true }],
+    findings: [found(0, 'Gap', 'closed', { handed_off: true }), found(0, 'Crash', 'closed'), found(0, 'Asked', 'closed', { reopened: true }), found(0, 'Nit', 'declined'), found(3, 'Old', 'open')] }));
   publishPackage(forge.tools, { dir: dir(), folder, ranking: rank }, { ...options, round: 2, archonUrl: '' });
   expect(box.read(pageFile(1))).toBe(answered);
   expect(box.read('artifacts/review-page.html')).toBe(box.read(pageFile(2)));
-  expect(dataBlock(box.read(pageFile(2))).recap).toMatchObject([
-    { note: 'Kept the summary' }, { note: 'Committed', label: 'fix' }, { note: 'Merged the current base.' },
-  ]);
-  expect(forge.body).toStartWith('Before\n');
-  expect(forge.body).toEndWith('\nAfter');
+  expect(dataBlock(box.read(pageFile(2))).recap).toMatchObject([{ note: 'Kept the summary' }, { note: 'Committed', label: 'fix' }, { note: 'Code review found “Gap”. It is on this page.' },
+    { note: 'Code review found “Crash”, and it was fixed.' }, { note: 'Code review found “Nit”, a minor problem left unfixed.' }, { note: 'Code review found no problems in a CI fix.' }, { note: 'Merged the current base.' }]);
+  expect(forge.body).toStartWith('Before\n'); expect(forge.body).toEndWith('\nAfter');
   expect(forge.body.indexOf('round-1.html')).toBeLessThan(forge.body.indexOf('Review round 2'));
   expect(forge.body).toContain('feedback sent');
   expect(forge.body).toContain('Review round 2 (run review-run)');
@@ -182,21 +182,21 @@ test('a follow-up answer files one issue for its item, retried on resume, and th
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
   expect(dataBlock(box.read(pageFile(2))).recap).toEqual([{ note: 'Filed a follow-up issue:', label: 'Unsafe default', href: saved() }]);
 });
-test('an item answered with no work stays off later pages until it changes', () => {
-  steps({ retest: failedStep });
-  const forge = publisher();
+test('an item answered with no work stays off later pages until it changes, and a new decision or dispute may repeat it', () => {
+  steps({ retest: failedStep }); const forge = publisher();
   publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, options);
   box.write('artifacts/review/prints-round-1.json', JSON.stringify(itemPrints(dir(), inv().required.map(row => row.item))));
   startRound(forge.tools, { dir: dir(), folder, text: feedback(choice('failure:retest', 'leave'), choice('I-1', 'keep'), choice('I-2', 'fix')) });
   expect(inv().required.map(row => row.item.source[0])).toEqual(['I-2', 'D-01', 'DP-01', 'DP-02']);
-  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 });
-  expect(dataBlock(box.read(pageFile(2))).red).toEqual([]);
-  steps({ retest: { ...failedStep, problems: 'a new failure' } });
-  expect(inv().required.map(row => row.item.source[0])).toContain('failure:retest');
+  const answered = inv().context.answered; expect(answered.map(entry => entry.source)).toEqual(['failure:retest', 'I-1']);
+  const repeat = (repeats: string, tier: 'orange' | 'yellow' = 'yellow') => ({ ...emptyRanking(), [tier]: [{ ...item('Dispute', 'DP-01'), repeats }] });
+  expect(['I-1', 'I-2'].map(code => checkRanking(repeat(code), inv().required, { ...inv().context, links: undefined }).problems.includes('under-ranked DP-01'))).toEqual([false, true]);
+  expect([settleRepeats(repeat('I-1', 'orange'), answered).yellow[0].answered, settleRepeats(repeat('I-2', 'orange'), answered).orange[0].answered]).toEqual([{ round: 1, answer: 'keep' }, undefined]);
+  publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, round: 2 }); expect(dataBlock(box.read(pageFile(2))).red).toEqual([]);
+  steps({ retest: { ...failedStep, problems: 'a new failure' } }); expect(inv().required.map(row => row.item.source[0])).toContain('failure:retest');
 });
 test.each(['archive', 'finalize'])('INT-010 %s failure hides Merge and wait-off hides sending', step => {
-  steps({ [step]: failedStep });
-  const forge = publisher();
+  steps({ [step]: failedStep }); const forge = publisher();
   const result = publishPackage(forge.tools, { dir: dir(), folder, ranking: emptyRanking() }, { ...options, wait: false });
   expect(result.succeeded).toBe(false);
   const data = dataBlock(box.read(pageFile(1)));
@@ -384,16 +384,16 @@ test('INT-009 validates questions, mixed evidence picks and legacy journey commi
 });
 test.each([true, false])('INT-009 spec-change fallback offers a targeted edit only when defined (%s)', editable => {
   box.write(`${folder}/dispute-log.md`, `## DISPUTE-1: Scope change\nStatus: spec-change\n${editable ? 'Spec edit: Permit an empty note.' : 'Needs a follow-up.'}\n`);
-  const requiredRows = inv().required;
-  const ranking = { ...emptyRanking(), red: [item('Dispute', 'DISPUTE-1')] };
+  const requiredRows = inv().required; const ranking = { ...emptyRanking(), red: [item('Dispute', 'DISPUTE-1')] };
   expect(checkRanking(ranking, requiredRows).ok).toBe(false);
   const dispute = placeRanking(ranking, requiredRows).red.find(row => row.source.includes('DISPUTE-1'));
-  const unauthorized = { id: 'apply-anyway', label: 'Implement the request' };
-  expect(dispute).toBeDefined();
+  const unauthorized = { id: 'apply-anyway', label: 'Implement the request' }; expect(dispute).toBeDefined();
   const questions = dispute?.questions ?? [];
   const extra = { ...item('Dispute', 'DISPUTE-1'), questions: [{ ...questions[0], options: [...questions[0].options, unauthorized] }] };
   expect(checkRanking({ ...emptyRanking(), red: [extra] }, requiredRows).problems).toContain('exactly the allowed options');
-  expect(dispute?.questions?.[0].options.map(option => option.id)).toEqual(editable ? ['spec-edit', 'follow-up', 'drop'] : ['follow-up', 'drop']);
+  expect([dispute?.questions?.[0].options.map(option => option.id), JSON.stringify(dispute).includes('Permit an empty note')]).toEqual([editable ? ['spec-edit', 'follow-up', 'drop'] : ['follow-up', 'drop'], false]);
+  const plain = { ...extra, questions: [{ ...questions[0], options: questions[0].options.map(option => ({ ...option, detail: 'In plain words' })) }] };
+  expect(checkRanking({ ...emptyRanking(), red: [plain] }, requiredRows).problems).not.toContain('exactly the allowed options');
 });
 test('INT-007 reads the PR back after an ambiguous merge that landed', () => {
   steps();

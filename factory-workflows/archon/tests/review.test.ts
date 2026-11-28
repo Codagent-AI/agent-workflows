@@ -160,7 +160,7 @@ describe('review rendering and handoff', () => {
     for (const expected of ['## Review finding REVIEW-1', '## Review finding REVIEW-2', 'Question:', 'Requirement:', 'Decision:',
       'Rationale:', 'fixer declined', 'reviewer contested', 'fixer replied', 'missing access',
       'intentional compatibility', 'The reviewer accepted it.', 'review/before-pr.md']) expect(ledger).toContain(expected);
-    expect(ledger).not.toContain('## Review finding REVIEW-3');
+    expect(ledger).not.toContain('## Review finding REVIEW-3'); expect(ledger.split('Missing config crashes')).toHaveLength(3);
     expect(ledger).not.toContain('No unresolved assumptions');
     expect(renderResult(state)).toContain('Low');
     expect(handedOff(state)).toContain('REVIEW-2: Accepted (file.txt:0)');
@@ -299,7 +299,7 @@ describe('INT-009 review scripts against real git', () => {
     box.write('openspec/changes/demo/proposal.md', 'definition'); box.git('add', '.'); box.commit('definition');
     const tail = prepare('tail'); expect(tail.needed).toBe(true); expect(tail.files).toBe('');
     record(tail, [], 'tail');
-    expect(persisted().last_reviewed).toBe(box.head());
+    expect([persisted().last_reviewed, persisted().cycles.map(entry => entry.reviewed)]).toEqual([box.head(), [undefined, true]]);
     expect(read('review/before-pr.md')).toContain(box.head());
   });
   test('same-head tail skips even when an unclosed low finding remains', () => {
@@ -494,7 +494,4 @@ test('the reader check renders page items, flags unclear ones and rewrites only 
   const both = [{ number: 1, title: 'Plain title', detail: 'Plain detail', questions: [wording] }, { number: 2, title: 'Breaks the check', detail: 'x', questions: [wording] }];
   const kept = passingRewrite(ranking, both, [1, 2], candidate => candidate.yellow[0].title !== 'Breaks the check');
   expect([kept.orange[0].title, kept.yellow[0].title, passingRewrite(ranking, both, [1, 2], () => false)]).toEqual(['Plain title', 'Clear item', ranking]);
-  const edit = { ...item, questions: [{ ...question, options: [{ id: 'spec-edit', label: 'Apply', detail: 'Change X to Y.' }, question.options[1]] }] };
-  const reworded = { prompt: 'P', options: [{ id: 'spec-edit', label: 'Apply it', detail: 'Reworded' }, { id: 'follow-up', label: 'Later', detail: '' }] };
-  expect(applyRewrite({ ...ranking, orange: [edit] }, [{ number: 1, title: 'T', detail: 'D', questions: [reworded] }], [1]).orange[0].questions?.[0].options[0]).toEqual({ id: 'spec-edit', label: 'Apply it', detail: 'Change X to Y.' });
 });

@@ -14,10 +14,14 @@ import { citesExistingTest, passedFinalizeChecks } from './review-ci.ts';
 import type { CiResult } from './ci.ts';
 export const TIERS = ['red', 'orange', 'yellow'] as const;
 export type Tier = typeof TIERS[number];
-export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; unlinkedSources?: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean; }
+export interface Item { type: string; title: string; detail: string; links: TargetLink[]; evidence?: string; failLine?: string; source: string[]; unlinkedSources?: string[]; questions?: Question[]; journeys?: LateJourney[]; specChange?: boolean;
+  /** The source of an earlier answered item the ranker matched this one to, and the answer that item got. */
+  repeats?: string; answered?: Omit<Answered, 'source'>; }
+/** A source an earlier page asked about whose latest answer asked for no work. */
+export interface Answered { source: string; round: number; answer: string; issue?: string }
 export interface Ranking { red: Item[]; orange: Item[]; yellow: Item[]; evidence: string; keyEvidence?: KeyEvidence[]; }
 export interface RequiredItem { tier: Tier; item: Item; }
-export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[] }; }
+export interface Inventory { accepted_head: string; later_commits: Item[]; required: RequiredItem[]; context: { media: string[]; commands: string[]; links: LinkContext; journeys: string[]; commits: string[]; dismissed: string[]; answered: Answered[] }; }
 export interface InventoryInput { exec: Exec; dir: string; changeFolder: string; }
 export const emptyRanking = (): Ranking => ({ red: [], orange: [], yellow: [], evidence: '' });
 export function humanChecks(folder: string) {
@@ -206,16 +210,36 @@ export const itemPrints = (dir: string, items: Item[]) => Object.fromEntries(ite
 
 const asksNoWork = (choices: Choice[]) => choices.every(choice => restingOptions.has(choice.option) && !choice.other?.trim() && !choice.note?.trim());
 
-/** Each source a page's answers covered, and whether they asked for no work on it. */
-function answeredSources(dir: string, page: PageEntry): Map<string, boolean> {
+/** Each source a page's answers covered, with the choices made for it. */
+function sourceChoices(dir: string, page: PageEntry): Map<string, Choice[]> {
   const choices = readJson<{ answers?: Choice[] } | null>(answersPath(dir, page.round), null)?.answers ?? [];
   const shared = sharedSources(dir, page);
-  const answered = new Map<string, boolean>();
+  const answered = new Map<string, Choice[]>();
   for (const code of new Set(choices.map(choice => choice.item))) {
-    const rests = asksNoWork(choices.filter(choice => choice.item === code));
-    for (const source of shared.get(code) ?? [code]) answered.set(source, rests);
+    for (const source of shared.get(code) ?? [code]) answered.set(source, choices.filter(choice => choice.item === code));
   }
   return answered;
+}
+
+/** Each source a page's answers covered, and whether they asked for no work on it. */
+const answeredSources = (dir: string, page: PageEntry) => new Map([...sourceChoices(dir, page)].map(([source, choices]) => [source, asksNoWork(choices)]));
+
+function answeredEntry(source: string, round: number, choices: Choice[]): Answered {
+  const issue = choices.find(choice => choice.issue)?.issue;
+  const answer = choices.map(choice => choice.label || choice.option).join('; ');
+  return { source, round, answer, ...(issue ? { issue } : {}) };
+}
+
+/** The sources earlier pages asked about whose latest answer asked for no work, with that answer, for matching a new item to it. */
+export function answeredItems(dir: string): Answered[] {
+  const answered = new Map<string, Answered>();
+  for (const page of readPages(dir)) {
+    for (const [source, choices] of sourceChoices(dir, page)) {
+      if (source !== 'note' && asksNoWork(choices)) answered.set(source, answeredEntry(source, page.round, choices));
+      else answered.delete(source);
+    }
+  }
+  return [...answered.values()];
 }
 
 /** The sources among these items that the latest answer to them asked no work for, and that have not changed since. */
@@ -256,7 +280,7 @@ export function inventory(input: InventoryInput): Inventory {
   const commands = media.commands.map(command => command.file);
   return { accepted_head: head, later_commits: commits.filter(item => !dismissed.includes(item.source[0])),
     required: required.filter(row => !row.item.source.some(source => dismissed.includes(source))),
-    context: { dismissed, media: [...media.shots.map(shot => shot.file), ...commands], commands,
+    context: { dismissed, answered: answeredItems(dir), media: [...media.shots.map(shot => shot.file), ...commands], commands,
       links: { exec, dir, folder: changeFolder, base: '', head: output(exec, 'git', ['rev-parse', 'HEAD']) ?? '', bases: baseRevisions(exec, dir) },
       journeys: [...media.journeys.map(journey => journey.code), ...legacy], commits: commits.map(item => item.source[0]) } };
 }

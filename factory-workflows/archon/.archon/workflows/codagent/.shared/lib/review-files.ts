@@ -68,5 +68,6 @@ export function recordReviewed(state: ReviewState, env: NodeJS.ProcessEnv, verdi
   if (verdicts && 'verdicts' in output) applyVerdicts(state, output.verdicts ?? []);
   addFindings(state, output.findings);
   currentCycle(state).end = end;
+  if (env.INPUTS_NEEDED !== 'false') currentCycle(state).reviewed = true;
   state.last_reviewed = end;
 }

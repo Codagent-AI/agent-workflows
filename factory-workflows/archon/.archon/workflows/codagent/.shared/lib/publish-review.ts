@@ -8,7 +8,9 @@ import { forgeBase, type LinkContext, logUrl, resolveTarget, urlPath } from './r
 import { changeSize, journeys, reviewMedia } from './review-media.ts';
 import { description, embeddedJson, type PageEntry, pagesPath, prefix, publishedItems, readPages, sentBlock, updateDescription } from './review-pages.ts';
 import { standardQuestion } from './review-questions.ts';
+import { readState } from './review-files.ts';
 import { answersPath, type Choice } from './review-round.ts';
+import { roundReview } from './review.ts';
 import { readJson, readText, recordStep, type StepResult, writeJson, writeText } from './run-files.ts';
 
 export interface PublishOptions {
@@ -48,7 +50,7 @@ function openFailures(dir: string, failures: Item[]): Item[] {
 }
 
 // What happened since the last page: the work its answers got, the issues filed for them, the round's
-// other commits, its merge and its retest. Answers that needed nothing done are left out.
+// other commits, what its code reviews found, its merge and its retest. Answers that needed nothing done are left out.
 function recap(links: LinkContext, round: number, reason: string): ResponseEntry[] {
   if (round === 1) return [];
   const { dir, exec } = links;
@@ -65,7 +67,7 @@ function recap(links: LinkContext, round: number, reason: string): ResponseEntry
   const results = [steps['merge-base'], steps.retest?.round === round ? steps.retest : undefined];
   const notes = results.flatMap(result => result?.ok ? [result.remaining] : []);
   return [...done, ...issues, ...commits.map(item => ({ item: '', status: '', note: 'Committed', commit: item.source[0] })),
-    ...[reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))];
+    ...[...roundReview(readState(dir), round), reason, ...notes].filter(Boolean).map(note => ({ item: '', status: '', note }))];
 }
 
 export function currentPage(dir: string, reason = '') {

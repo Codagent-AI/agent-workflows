@@ -137,6 +137,7 @@ td.nowrap { white-space: nowrap; }
 .prose p + ul { margin-top: -6px; }
 /* A failed step's item opens with the publisher's line on what failed. */
 .fail-line { max-width: var(--measure); padding: 9px 12px; border-left: 3px solid var(--red); background: var(--red-bg); font-weight: 500; }
+.answered-line { max-width: var(--measure); padding: 9px 12px; border-left: 3px solid var(--line-strong); font-weight: 500; }
 /* Labeled links close every item. Each goes to GitHub at the page's head. */
 .links { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font-size: 14.5px; }
 .links-label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }

@@ -20,6 +20,8 @@ export interface Finding extends Defect {
   contested: boolean;
   handed_off: boolean;
   accepted_decline: boolean;
+  /** Set when the person asked for a handed-off finding to be fixed, so it is not a new finding of the round. */
+  reopened?: boolean;
   history: History[];
 }
 export interface Cycle {
@@ -29,6 +31,8 @@ export interface Cycle {
   end: string;
   blocked: string;
   turn: number;
+  /** Set when the reviewer ran, so a cycle without findings found no problems rather than skipped its review. */
+  reviewed?: boolean;
 }
 export interface ReviewState {
   findings: Finding[];
@@ -143,7 +147,8 @@ export function handoffSection(state: ReviewState, finding: Finding): string {
   const ruling = declined ? `Declined to fix: ${declined}` : 'None: the finding was still open when the fix rounds stopped.';
   const accepted = finding.accepted_decline ? ' The reviewer accepted it.' : '';
   const history = finding.history.map(h => `${h.actor} ${h.action}: ${h.note}`).join('; ');
-  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Is this a defect that must be fixed before the change is accepted? ${finding.problem} (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Step: ${place} review handoff.\n- Decision: ${ruling}${accepted}\n- Alternatives: fix or leave the finding open.\n- What breaks if wrong: ${finding.problem}\n- Rationale: ${finding.problem}; suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n`;
+  // The problem is stated once, under What breaks if wrong; the other fields point at it.
+  return `## Review finding ${finding.id}, ${place}: ${finding.title}\n\n- Question: Must this finding be fixed before the change is accepted? (${location(finding)})\n- Requirement: the ${finding.category} review instructions.\n- Step: ${place} review handoff.\n- Decision: ${ruling}${accepted}\n- Alternatives: fix or leave the finding open.\n- What breaks if wrong: ${finding.problem}\n- Rationale: suggested fix: ${finding.fix}; ${history}${cycle.blocked ? `; Fixer blocked: ${cycle.blocked}` : ''}. Result: review/${cycle.place}.md\n`;
 }
 export function handoff(state: ReviewState, ledger: string, decisions?: boolean): string {
   const selected = state.findings.filter(f => !f.handed_off && f.severity !== 'low' && (decisions === undefined || f.accepted_decline === decisions) &&
@@ -162,5 +167,22 @@ export function reopenRequested(state: ReviewState, text: string): void {
     finding.state = 'fixed';
     finding.handed_off = false;
     finding.accepted_decline = false;
+    finding.reopened = true;
   }
+}
+
+function reviewOutcome(finding: Finding): string {
+  if (finding.handed_off) return '. It is on this page.';
+  return finding.state === 'closed' && !finding.accepted_decline ? ', and it was fixed.' : ', a minor problem left unfixed.';
+}
+/** What a review round's own code reviews found and what became of each finding, for the recap on that round's page. */
+export function roundReview(state: ReviewState, round: number): string[] {
+  const notes = state.cycles.flatMap((cycle, index) => {
+    if (cycle.round !== round || !(cycle.place === 'feedback' || cycle.place === 'finalize')) return [];
+    const found = state.findings.filter(finding => finding.cycle === index && !finding.reopened);
+    if (found.length > 0) return found.map(finding => `Code review found “${finding.title}”${reviewOutcome(finding)}`);
+    if (!cycle.reviewed) return [];
+    return [cycle.place === 'finalize' ? 'Code review found no problems in a CI fix.' : "Code review found no problems in this round's changes."];
+  });
+  return [...new Set(notes)];
 }

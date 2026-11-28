@@ -100,7 +100,7 @@ After the merge, an implementor SHALL address each answer, note, screenshot comm
 - **THEN** the run fails, no new page is written, and resuming the run starts the round again from the saved feedback and retries the push
 
 ### Requirement: The next page reflects the round
-The next page's Description section SHALL open with a "Since round <n>" list of what happened since that round's page, in plain words without decision or dispute codes, each entry in the past tense: the answers whose work was done, the follow-up issues filed, the branch's other commits since that page, the base merge and the retest. An answer that needed no work SHALL NOT be listed.
+The next page's Description section SHALL open with a "Since round <n>" list of what happened since that round's page, in plain words without decision or dispute codes, each entry in the past tense: the answers whose work was done, the follow-up issues filed, the branch's other commits since that page, what the round's code reviews found and what became of each finding, the base merge and the retest. An answer that needed no work SHALL NOT be listed.
 
 #### Scenario: Summary of the round
 - **WHEN** the page for round 2 is written
@@ -117,6 +117,14 @@ The next page's Description section SHALL open with a "Since round <n>" list of 
 #### Scenario: Commit from another step
 - **WHEN** finalize's fixer commits a fix for a pull request comment during the round
 - **THEN** the "Since round" list names that commit and links to it
+
+#### Scenario: Round's code review
+- **WHEN** round 3's code review finds a gap and the implementor declines to fix it
+- **THEN** page 3's "Since round 2" list says code review found it and that it is on the page
+
+#### Scenario: Code review finds nothing
+- **WHEN** the round's code review runs and finds no problems
+- **THEN** the "Since round" list says so
 
 ### Requirement: The late commit item lists the journeys its commits could affect
 When commits follow the accepted head, including a feedback round's fixes and conflict resolutions, the page's Late commit item SHALL also list each acceptance journey those commits could affect, with its code, its title and the commit that touches it. The journeys SHALL be ones an acceptance round recorded exercising. When it lists a journey, it SHALL offer "Retest".
@@ -174,7 +182,7 @@ A retest that does not pass SHALL be a red item, even when acceptance passed bef
 - **THEN** every later page still shows the acceptance failure
 
 ### Requirement: Feedback that needs a spec change is declined, then asked about
-The implementor MUST NOT make a change that would alter approved behavior. It SHALL log a dispute, and the next page SHALL show it as an item, orange unless its gap should block the merge, with three options: a specific spec edit the page spells out, filing a follow-up issue, or dropping it. A request that needs a new capability or a large revision SHALL get only the follow-up and drop options.
+The implementor MUST NOT make a change that would alter approved behavior. It SHALL log a dispute, and the next page SHALL show it as an item, orange unless its gap should block the merge, with three options: a specific spec edit, which the page describes in plain words without quoting it, filing a follow-up issue, or dropping it. A request that needs a new capability or a large revision SHALL get only the follow-up and drop options.
 
 #### Scenario: Feedback would change approved behavior
 - **WHEN** an answer asks for behavior the specs rule out
@@ -185,8 +193,12 @@ The implementor MUST NOT make a change that would alter approved behavior. It SH
 - **WHEN** the request would need a new capability or a large revision
 - **THEN** the item offers only the follow-up and drop options
 
+#### Scenario: Spec edit option
+- **WHEN** the dispute's entry records an edit that replaces a test rule's wording
+- **THEN** the spec edit option says in plain words what the edit changes, without the replacement wording
+
 ### Requirement: The reviewer's choice on a spec change is carried out
-Choosing the spec edit SHALL make the next round change the spec and the code together: in the change's delta when the archive has not passed, and in `openspec/specs/` when it has. The page after it SHALL show the spec change. Choosing follow-up or drop and sending feedback SHALL settle the dispute in the next round without a code change. Follow-up SHALL also file an issue for it, as for any follow-up answer.
+Choosing the spec edit SHALL make the next round make the edit the dispute's entry records, changing the spec and the code together: in the change's delta when the archive has not passed, and in `openspec/specs/` when it has. The page after it SHALL show the spec change. Choosing follow-up or drop and sending feedback SHALL settle the dispute in the next round without a code change. Follow-up SHALL also file an issue for it, as for any follow-up answer.
 
 #### Scenario: Spec edit chosen
 - **WHEN** the reviewer chooses the spec edit and sends feedback

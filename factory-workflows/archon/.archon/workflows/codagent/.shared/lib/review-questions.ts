@@ -75,8 +75,8 @@ export function settleQuestions<T extends Asked, R extends { red: T[]; orange: T
 }
 
 export function disputeQuestion(edit: string): Question {
-  // No detail: a dispute question matches on each option's detail, and settleQuestions words the follow-up.
+  // The next round applies the dispute log's Spec edit line, so the option describes it and never quotes it; settleQuestions words the follow-up.
   const options: Option[] = [{ id: followUp.id, label: followUp.label }, { id: 'drop', label: 'Drop the request' }];
-  if (edit) options.unshift({ id: 'spec-edit', label: 'Apply this spec edit', detail: edit });
+  if (edit) options.unshift({ id: 'spec-edit', label: 'Change the spec', detail: 'The next round makes the spec edit the dispute proposes and changes the code to match.' });
   return { prompt: 'How should the run handle this request to change approved behavior?', options };
 }
