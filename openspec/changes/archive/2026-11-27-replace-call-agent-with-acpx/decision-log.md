@@ -131,6 +131,8 @@ Settled in review round 1. Kept the truncation note inside the 200,000-character
 - What breaks if wrong: A configuration that intentionally links the repository log directory into the checkout will fail until that path is changed.
 - Evidence: `evidence/fix-pr-targeted.log`.
 
+Settled in review round 2. Kept refusing to start a crosscheck when the repository log directory resolves inside the checkout.
+
 ## DECIDE-12: PR review — Fingerprint the checked-out commit of dirty gitlinks
 
 - Step: PR comment fixes.
@@ -141,6 +143,8 @@ Settled in review round 1. Kept the truncation note inside the 200,000-character
 - What breaks if wrong: A damaged initialized submodule whose HEAD cannot be read makes the snapshot unknown.
 - Evidence: `evidence/fix-pr-targeted.log`.
 
+Settled in review round 2. Recorded a follow-up to detect further edits inside an already-dirty submodule. The follow-up should cover tracked and untracked file changes when the checked-out commit, parent gitlink, and dirty status stay the same. Verify that the result identifies the affected submodule or reports that it could not determine the change. This pull request keeps the checked-out commit fingerprint. It can still miss further changes inside an already-dirty submodule.
+
 ## DECIDE-13: PR review — Report denied process-group signals
 
 - Step: PR comment fixes.
@@ -150,3 +154,5 @@ Settled in review round 1. Kept the truncation note inside the 200,000-character
 - Rationale: Permission failures stay visible and the existing cancellation and timeout result schema remains intact.
 - What breaks if wrong: A group the server cannot signal can still survive, with the failure visible in server stderr.
 - Evidence: `evidence/fix-pr-targeted.log`.
+
+Settled in review round 2. Kept reporting denied process-group signals to server stderr without adding a cleanup warning to the crosscheck result.
