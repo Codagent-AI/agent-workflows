@@ -10,8 +10,7 @@ description: >-
 # $ARTIFACTS_DIR, with the file names the README lists.
 
 # End the run from its recorded review or acceptance outcome.
-returns: end-run
-outcome_field: succeeded
+returns: { node: end-run, outcome: succeeded, ends: [succeeded] }
 
 # The change_name is the run's own input. The rest are the pack's settings (.pack/pack.yaml),
 # which this run reads as $INPUTS and passes to the blocks it includes, since a block takes

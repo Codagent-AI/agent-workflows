@@ -17,7 +17,7 @@ test.each(['feedback', 'merge'])('INT-011 sends one %s answer for the current oc
   const sent: { url: string; init?: RequestInit }[] = [];
   const fake = (async (url: string, init?: RequestInit) => {
     sent.push({ url, init });
-    return sent.length === 1 ? Response.json({ item: { runId: 'r', occurrence: 'this-wait', message: 'Review round 1: waiting' } }) : Response.json({ message: 'accepted' });
+    return sent.length === 1 ? Response.json({ item: { run: { id: 'r', occurrence: 'this-wait' }, message: 'Review round 1: waiting' } }) : Response.json({ message: 'accepted' });
   });
   const answer = { action, round: 1, head: 'reviewed-head', ...(action === 'feedback' ? { answers: [{ note: 'a note' }], screenshotComments: [{ file: 'one.png', round: 0 }] } : {}) };
   const result = await sendReview({ address: 'http://archon.example/api/artifacts/r/review-page.html', run: 'r', round: 1, answer, fetch: fake });
@@ -35,7 +35,7 @@ function fakeWait(scenario: string) {
     if (scenario === 'offline' || (scenario === 'offline after GET' && calls > 1)) throw new Error('network');
     if (calls > 1) return new Response(null, { status: 409 });
     const n = scenario === 'round-12' ? 12 : 1;
-    return Response.json({ item: scenario === 'no wait' ? null : { runId: 'r', occurrence: 'known', message: `Review round ${n}: waiting` } });
+    return Response.json({ item: scenario === 'no wait' ? null : { run: { id: 'r', occurrence: 'known' }, message: `Review round ${n}: waiting` } });
   };
   return { fetch, calls: () => calls };
 }
@@ -178,7 +178,7 @@ test('review submission calls a receiver-sensitive fetch for both actions', asyn
   async function browserFetch(this: unknown, url: string, options?: RequestInit) {
     if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
     if (url.endsWith('/attention')) {
-      return Response.json({ item: { runId: 'run', occurrence: 'live', message: 'Review round 1: waiting' } });
+      return Response.json({ item: { run: { id: 'run', occurrence: 'live' }, message: 'Review round 1: waiting' } });
     }
     return Response.json({ message: JSON.parse(options?.body as string).text });
   }
