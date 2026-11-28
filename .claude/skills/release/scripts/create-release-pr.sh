@@ -33,7 +33,17 @@ fi
 CURRENT_BRANCH=$(git branch --show-current)
 
 if [ "$CURRENT_BRANCH" = "main" ]; then
-  git checkout -q -B "release/v${NEW_VERSION}"
+  # A release PR already open for this version is updated from its own branch, where the
+  # branch PR must be open: check it out, bring main into it, and run the skill there.
+  RELEASE_BRANCH="release/v${NEW_VERSION}"
+  git fetch -q origin "$RELEASE_BRANCH" 2>/dev/null || true
+  if git rev-parse --verify -q "refs/remotes/origin/${RELEASE_BRANCH}" >/dev/null; then
+    echo "Error: ${RELEASE_BRANCH} already exists on origin. Check it out, merge origin/main into it, and run the release skill from that branch." >&2
+    exit 1
+  fi
+  git checkout -q -b "$RELEASE_BRANCH"
+  # A failure before the commit leaves edits on a new branch, so say how to start over.
+  trap 'echo "Failed before the release commit. To start over: git restore . && git switch main && git branch -D ${RELEASE_BRANCH}, then rerun the skill." >&2' ERR
 else
   BRANCH_PR=$(gh pr view --json number,state,url,baseRefName 2>&1) || {
     echo "Error: current branch has no associated PR. Create a PR before adding release changes to a feature branch." >&2
@@ -83,7 +93,11 @@ git add "$VERSION_FILE" "$CHANGELOG" .claude-plugin/marketplace.json \
   human-workflows/archon/plugin/.claude-plugin/plugin.json \
   human-workflows/archon/plugin/.codex-plugin/plugin.json \
   "$SERVER_DIR/package.json" "$SERVER_DIR/package-lock.json"
-git commit -q -m "chore: release v${NEW_VERSION}"
+git diff --cached --quiet || git commit -q -m "chore: release v${NEW_VERSION}"
+if [ "$CURRENT_BRANCH" = "main" ]; then
+  # The commit exists now, so a failure is finished by pushing and opening the PR.
+  trap 'echo "Failed. To finish by hand: git push -u origin ${RELEASE_BRANCH} && gh pr create --repo ${REPO} --base main --head ${RELEASE_BRANCH} --title \"chore: release v${NEW_VERSION}\" --fill" >&2' ERR
+fi
 
 if [ "$CURRENT_BRANCH" = "main" ]; then
   git push -q -u origin "release/v${NEW_VERSION}"
