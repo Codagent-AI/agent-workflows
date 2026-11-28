@@ -115,15 +115,19 @@ The workflow SHALL gather the testing evidence for the ranking: each spec behavi
 - **THEN** it has no testing evidence section
 
 ### Requirement: Every item is ranked in one tier
-The reviewer, in a fresh session after finalize, SHALL rank every item from the testing evidence, the decision log and the dispute log into exactly one of red, orange and yellow, by the Agent Factory's tier rules without their Agent Validator, task-compliance, resume and plan-revision parts. Every open decision-log and dispute-log entry SHALL be ranked. A decision SHALL be ranked by how costly it would be if it is wrong, whether or not it changes behavior. Items that share one root cause SHALL become one item, in the highest tier any of them reaches, listing each symptom. When finalize passed CI, a checklist row that is not verified but names an automated test a CI suite runs SHALL count as verified by that test. A spec behavior that acceptance tried and saw pass SHALL NOT be an item. A behavior that only automated tests checked, which acceptance never tried, SHALL be a Risk item. Those of one feature SHALL share one item, one item per feature, that says what a person has not yet seen working and which tests check it. An item SHALL be yellow only when its recommended option accepts it as it is, with no further work. An item that would otherwise be yellow but recommends a fix, a retest, a review round or any other work SHALL be orange. A red or orange item MAY recommend accepting it as it is.
+The reviewer, in a fresh session after finalize, SHALL rank every item from the testing evidence, the decision log and the dispute log into exactly one of red, orange and yellow, by the Agent Factory's tier rules without their Agent Validator, task-compliance, resume and plan-revision parts. Every open decision-log and dispute-log entry SHALL be ranked. A decision SHALL be ranked by how costly it would be if it is wrong, whether or not it changes behavior. Items that share one root cause SHALL become one item, in the highest tier any of them reaches, listing each symptom. When finalize passed CI, a checklist row that is not verified but names an automated test a CI suite runs SHALL count as verified by that test. A spec behavior that acceptance tried and saw pass SHALL NOT be an item. A behavior that only automated tests checked, which acceptance never tried, SHALL be a Risk item. Those of one feature SHALL share one item, one item per feature, that says what a person has not yet seen working and which tests check it. A dispute asking for a spec change SHALL be at least orange, since it needs an answer, and red only when its gap should block the merge. An item SHALL be yellow only when its recommended option accepts it as it is, with no further work. An item that would otherwise be yellow but recommends a fix, a retest, a review round or any other work SHALL be orange. A red or orange item MAY recommend accepting it as it is.
 
 #### Scenario: Red items
-- **WHEN** a spec behavior failed, a checklist row is failed or not verified, or a decision departs from the definition
+- **WHEN** a spec behavior failed, a checklist row is failed or not verified, a decision departs from the definition, or a dispute asks for a spec change whose gap should block the merge
 - **THEN** the item is red
 
 #### Scenario: Orange items
 - **WHEN** a decision changes scope, weakens a guarantee, affects other callers, is costly to reverse, or would be costly if wrong in cost, security, performance, test strength or maintainability; a high or medium review finding was declined, is disputed or was never fixed; an audit finding was not fixed; a pull request comment was not fixed and leaving it could change behavior or weaken a guarantee; or commits follow the accepted head
 - **THEN** the item is orange, unless a red rule also applies
+
+#### Scenario: Spec change that need not block the merge
+- **WHEN** a pull request comment the finalize fixer declined asks for a spec change to cover a narrow edge case
+- **THEN** the item is orange, not red
 
 #### Scenario: Decision that changes no behavior
 - **WHEN** a decision changes nothing the product does but weakens a test or adds a heavy dependency
@@ -178,7 +182,7 @@ Each ranked item SHALL have a type: Risk for a spec behavior that is not verifie
 - **THEN** its item's type is Risk
 
 ### Requirement: Each failed step is a red item
-The workflow SHALL add a red item of type Failure for each failed acceptance, retest, archive or finalize from the run's own results, and, in a feedback round, for a failed base merge, a blocked `address-feedback`, a response file the check rejected and a failed description update. The item SHALL start with one line the publisher writes from the run's results, saying what failed. The ranking agent SHALL write the rest of the item: why it failed, whose problem it is, what is left untested or undone and what covers it instead, ending with options that fit the cause. When the ranking agent wrote no valid item for the step, the publisher SHALL write a plain item saying what failed and what is left to do, never the step's raw output, ending with the standard question: "Fix it in the next round" (recommended) or "Leave it for me to handle", then "Other". An item the ranking agent wrote about the same cause SHALL become part of the step's item.
+The workflow SHALL add a red item of type Failure for each failed acceptance, retest, archive or finalize from the run's own results, and, in a feedback round, for a failed base merge, a follow-up issue that could not be filed, a blocked `address-feedback`, a response file the check rejected and a failed description update. The item SHALL start with one line the publisher writes from the run's results, saying what failed. The ranking agent SHALL write the rest of the item: why it failed, whose problem it is, what is left untested or undone and what covers it instead, ending with options that fit the cause. When the ranking agent wrote no valid item for the step, the publisher SHALL write a plain item saying what failed and what is left to do, never the step's raw output, ending with the standard question: "Fix it in the next round" (recommended) or "Leave it for me to handle", then "Other". An item the ranking agent wrote about the same cause SHALL become part of the step's item. Once the reviewer answers a failed step's item without asking for work, later pages SHALL leave it out until the step's problems change.
 
 #### Scenario: Finalize failed
 - **WHEN** finalize failed because a check on the final head failed
@@ -208,6 +212,11 @@ The workflow SHALL add a red item of type Failure for each failed acceptance, re
 #### Scenario: Same cause written twice
 - **WHEN** the ranking agent wrote an orange item about the cause of a failed step
 - **THEN** the page shows one red item for both
+
+#### Scenario: Failure left to the reviewer
+- **WHEN** the reviewer answers a failed step's item with "Leave it for me to handle" and the next round leaves its problems as they were
+- **THEN** the next page does not show the item
+- **AND** a later page shows it again if its problems change
 
 #### Scenario: Push failed in a feedback round
 - **WHEN** a feedback round's push still fails after its repair

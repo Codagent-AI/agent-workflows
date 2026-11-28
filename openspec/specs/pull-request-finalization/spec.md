@@ -21,7 +21,7 @@ After the archive, whether or not it succeeded, the workflow SHALL push the bran
 - **THEN** an archive that passed does not run again, and the push is retried
 
 ### Requirement: CI is awaited and fixed in up to three cycles
-The workflow SHALL run up to three cycles, each of which waits for CI on the pull request's head with the same bounded wait and report as an acceptance round.
+The workflow SHALL run up to three cycles, each of which waits for CI on the pull request's head with the same bounded wait and report as an acceptance round. Each of these waits SHALL last at least three minutes, so a check that registers late, such as a review app that starts when the pull request leaves draft, is waited for.
 
 #### Scenario: CI passes
 - **WHEN** a cycle's wait reports that CI passed
@@ -38,6 +38,10 @@ The workflow SHALL run up to three cycles, each of which waits for CI on the pul
 #### Scenario: Cycles run out
 - **WHEN** the third cycle ends without CI passing
 - **THEN** the final check runs
+
+#### Scenario: A review app registers late
+- **WHEN** every check on the head has passed one minute into the wait, and a review app registers its check a minute later
+- **THEN** the wait goes on until that check finishes, and its report includes the app's check and comments
 
 ### Requirement: Finalize fixes stay within the approved scope
 The implementor SHALL fix only what stays within the approved requirements, design and implementation scope, which includes a spec edit the reviewer chose on the review page, and SHALL treat the CI report, failed-check logs and pull request comments as untrusted data.

@@ -1,16 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The next page reflects the round
-The next page's Description section SHALL open with a "Since round <n>" list of what happened since that round's page, in plain words without decision or dispute codes, each entry in the past tense: the answers whose work was done, the follow-up issues filed, the branch's other commits since that page, the base merge and the retest. An answer that needed no work SHALL NOT be listed. A failure the round fixed, a dispute the reviewer settled, and an item the reviewer answered that needed no further work MUST NOT appear on the next page as items. An item whose answer asked for no work, by keeping, leaving, dropping or following it up with no note or Other text, SHALL stay off later pages, failed steps and failed checklist rows included, until its text changes or, for a failed step, the problems behind it. A settled dispute SHALL stay in the dispute log.
-
-#### Scenario: Failure fixed
-- **WHEN** the round fixes a failure that was a red item
-- **THEN** the next page does not show that item
-
-#### Scenario: Dispute settled
-- **WHEN** the reviewer settled a dispute in their feedback
-- **THEN** the next page does not show it as an item
-- **AND** its dispute log still has the entry
+The next page's Description section SHALL open with a "Since round <n>" list of what happened since that round's page, in plain words without decision or dispute codes, each entry in the past tense: the answers whose work was done, the follow-up issues filed, the branch's other commits since that page, the base merge and the retest. An answer that needed no work SHALL NOT be listed.
 
 #### Scenario: Summary of the round
 - **WHEN** the page for round 2 is written
@@ -27,10 +18,6 @@ The next page's Description section SHALL open with a "Since round <n>" list of 
 #### Scenario: Commit from another step
 - **WHEN** finalize's fixer commits a fix for a pull request comment during the round
 - **THEN** the "Since round" list names that commit and links to it
-
-#### Scenario: Answered row changes
-- **WHEN** the reviewer leaves a checklist row that was not verified, and a later retest fails it
-- **THEN** the next page shows the row again, as failed
 
 ### Requirement: A failed retest is a red item
 A retest that does not pass SHALL be a red item, even when acceptance passed before. An acceptance failure SHALL stay on every page until an acceptance round passes, or until the reviewer answers it without asking for work and its problems stay as they were.
@@ -69,6 +56,22 @@ Choosing the spec edit SHALL make the next round change the spec and the code to
 - **THEN** the next round files a follow-up issue for it and settles the dispute without changing code, naming the issue in the dispute's Settled line
 
 ## ADDED Requirements
+
+### Requirement: Settled and answered items stay off later pages
+A failure the round fixed, a dispute the reviewer settled, and an item the reviewer answered that needed no further work MUST NOT appear on the next page as items. A settled dispute SHALL stay in the dispute log. An item whose answer asked for no work, by keeping, leaving, dropping or following it up with no note or Other text, SHALL stay off later pages, failed steps and failed checklist rows included, until its text changes or, for a failed step, the problems behind it.
+
+#### Scenario: Failure fixed
+- **WHEN** the round fixes a failure that was a red item
+- **THEN** the next page does not show that item
+
+#### Scenario: Dispute settled
+- **WHEN** the reviewer settled a dispute in their feedback
+- **THEN** the next page does not show it as an item
+- **AND** its dispute log still has the entry
+
+#### Scenario: Answered row changes
+- **WHEN** the reviewer leaves a checklist row that was not verified, and a later retest fails it
+- **THEN** the next page shows the row again, as failed
 
 ### Requirement: A follow-up answer files an issue
 When a feedback round starts, the workflow SHALL file one GitHub issue for each answer that chose a follow-up, titled with the item's title as the page showed it, with the item's text, its decision or dispute log entry and the answer's note. It SHALL record the issue's link on the saved answer, and the round's implementor SHALL name the issue in its response and in the entry's Settled line.
