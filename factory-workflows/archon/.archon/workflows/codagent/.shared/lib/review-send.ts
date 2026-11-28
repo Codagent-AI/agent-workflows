@@ -18,9 +18,10 @@ export async function sendReview(input: {
     const response = await fetch(`${page.origin}/api/runs/${run}/attention`, { credentials: 'omit' });
     if (response.status === 404) return stale;
     if (!response.ok) return fallback();
-    const { item } = await response.json() as { item?: { occurrence?: string; message?: string; runId?: string } | null };
-    if (!item?.occurrence || item.runId !== decodeURIComponent(run) || !item.message?.startsWith(`Review round ${input.round}:`)) return stale;
-    occurrence = item.occurrence;
+    const { item } = await response.json() as { item?: { run?: { id?: string; occurrence?: string }; message?: string } | null };
+    const held = item?.run;
+    if (!held?.occurrence || held.id !== decodeURIComponent(run) || !item || !item.message?.startsWith(`Review round ${input.round}:`)) return stale;
+    occurrence = held.occurrence;
     const sent = await fetch(`${page.origin}/api/workflows/runs/${run}/answer`, {
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ occurrence, text }),

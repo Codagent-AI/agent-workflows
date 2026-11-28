@@ -258,7 +258,7 @@ describe('merged workflow contracts', () => {
     loop_group?: { max_iterations: number; on_exhausted?: string; nodes: WorkflowNode[] };
   }
   const load = (name: string) => Bun.YAML.parse(readFileSync(join(pack, name, `${name}.yaml`), 'utf8')) as {
-    nodes: WorkflowNode[]; returns: string; outcome_field: string;
+    nodes: WorkflowNode[]; returns: { node: string; outcome: string; ends?: string[] };
   };
   const workflow = load('implement-change');
   const flatten = (entries: WorkflowNode[]): WorkflowNode[] => entries.flatMap(entry => [entry, ...flatten(entry.loop_group?.nodes ?? [])]);
@@ -280,8 +280,7 @@ describe('merged workflow contracts', () => {
 
   test('validation is first and authored outcome comes from acceptance status', () => {
     expect(workflow.nodes[0]?.id).toBe('validate-inputs');
-    expect(workflow.returns).toBe('end-run');
-    expect(workflow.outcome_field).toBe('succeeded');
+    expect(workflow.returns).toMatchObject({ node: 'end-run', outcome: 'succeeded', ends: ['succeeded'] });
     expect(readdirSync(pack)).not.toContain('verify-change');
   });
 
