@@ -18,7 +18,8 @@
         "workflow",
         "planning"
       ],
-      "repository": "https://github.com/Codagent-AI/agent-workflows"
+      "repository": "https://github.com/Codagent-AI/agent-workflows",
+      "version": "0.1.0"
     },
     {
       "name": "codagent-archon",
@@ -31,7 +32,8 @@
         "workflow",
         "implementation"
       ],
-      "repository": "https://github.com/Codagent-AI/agent-workflows"
+      "repository": "https://github.com/Codagent-AI/agent-workflows",
+      "version": "0.1.0"
     }
   ]
 }

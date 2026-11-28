@@ -5,7 +5,7 @@ A Claude Code and Codex plugin that defines an OpenSpec change with you, in your
 ## Requirements
 
 - macOS or Linux.
-- Node.js 26 or later and the `openspec` CLI on `PATH`.
+- Node.js 22 or later and the `openspec` CLI on `PATH`.
 - A git repository with an `openspec/` folder. To finish on a branch other than the default branch, `gh` must be signed in.
 - acpx 0.23 or later on `PATH` and at least one configured reviewer. Sign in to the agents you use, such as `claude`, `codex`, and `agy`.
 
